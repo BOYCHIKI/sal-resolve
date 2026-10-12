@@ -1,0 +1,121 @@
+{
+  "recorded_at": "20261012T104019Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "POST",
+    "path": "/v2/checkout/orders/6RH3149738065943K/capture",
+    "body": {}
+  },
+  "response": {
+    "status": 201,
+    "debug_id": "f45169337a625",
+    "body": {
+      "id": "6RH3149738065943K",
+      "status": "COMPLETED",
+      "payment_source": {
+        "paypal": {
+          "email_address": "[PII]",
+          "account_id": "[PII]",
+          "account_status": "VERIFIED",
+          "name": {
+            "given_name": "[PII]",
+            "surname": "[PII]"
+          },
+          "address": {
+            "country_code": "ID"
+          }
+        }
+      },
+      "purchase_units": [
+        {
+          "reference_id": "SAL-INR-001",
+          "shipping": {
+            "name": {
+              "full_name": "[PII]"
+            },
+            "address": {
+              "address_line_1": "[PII]",
+              "admin_area_2": "[PII]",
+              "admin_area_1": "[PII]",
+              "postal_code": "[PII]",
+              "country_code": "ID"
+            }
+          },
+          "payments": {
+            "captures": [
+              {
+                "id": "2MK81285P20231246",
+                "status": "COMPLETED",
+                "amount": {
+                  "currency_code": "USD",
+                  "value": "45.00"
+                },
+                "final_capture": true,
+                "seller_protection": {
+                  "status": "ELIGIBLE",
+                  "dispute_categories": [
+                    "ITEM_NOT_RECEIVED",
+                    "UNAUTHORIZED_TRANSACTION"
+                  ]
+                },
+                "seller_receivable_breakdown": {
+                  "gross_amount": {
+                    "currency_code": "USD",
+                    "value": "45.00"
+                  },
+                  "paypal_fee": {
+                    "currency_code": "USD",
+                    "value": "1.83"
+                  },
+                  "net_amount": {
+                    "currency_code": "USD",
+                    "value": "43.17"
+                  }
+                },
+                "invoice_id": "SAL-INR-001-20261012103550",
+                "custom_id": "SAL-INR-001",
+                "links": [
+                  {
+                    "href": "https://api.sandbox.paypal.com/v2/payments/captures/2MK81285P20231246",
+                    "rel": "self",
+                    "method": "GET"
+                  },
+                  {
+                    "href": "https://api.sandbox.paypal.com/v2/payments/captures/2MK81285P20231246/refund",
+                    "rel": "refund",
+                    "method": "POST"
+                  },
+                  {
+                    "href": "https://api.sandbox.paypal.com/v2/checkout/orders/6RH3149738065943K",
+                    "rel": "up",
+                    "method": "GET"
+                  }
+                ],
+                "create_time": "2026-10-12T10:40:17Z",
+                "update_time": "2026-10-12T10:40:17Z"
+              }
+            ]
+          }
+        }
+      ],
+      "payer": {
+        "name": {
+          "given_name": "[PII]",
+          "surname": "[PII]"
+        },
+        "email_address": "[PII]",
+        "payer_id": "[PII]",
+        "address": {
+          "country_code": "ID"
+        }
+      },
+      "links": [
+        {
+          "href": "https://api.sandbox.paypal.com/v2/checkout/orders/6RH3149738065943K",
+          "rel": "self",
+          "method": "GET"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "recorded_at": "20261012T110238Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "GET",
+    "path": "/v1/customer/disputes",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "debug_id": "f892898d988a6",
+    "body": {
+      "items": [
+        {
+          "dispute_id": "PP-R-RVX-10191107",
+          "create_time": "2026-10-12T10:57:04.000Z",
+          "update_time": "2026-10-12T11:00:24.000Z",
+          "disputed_transactions": [
+            {
+              "buyer_transaction_id": "2X920845424009805",
+              "buyer": {
+                "payer_id": "[PII]"
+              },
+              "seller": {
+                "merchant_id": "[PII]"
+              }
+            }
+          ],
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "status": "WAITING_FOR_SELLER_RESPONSE",
+          "dispute_state": "REQUIRED_ACTION",
+          "dispute_amount": {
+            "currency_code": "USD",
+            "value": "45.00"
+          },
+          "dispute_life_cycle_stage": "INQUIRY",
+          "dispute_channel": "INTERNAL",
+          "seller_response_due_date": "2026-11-01T10:57:04.000Z",
+          "links": [
+            {
+              "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-RVX-10191107",
+              "rel": "self",
+              "method": "GET"
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes",
+          "rel": "self",
+          "method": "GET"
+        },
+        {
+          "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes",
+          "rel": "first",
+          "method": "GET"
+        }
+      ]
+    }
+  }
+}

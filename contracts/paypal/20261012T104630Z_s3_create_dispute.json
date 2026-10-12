@@ -1,0 +1,22 @@
+{
+  "recorded_at": "20261012T104630Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "POST",
+    "path": "/v1/customer/disputes",
+    "body": {
+      "form": null,
+      "files": [
+        "input"
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "debug_id": "f7169396ef9a6",
+    "body": {
+      "error": "invalid_request",
+      "error_description": "No permissions to set target_client_id"
+    }
+  }
+}

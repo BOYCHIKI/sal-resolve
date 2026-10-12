@@ -1,0 +1,35 @@
+{
+  "recorded_at": "20261012T114713Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "POST",
+    "path": "/v1/customer/disputes/PP-R-RVX-10191107/provide-evidence",
+    "body": {
+      "form": null,
+      "files": [
+        "input",
+        "evidence-file",
+        "evidence-file",
+        "evidence-file",
+        "evidence-file",
+        "evidence-file"
+      ]
+    }
+  },
+  "response": {
+    "status": 422,
+    "debug_id": "f729936591319",
+    "body": {
+      "name": "UNPROCESSABLE_ENTITY",
+      "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+      "debug_id": "f729936591319",
+      "information_link": "https://developer.paypal.com/docs/api/customer-disputes/v1/#errors",
+      "details": [
+        {
+          "issue": "ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE"
+        }
+      ],
+      "links": []
+    }
+  }
+}

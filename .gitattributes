@@ -1,0 +1,6 @@
+# Normalize source files to LF.
+* text=auto eol=lf
+# The frozen golden dataset must stay byte-identical (CHECKSUMS.sha256); never convert line endings.
+data/golden/** -text
+# Recorded PayPal payloads are fixtures; keep them exact as well.
+contracts/** -text

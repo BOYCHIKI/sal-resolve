@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "case_id",
+    "split",
+    "scenario",
+    "synthetic",
+    "dispute",
+    "evidence",
+    "ground_truth",
+    "metadata"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "split": {
+      "enum": [
+        "development",
+        "calibration",
+        "holdout"
+      ]
+    },
+    "scenario": {
+      "enum": [
+        "complete",
+        "missing",
+        "conflicting",
+        "edge"
+      ]
+    },
+    "synthetic": {
+      "const": true
+    },
+    "dispute": {
+      "type": "object"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "ground_truth": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

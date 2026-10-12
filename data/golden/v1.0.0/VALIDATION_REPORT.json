@@ -1,0 +1,24 @@
+{
+  "dataset_version": "1.0.0",
+  "cases": 40,
+  "counts_by_split": {
+    "development": 24,
+    "calibration": 8,
+    "holdout": 8
+  },
+  "counts_by_scenario": {
+    "complete": 10,
+    "missing": 10,
+    "conflicting": 10,
+    "edge": 10
+  },
+  "checks": [
+    "JSON Schema",
+    "case IDs unique",
+    "source pointers resolve",
+    "split sizes",
+    "synthetic-only"
+  ],
+  "passed": true,
+  "issues": []
+}
