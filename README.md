@@ -27,3 +27,7 @@ cd spikes/paypal_sandbox
 pip install -r requirements.txt
 python -m unittest discover -s tests
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). The golden dataset in `data/golden/` is synthetic test data; it contains no real PayPal customer data.
