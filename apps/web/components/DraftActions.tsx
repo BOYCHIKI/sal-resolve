@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { approveDraft, submitDraft } from "@/app/actions";
-import { primaryButton } from "@/components/ui";
 
 type Props = {
   disputeId: string;
@@ -13,53 +12,59 @@ type Props = {
   status: string;
   sandbox: boolean;
   canProvideEvidence: boolean;
-  reviewRequired: boolean;
+  openItems: number;
 };
 
 const MESSAGES: Record<string, string> = {
-  STALE_REVISION: "A newer draft exists. Review it before approving.",
-  STALE_SNAPSHOT: "The analysis changed since this page loaded. Reload and review again.",
-  DISPUTE_CHANGED: "PayPal updated this dispute. Wait for the new analysis.",
-  DRAFT_NOT_PENDING: "This draft is no longer awaiting approval.",
-  NOT_SUBMITTABLE: "This draft has already been sent or is not approved.",
+  STALE_REVISION: "SAL wrote a newer version of this reply. Please read that one.",
+  STALE_SNAPSHOT: "Something changed since you opened this page. Reload it and read the reply again.",
+  DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new reply.",
+  DRAFT_NOT_PENDING: "This reply was already approved.",
+  NOT_SUBMITTABLE: "This reply was already sent.",
+  PAYPAL_REJECTED: "PayPal didn’t accept the documents right now. You can try again.",
+  API_UNREACHABLE: "SAL can’t reach its server right now. Please try again in a moment.",
 };
+
+type Message = { ok: boolean; text: string } | null;
+
+function Feedback({ message }: { message: Message }) {
+  if (!message) return null;
+  return message.ok
+    ? <p role="status" className="text-[15px] text-green-ink">{message.text}</p>
+    : <p role="alert" className="text-[15px] text-red-ink">{message.text}</p>;
+}
 
 export function DraftActions(p: Props) {
   const router = useRouter();
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [message, setMessage] = useState<Message>(null);
 
   async function run(fn: () => ReturnType<typeof approveDraft>, success: string) {
     setBusy(true);
     setMessage(null);
     const r = await fn();
-    setMessage(r.ok ? { ok: true, text: success } : { ok: false, text: MESSAGES[r.code] ?? r.message });
+    setMessage(r.ok ? { ok: true, text: success } : { ok: false, text: MESSAGES[r.code] ?? "Something went wrong. Please try again." });
     setBusy(false);
     router.refresh();
   }
 
   if (p.status === "SUBMITTED") {
-    return <p className="mt-4 rounded-xl bg-good-bg p-3 text-sm text-good-ink">Sent to PayPal as evidence. Status will refresh on the next sync.</p>;
+    return <p className="rounded-2xl bg-green-bg p-4 text-green-ink">Sent to PayPal. You’ll see PayPal’s answer here when it arrives.</p>;
   }
 
   if (p.status === "DRAFT") {
     return (
-      <div className="mt-4 space-y-3">
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-1 accent-[var(--action)]" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
-          <span>
-            I reviewed every statement against its source
-            {p.reviewRequired && <span className="text-warn-ink"> and the open items under “Needs your attention”</span>}.
-          </span>
+      <div className="flex flex-col gap-3">
+        <label className="flex items-start gap-3 rounded-2xl bg-grey-bg px-4 py-3.5">
+          <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-[var(--action)]" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
+          <span>I’ve read the reply{p.openItems > 0 ? ` and checked the ${p.openItems === 1 ? "detail" : `${p.openItems} details`} above` : ""}.</span>
         </label>
-        <button
-          className={`w-full ${primaryButton}`}
-          disabled={!reviewed || busy}
-          onClick={() => run(() => approveDraft(p.disputeId, p.draftId, p.revision, p.snapshotHash), "Approved.")}
-        >
-          {busy ? "Approving…" : `Approve revision ${p.revision}`}
+        <button className="btn-primary w-full text-[17px]" disabled={!reviewed || busy}
+          onClick={() => run(() => approveDraft(p.disputeId, p.draftId, p.revision, p.snapshotHash), "Approved. You can now send it to PayPal.")}>
+          {busy ? "Approving…" : "Approve reply"}
         </button>
+        <p className="text-sm text-ink-muted">Nothing is sent until you approve and then press “Send to PayPal”.</p>
         <Feedback message={message} />
       </div>
     );
@@ -67,32 +72,20 @@ export function DraftActions(p: Props) {
 
   if (p.status === "APPROVED" || p.status === "SUBMIT_FAILED") {
     const blocked = !p.sandbox
-      ? "Synthetic fixture: approved, but there is no PayPal dispute to send it to."
-      : !p.canProvideEvidence ? "PayPal does not currently accept evidence for this dispute." : null;
+      ? "This is a practice case, so there’s no real PayPal case to send it to."
+      : !p.canProvideEvidence ? "PayPal isn’t accepting documents for this case right now." : null;
     return (
-      <div className="mt-4 space-y-3">
-        <p className="text-sm text-good-ink">
-          {p.status === "APPROVED" ? `Revision ${p.revision} approved.` : "The last send failed. You can retry."}
-        </p>
-        <button
-          className={`w-full ${primaryButton}`}
-          disabled={busy || blocked !== null}
-          onClick={() => run(() => submitDraft(p.disputeId, p.draftId), "Sent to PayPal.")}
-        >
+      <div className="flex flex-col gap-3">
+        <p className="text-green-ink">{p.status === "APPROVED" ? "You approved this reply." : "The last send didn’t go through. You can try again."}</p>
+        <button className="btn-primary w-full text-[17px]" disabled={busy || blocked !== null}
+          onClick={() => run(() => submitDraft(p.disputeId, p.draftId), "Sent to PayPal.")}>
           {busy ? "Sending…" : "Send to PayPal"}
         </button>
-        {blocked && <p className="text-xs text-ink-muted">{blocked}</p>}
+        {blocked && <p className="text-sm text-ink-muted">{blocked}</p>}
         <Feedback message={message} />
       </div>
     );
   }
 
-  return <p className="mt-4 text-sm text-ink-muted">Draft status: {p.status.toLowerCase()}.</p>;
-}
-
-function Feedback({ message }: { message: { ok: boolean; text: string } | null }) {
-  if (!message) return null;
-  return message.ok
-    ? <p className="text-sm text-good-ink" role="status">{message.text}</p>
-    : <p className="text-sm text-bad-ink" role="alert">{message.text}</p>;
+  return <p className="text-ink-muted">An older version of this reply. A newer one is above.</p>;
 }

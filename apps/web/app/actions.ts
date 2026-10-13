@@ -8,7 +8,7 @@ export async function startSync(): Promise<{ jobId: string } | { error: string }
     const job = await api.sync();
     return job ? { jobId: job.job_id } : { error: "Sync could not be queued." };
   } catch {
-    return { error: "SAL API is not reachable." };
+    return { error: "SAL can’t reach its server right now." };
   }
 }
 
@@ -24,7 +24,7 @@ export async function approveDraft(disputeId: string, draftId: string, revision:
     revalidatePath(`/disputes/${disputeId}`);
     return result;
   } catch {
-    return { ok: false, code: "API_UNREACHABLE", message: "SAL API is not reachable." };
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
 
@@ -34,6 +34,6 @@ export async function submitDraft(disputeId: string, draftId: string): Promise<A
     revalidatePath(`/disputes/${disputeId}`);
     return result;
   } catch {
-    return { ok: false, code: "API_UNREACHABLE", message: "SAL API is not reachable." };
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }

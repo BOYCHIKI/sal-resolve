@@ -30,7 +30,8 @@ def seed_golden(engine: Engine, merchant: UUID, case_id: str, deadline: str | No
         row, _ = repo.upsert_provider_dispute(s, merchant, {
             "origin": "SYNTHETIC_FIXTURE", "provider_dispute_id": f"FX-{case_id}-{uuid4().hex[:6]}",
             "custom": case_id, "reason": d["reason"], "amount": d["amount"], "provider_status": "OPEN",
-            "response_deadline": deadline, "allowed_actions": ["provide_evidence", "accept_claim"]}, {})
+            "response_deadline": deadline, "allowed_actions": ["provide_evidence", "accept_claim"]},
+            {"disputed_transactions": [{"invoice_number": d["order_id"], "items": [{"item_name": d["item"]}]}]})
         for e in case["evidence"]:
             lines = json.dumps(e["content_lines"])
             s.execute(text("""INSERT INTO evidence (merchant_id, dispute_id, object_key, checksum, mime, size_bytes,

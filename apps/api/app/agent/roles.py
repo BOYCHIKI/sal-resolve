@@ -92,12 +92,12 @@ class RuleExtractor:
 
 
 _CLAIM_TEMPLATES = {
-    "transaction_id": "The payment record references transaction {v}.",
-    "order_id": "The order on file is {v}.",
-    "order_amount": "The invoice amount is {v} {currency}.",
-    "tracking_id": "The shipment was tracked under {v}.",
-    "carrier_status": "The carrier reported the status {v}.",
-    "delivery_date": "The delivery confirmation is dated {v}.",
+    "order_amount": "The customer paid {v} {currency} for this order.",
+    "order_id": "The order number is {v}.",
+    "transaction_id": "PayPal transaction {v} is the payment for this order.",
+    "tracking_id": "We shipped the order with tracking number {v}.",
+    "carrier_status": "The courier marked the parcel as {v}.",
+    "delivery_date": "The delivery receipt is dated {v}.",
 }
 
 

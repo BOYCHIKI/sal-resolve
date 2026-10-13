@@ -61,7 +61,8 @@ def list_disputes(merchant_id: UUID = Depends(current_merchant), limit: int = Qu
     after = (after_deadline, after_id) if after_id else None
     with tenant_session(merchant_id) as s:
         rows = repo.list_disputes(s, merchant_id, limit=limit, after=after)
-    items = [_serialize(r) for r in rows]
+        summaries = repo.case_summaries(s, [r.id for r in rows])
+    items = [{**_serialize(r), "summary": summaries.get(r.id)} for r in rows]
     cursor = ({"after_deadline": rows[-1].deadline_at.isoformat() if rows[-1].deadline_at else None,
                "after_id": str(rows[-1].id)} if len(rows) == limit else None)
     return {"items": items, "next": cursor}
@@ -71,9 +72,10 @@ def list_disputes(merchant_id: UUID = Depends(current_merchant), limit: int = Qu
 def get_dispute(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> dict:
     with tenant_session(merchant_id) as s:
         row = repo.get_dispute(s, dispute_id)
+        summary = repo.case_summaries(s, [dispute_id]).get(dispute_id) if row else None
     if row is None:  # another tenant's dispute is indistinguishable from a missing one
         raise HTTPException(404, detail={"code": "DISPUTE_NOT_FOUND", "retryable": False})
-    return _serialize(row)
+    return {**_serialize(row), "summary": summary}
 
 
 @app.post("/api/disputes/sync", status_code=202)

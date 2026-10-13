@@ -1,95 +1,120 @@
 @import "tailwindcss";
 
 /*
- * Tokens follow apps/web/DESIGN.md (Apple-inspired: one action blue, parchment canvas, white cards with
- * hairlines, no shadows). Adapted for an operations tool: muted functional tints for warnings/conflicts,
- * system font stack (resolves to SF on Apple devices; SF Pro itself is not shipped), and a dark mode.
+ * Glass look (see the "SAL Resolve — Glass UI" canvas and apps/web/DESIGN.md): frosted panels over a soft
+ * tinted ground, one action blue, pill buttons, large radii, no drop shadows. System font stack (SF on
+ * Apple devices). Functional tints for things to check (amber), missing proof/urgent (red), done (green).
  */
 :root {
   color-scheme: light dark;
   --ink: #1d1d1f;
+  --ink-soft: #424245;
   --ink-muted: #6e6e73;
-  --canvas: #f5f5f7;          /* parchment page */
-  --surface: #ffffff;         /* cards */
-  --surface-pearl: #fafafc;
-  --hairline: #e0e0e0;
-  --divider: #f0f0f0;
+  --ground: #eef1f6;
+  --surface: #ffffff;
+  --glass: rgba(255, 255, 255, 0.6);
+  --glass-strong: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --hairline: rgba(0, 0, 0, 0.07);
   --action: #0066cc;
   --action-focus: #0071e3;
-  --nav: #000000;
-  --on-nav: #f5f5f7;
-  --warn-bg: #fff8e6;  --warn-ink: #8a5a00;
-  --bad-bg: #fff1f0;   --bad-ink: #b42318;
-  --good-bg: #edf8f0;  --good-ink: #1d7a3d;
-  --info-bg: #eaf3fd;  --info-ink: #0058b0;
-  --highlight-cited: #eaf3fd;
-  --highlight-flag: #fff1c7;
+  --blob-1: #c4dcff;
+  --blob-2: #ffe0cc;
+  --blob-3: #c9f0e4;
+  --amber-bg: rgba(255, 244, 214, 0.92); --amber-ink: #5c3d00;
+  --red-bg: rgba(255, 236, 234, 0.92);   --red-ink: #8c1c13;
+  --blue-bg: rgba(220, 235, 251, 0.92);  --blue-ink: #083d75;
+  --green-bg: rgba(220, 244, 228, 0.92); --green-ink: #1d6b37;
+  --grey-bg: rgba(0, 0, 0, 0.06);        --grey-ink: #424245;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #f5f5f7;
+    --ink-soft: #d2d2d7;
     --ink-muted: #a1a1a6;
-    --canvas: #000000;
-    --surface: #1d1d1f;
-    --surface-pearl: #272729;
-    --hairline: #38383a;
-    --divider: #2a2a2c;
-    --action: #2997ff;          /* Sky Link Blue on dark surfaces */
+    --ground: #0b0c10;
+    --surface: #1c1c1e;
+    --glass: rgba(36, 36, 40, 0.55);
+    --glass-strong: rgba(44, 44, 48, 0.72);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --hairline: rgba(255, 255, 255, 0.08);
+    --action: #2997ff;
     --action-focus: #2997ff;
-    --nav: #161617;
-    --warn-bg: #3a2e12;  --warn-ink: #ffd27a;
-    --bad-bg: #3b1715;   --bad-ink: #ff9b91;
-    --good-bg: #13301e;  --good-ink: #7ddc9b;
-    --info-bg: #10263f;  --info-ink: #8cc4ff;
-    --highlight-cited: #10263f;
-    --highlight-flag: #3a2e12;
+    --blob-1: #17325a;
+    --blob-2: #4a2a1a;
+    --blob-3: #123d33;
+    --amber-bg: rgba(74, 56, 16, 0.75); --amber-ink: #ffd98a;
+    --red-bg: rgba(80, 26, 22, 0.75);   --red-ink: #ffb0a8;
+    --blue-bg: rgba(18, 48, 86, 0.75);  --blue-ink: #a8d1ff;
+    --green-bg: rgba(19, 56, 34, 0.75); --green-ink: #9be3b3;
+    --grey-bg: rgba(255, 255, 255, 0.08); --grey-ink: #d2d2d7;
   }
 }
 
 @theme inline {
   --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
   --color-ink-muted: var(--ink-muted);
-  --color-canvas: var(--canvas);
+  --color-ground: var(--ground);
   --color-surface: var(--surface);
-  --color-pearl: var(--surface-pearl);
   --color-hairline: var(--hairline);
-  --color-divider: var(--divider);
   --color-action: var(--action);
-  --color-action-focus: var(--action-focus);
-  --color-nav: var(--nav);
-  --color-on-nav: var(--on-nav);
-  --color-warn-bg: var(--warn-bg);
-  --color-warn-ink: var(--warn-ink);
-  --color-bad-bg: var(--bad-bg);
-  --color-bad-ink: var(--bad-ink);
-  --color-good-bg: var(--good-bg);
-  --color-good-ink: var(--good-ink);
-  --color-info-bg: var(--info-bg);
-  --color-info-ink: var(--info-ink);
-  --color-cited: var(--highlight-cited);
-  --color-flag: var(--highlight-flag);
-  --radius-card: 18px;
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --color-amber-bg: var(--amber-bg);
+  --color-amber-ink: var(--amber-ink);
+  --color-red-bg: var(--red-bg);
+  --color-red-ink: var(--red-ink);
+  --color-blue-bg: var(--blue-bg);
+  --color-blue-ink: var(--blue-ink);
+  --color-green-bg: var(--green-bg);
+  --color-green-ink: var(--green-ink);
+  --color-grey-bg: var(--grey-bg);
+  --color-grey-ink: var(--grey-ink);
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
-  background: var(--canvas);
+  background: var(--ground);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.47;
+  font-size: 16px;
+  line-height: 1.5;
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2 {
-  font-weight: 600;
-  letter-spacing: -0.02em;
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.025em; }
+
+:focus-visible { outline: 2px solid var(--action-focus); outline-offset: 2px; }
+
+/* Soft colour behind the glass, fixed so panels blur it as the page scrolls. */
+.ground-blobs { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.ground-blobs span { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.85; }
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+}
+.glass-strong {
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
 }
 
-/* One focus treatment everywhere. */
-:focus-visible {
-  outline: 2px solid var(--action-focus);
-  outline-offset: 2px;
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 24px; border-radius: 9999px;
+  background: var(--action); color: #fff; font-size: 16px; font-weight: 500;
+  transition: transform 0.1s;
+}
+.btn-primary:active:not(:disabled) { transform: scale(0.96); }
+.btn-primary:disabled { background: var(--grey-bg); color: var(--ink-muted); cursor: not-allowed; }
+.btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 48px; padding: 0 24px; border-radius: 9999px;
+  border: 1px solid var(--hairline); background: var(--glass); color: var(--action); font-size: 16px;
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
 }

@@ -1,26 +1,21 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SAL Resolve",
-  description: "Evidence-grounded PayPal dispute responses, prepared by an agent and approved by you.",
-  robots: { index: false, follow: false }, // app pages are private; noindex is not a security control
+  description: "Reply to PayPal disputes with proof from your own documents. You approve before anything is sent.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body className="min-h-screen">
-        <header className="sticky top-0 z-10 bg-nav text-on-nav">
-          <div className="mx-auto flex h-11 max-w-6xl items-center justify-between px-4 text-xs">
-            <Link href="/disputes" className="text-[15px] font-semibold tracking-tight">
-              SAL <span className="font-normal opacity-70">Resolve</span>
-            </Link>
-            <span className="opacity-70">Sandbox demo · no real customer data</span>
-          </div>
-        </header>
-        <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+        <div className="ground-blobs" aria-hidden="true">
+          <span style={{ top: -180, left: "8%", width: 640, height: 560, background: "var(--blob-1)" }} />
+          <span style={{ top: 140, right: -160, width: 560, height: 520, background: "var(--blob-2)" }} />
+          <span style={{ bottom: -200, left: "35%", width: 620, height: 500, background: "var(--blob-3)" }} />
+        </div>
+        {children}
       </body>
     </html>
   );

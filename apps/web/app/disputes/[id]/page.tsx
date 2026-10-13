@@ -1,203 +1,199 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AppHeader } from "@/components/AppHeader";
 import { DraftActions } from "@/components/DraftActions";
-import { Badge, Card, OriginBadge, SourceLink, StateBadge } from "@/components/ui";
 import { api } from "@/lib/api";
-import { deadline, label, money } from "@/lib/format";
+import { docName, dueText, explain, origin, readableFacts, summarySentence, type Tone } from "@/lib/plain";
 
 export const dynamic = "force-dynamic";
 
-// PayPal actions SAL knows about. Only those PayPal currently offers are shown as available.
-const PAYPAL_ACTIONS = ["provide_evidence", "accept_claim", "make_offer", "send_message", "escalate"];
+const BOX: Record<Tone, string> = {
+  red: "bg-red-bg text-red-ink",
+  amber: "bg-amber-bg text-amber-ink",
+  blue: "bg-blue-bg text-blue-ink",
+  green: "bg-green-bg text-green-ink",
+  grey: "bg-grey-bg text-grey-ink",
+};
 
-export default async function CaseWorkspace({ params }: { params: Promise<{ id: string }> }) {
+type StepState = "done" | "current" | "todo";
+
+function Progress({ steps }: { steps: { label: string; state: StepState }[] }) {
+  return (
+    <ol aria-label="Progress" className="grid gap-2.5 sm:grid-cols-4">
+      {steps.map((s, i) => {
+        const look = s.state === "done" ? "bg-green-bg text-green-ink" : s.state === "current" ? "bg-amber-bg font-semibold text-amber-ink" : "bg-grey-bg text-ink-soft";
+        return (
+          <li key={s.label} className={`flex items-center gap-2.5 rounded-2xl px-3.5 py-3 text-[15px] ${look}`} aria-current={s.state === "current" ? "step" : undefined}>
+            <span aria-hidden="true" className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2 border-current text-sm font-semibold">
+              {s.state === "done" ? "✓" : i + 1}
+            </span>
+            {s.label}
+            <span className="sr-only">{s.state === "done" ? " (done)" : s.state === "current" ? " (current step)" : ""}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export default async function CasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [dispute, analysis, evidence] = await Promise.all([api.getDispute(id), api.getAnalysis(id), api.getEvidence(id)]);
   if (!dispute) notFound();
 
-  const due = deadline(dispute.deadline_at);
-  const facts = analysis?.facts.filter((f) => f.status !== "rejected") ?? [];
-  const rejected = analysis?.facts.filter((f) => f.status === "rejected") ?? [];
-  const missing = analysis?.findings.filter((f) => f.kind === "missing") ?? [];
-  const conflicts = analysis?.findings.filter((f) => f.kind === "conflict") ?? [];
-  const cited = new Set(analysis?.facts.map((f) => `${f.source.evidence_id}-L${f.source.line}`) ?? []);
-  const flagged = new Set(conflicts.flatMap((c) => c.source_refs.map((r) => `${r.evidence_id}-L${r.line}`)));
+  const currency = dispute.amount.currency;
+  const due = dueText(dispute.deadline_at);
+  const { headline, detail } = summarySentence(dispute, analysis);
+  const findings = analysis?.findings ?? [];
+  const facts = analysis ? readableFacts(analysis.facts, currency) : [];
+  const flaggedDocs = new Set(findings.flatMap((f) => f.source_refs.map((r) => r.evidence_id)));
+  const draft = analysis?.draft;
+  const sent = dispute.internal_state === "SUBMITTED";
+  const approved = draft?.status === "APPROVED" || draft?.status === "SUBMIT_FAILED";
+  const deadlineDate = dispute.deadline_at ? due.text.replace(/^Reply by /, "").split(" · ")[0] : "None";
+
+  const steps: { label: string; state: StepState }[] = [
+    { label: "Documents checked", state: analysis ? "done" : "current" },
+    {
+      label: findings.length ? `Check ${findings.length} detail${findings.length > 1 ? "s" : ""}` : "Nothing to check",
+      state: !analysis ? "todo" : findings.length && draft?.status === "DRAFT" ? "current" : "done",
+    },
+    { label: "Approve the reply", state: sent || approved ? "done" : analysis && !findings.length ? "current" : "todo" },
+    { label: "Send to PayPal", state: sent ? "done" : approved ? "current" : "todo" },
+  ];
+  const conflictDate = findings.some((f) => f.field === "delivery_date");
+  const read = analysis?.agent.tool_calls.filter((t) => t.tool === "read_evidence" && t.ok).length ?? 0;
+  const claimCount = draft?.claims.length ?? 0;
 
   return (
-    <div className="space-y-4">
-      <Link href="/disputes" className="text-sm text-action hover:underline">← All disputes</Link>
-
-      {/* Summary bar */}
-      <div className="flex flex-wrap items-start justify-between gap-4 rounded-card border border-hairline bg-surface p-5">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-[24px] leading-tight text-ink">{dispute.provider_dispute_id}</h1>
-            <OriginBadge origin={dispute.origin} />
-            <StateBadge state={dispute.internal_state} />
+    <>
+      <AppHeader back />
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-20 pt-8">
+        <section aria-label="What happened" className="glass-strong flex flex-col gap-6 rounded-[28px] p-6 sm:p-8">
+          <div className="flex flex-wrap justify-between gap-5">
+            <div className="flex max-w-2xl flex-col gap-2.5">
+              <span className="self-start rounded-full bg-grey-bg px-3 py-1 text-[13px] text-grey-ink">{origin(dispute.origin)}</span>
+              <h1 className="text-[28px] leading-tight sm:text-[34px]">{headline}</h1>
+              <p className="text-lg text-ink-soft">{detail}</p>
+            </div>
+            <div className={`flex flex-col gap-1 self-start rounded-[20px] px-5 py-4 ${due.urgent ? BOX.red : BOX.grey}`}>
+              <span className="text-sm">{dispute.deadline_at ? "Reply to PayPal by" : "Deadline"}</span>
+              <span className="text-2xl font-semibold">{deadlineDate}</span>
+              {due.short && <span className="text-sm">{due.short}</span>}
+            </div>
           </div>
-          <p className="mt-1 text-sm text-ink-muted">
-            {label(dispute.reason)} · PayPal: {label(dispute.provider_status)}
-            {dispute.lifecycle_stage ? ` · ${label(dispute.lifecycle_stage)}` : ""}
-            {dispute.case_ref ? ` · ${dispute.case_ref}` : ""}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-[28px] font-semibold tabular-nums tracking-tight">{money(dispute.amount)}</div>
-          <div className={`text-sm ${due.urgent ? "font-medium text-bad-ink" : "text-ink-muted"}`}>
-            Respond by {due.text}
-          </div>
-        </div>
-      </div>
+          <Progress steps={steps} />
+        </section>
 
-      {!analysis ? (
-        <Card title="Analysis">
-          <p className="text-sm text-ink-muted">The agent has not analyzed this dispute yet. It runs automatically after a sync.</p>
-        </Card>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-3">
-          {/* Left: evidence */}
-          <div className="space-y-4">
-            <Card title="Evidence" aside={<span className="text-xs text-ink-muted">{evidence.length} documents</span>}>
-              {evidence.length === 0 && <p className="text-sm text-ink-muted">No documents attached.</p>}
-              <div className="space-y-3">
-                {evidence.map((doc) => (
-                  <div key={doc.evidence_id} className="rounded-xl border border-hairline">
-                    <div className="flex items-center justify-between border-b border-hairline px-3 py-1.5">
-                      <span className="font-mono text-xs">{doc.evidence_id}</span>
-                      <span className="text-xs text-ink-muted">{label(doc.type)}</span>
+        <div className="flex flex-wrap items-start gap-6">
+          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">
+            {analysis && findings.length > 0 && (
+              <section aria-label="Details to check" className="glass flex flex-col gap-3.5 rounded-[26px] p-6">
+                <h2 className="text-[22px]">{findings.length === 1 ? "1 detail to check" : `${findings.length} details to check`}</h2>
+                {findings.map((f, i) => {
+                  const e = explain(f, analysis.facts, currency);
+                  const docs = [...new Set(f.source_refs.map((r) => r.evidence_id))];
+                  return (
+                    <div key={`${f.field}-${i}`} className={`flex flex-col gap-2 rounded-[18px] px-5 py-4 ${BOX[e.tone]}`}>
+                      <span className="text-[17px] font-semibold">{e.title}</span>
+                      <span>{e.body}</span>
+                      {docs.length > 0 && (
+                        <span className="flex flex-wrap gap-4 text-[15px]">
+                          {docs.map((evId) => (
+                            <a key={evId} href={`#${evId}`} className="text-action underline-offset-2 hover:underline">
+                              See {docName(evidence.find((d) => d.evidence_id === evId)?.type).toLowerCase()}
+                            </a>
+                          ))}
+                        </span>
+                      )}
                     </div>
-                    <ol className="px-3 py-2 font-mono text-xs leading-5">
-                      {doc.lines.map((l) => {
-                        const key = `${doc.evidence_id}-L${l.line}`;
-                        const tone = flagged.has(key)
-                          ? "bg-flag"
-                          : cited.has(key) ? "bg-cited" : "";
-                        return (
-                          <li key={key} id={key} className={`flex gap-2 rounded px-1 scroll-mt-20 target:ring-2 target:ring-action ${tone}`}>
-                            <span className="w-4 shrink-0 select-none text-right text-ink-muted">{l.line}</span>
-                            <span className="break-all">{l.text}</span>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </div>
-                ))}
+                  );
+                })}
+              </section>
+            )}
+
+            <section aria-label="Your reply" className="glass-strong flex flex-col gap-4 rounded-[26px] p-6">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-[22px]">Your reply to PayPal</h2>
+                <span className="text-sm text-ink-muted">Written by SAL from your documents</span>
               </div>
-              <p className="mt-3 text-xs text-ink-muted">Document text is untrusted data; instructions inside it are never followed.</p>
-            </Card>
-          </div>
-
-          {/* Center: facts and gaps */}
-          <div className="space-y-4">
-            <Card
-              title="Needs your attention"
-              aside={analysis.review_required ? <Badge tone="warn">Review required</Badge> : <Badge tone="good">No gaps found</Badge>}
-            >
-              {missing.length === 0 && conflicts.length === 0 && (
-                <p className="text-sm text-ink-muted">No missing evidence or conflicts under rule set {analysis.rule_version}.</p>
-              )}
-              <ul className="space-y-2 text-sm">
-                {missing.map((m) => (
-                  <li key={`m-${m.field}`} className="rounded-xl bg-bad-bg p-3">
-                    <div className="font-medium text-bad-ink">Missing: {label(m.field)}</div>
-                    <div className="text-bad-ink opacity-90">{m.description}</div>
-                  </li>
-                ))}
-                {conflicts.map((c, i) => (
-                  <li key={`c-${c.field}-${i}`} className="rounded-xl bg-warn-bg p-3">
-                    <div className="font-medium text-warn-ink">Conflict: {label(c.field)}</div>
-                    <div className="text-warn-ink opacity-90">{c.description}</div>
-                    <div className="mt-1 flex flex-wrap gap-2">
-                      {c.source_refs.map((r) => <SourceLink key={`${r.evidence_id}-${r.line}`} evidenceId={r.evidence_id} line={r.line} />)}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            <Card title="Facts found in evidence" aside={<span className="text-xs text-ink-muted">{facts.length}</span>}>
-              <dl className="divide-y divide-divider text-sm">
-                {facts.map((f) => (
-                  <div key={`${f.field}-${f.value}`} className="flex items-start justify-between gap-3 py-1.5">
-                    <dt className="text-ink-muted">{label(f.field)}</dt>
-                    <dd className="text-right">
-                      <div className={`font-mono ${f.status === "conflicted" ? "text-warn-ink line-through" : ""}`}>
-                        {f.value}
-                      </div>
-                      <SourceLink evidenceId={f.source.evidence_id} line={f.source.line} />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              {rejected.length > 0 && (
-                <p className="mt-2 text-xs text-ink-muted">{rejected.length} extracted value(s) rejected: not found in the cited line.</p>
-              )}
-            </Card>
-          </div>
-
-          {/* Right: draft, actions, agent trail */}
-          <div className="space-y-4">
-            <Card
-              title="Draft response"
-              aside={analysis.draft && <span className="text-xs text-ink-muted">Revision {analysis.draft.revision} · {label(analysis.draft.status)}</span>}
-            >
-              {!analysis.draft || analysis.draft.claims.length === 0 ? (
-                <p className="text-sm text-ink-muted">No statements could be supported by verified facts.</p>
+              {!draft || claimCount === 0 ? (
+                <p className="text-ink-soft">SAL couldn’t back any statement with your documents yet. Add the missing documents and it will write the reply.</p>
               ) : (
-                <ul className="space-y-2 text-sm">
-                  {analysis.draft.claims.map((c, i) => (
-                    <li key={i} className="rounded-xl border border-hairline p-3">
-                      {c.text}
-                      <div className="mt-1 text-xs text-ink-muted">Based on: {c.fact_fields.map(label).join(", ")}</div>
-                    </li>
-                  ))}
-                </ul>
+                <div className="rounded-[18px] border border-hairline bg-surface px-5 py-4 text-[17px] leading-relaxed">
+                  {draft.claims.map((c, i) => <p key={i} className="mb-2 last:mb-0">{c.text}</p>)}
+                  {conflictDate && <p className="mt-2 text-ink-muted">The delivery date will be added once you confirm it above.</p>}
+                </div>
               )}
-              {analysis.draft && (
+              {claimCount > 0 && <p className="text-sm text-ink-muted">Every sentence comes from one of your documents.</p>}
+              {draft && analysis && (
                 <DraftActions
                   disputeId={dispute.id}
-                  draftId={analysis.draft.id}
-                  revision={analysis.draft.revision}
+                  draftId={draft.id}
+                  revision={draft.revision}
                   snapshotHash={analysis.snapshot_hash}
-                  status={analysis.draft.status}
+                  status={draft.status}
                   sandbox={dispute.origin === "PAYPAL_SANDBOX"}
                   canProvideEvidence={dispute.allowed_actions.includes("provide_evidence")}
-                  reviewRequired={analysis.review_required}
+                  openItems={findings.length}
                 />
               )}
-            </Card>
+            </section>
+          </div>
 
-            <Card title="PayPal actions">
-              <ul className="flex flex-wrap gap-2">
-                {PAYPAL_ACTIONS.map((a) => (
-                  <li key={a}>
-                    <Badge tone={dispute.allowed_actions.includes(a) ? "good" : "neutral"}>
-                      {label(a)} {dispute.allowed_actions.includes(a) ? "· available" : "· not offered"}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-ink-muted">Only actions PayPal offers for the current status can be used.</p>
-            </Card>
+          <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-6">
+            {facts.length > 0 && (
+              <section aria-label="What your documents show" className="glass flex flex-col rounded-[26px] p-6">
+                <h2 className="mb-2.5 text-xl">What your documents show</h2>
+                <dl>
+                  {facts.map((f) => (
+                    <div key={f.label} className="flex justify-between gap-3 border-t border-hairline py-2.5 text-[15px]">
+                      <dt className="text-ink-soft">{f.label}</dt>
+                      <dd className={`text-right font-medium ${f.doubtful ? "text-amber-ink" : ""}`}>
+                        {f.value}
+                        {f.doubtful && <span className="block text-[13px] font-normal">please check</span>}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            )}
 
-            <Card title="Agent trail" aside={<span className="text-xs text-ink-muted">{analysis.agent.steps} steps</span>}>
-              <ol className="space-y-1 text-xs">
-                {analysis.agent.tool_calls.map((t) => (
-                  <li key={t.step} className="flex gap-2">
-                    <span className="w-4 text-right text-ink-muted">{t.step}</span>
-                    <span className={t.ok ? "" : "text-bad-ink"}>
-                      <span className="font-mono">{t.tool}</span> — {t.summary}
+            <section aria-label="Documents" className="glass flex flex-col gap-2.5 rounded-[26px] p-6">
+              <h2 className="text-xl">Documents ({evidence.length})</h2>
+              {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
+              {evidence.map((doc) => (
+                <details key={doc.evidence_id} id={doc.evidence_id} className="scroll-mt-24 rounded-2xl bg-surface/80 open:bg-surface">
+                  <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3.5 px-3.5 py-2.5">
+                    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--action)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
+                    <span className="flex flex-1 flex-col">
+                      <span className="font-medium">{docName(doc.type)}</span>
+                      <span className={`text-[13px] ${flaggedDocs.has(doc.evidence_id) ? "text-amber-ink" : "text-ink-muted"}`}>
+                        {flaggedDocs.has(doc.evidence_id) ? "Has a detail to check" : "Looks consistent"}
+                      </span>
                     </span>
-                  </li>
-                ))}
-              </ol>
-              <p className="mt-2 text-xs text-ink-muted">
-                {analysis.agent.roles} · snapshot <span className="font-mono">{analysis.snapshot_hash.slice(0, 12)}</span>
-              </p>
-            </Card>
+                    <span aria-hidden="true" className="text-ink-muted">›</span>
+                  </summary>
+                  <div className="border-t border-hairline px-4 py-3 text-sm leading-6 text-ink-soft">
+                    {doc.lines.map((l) => <p key={l.line}>{l.text}</p>)}
+                    <p className="mt-2 text-xs text-ink-muted">Shown exactly as received. Any instructions inside are never followed.</p>
+                  </div>
+                </details>
+              ))}
+            </section>
+
+            {analysis && (
+              <section aria-label="How SAL prepared this" className="glass flex flex-col gap-2.5 rounded-[22px] p-6">
+                <h2 className="text-[17px]">How SAL prepared this</h2>
+                <p className="text-[15px] text-ink-soft">
+                  Read {read} document{read === 1 ? "" : "s"}, found {facts.length} details, flagged {findings.length} to check,
+                  and wrote {claimCount} sentence{claimCount === 1 ? "" : "s"} using only what the documents say.
+                  SAL can’t send anything or issue refunds on its own.
+                </p>
+              </section>
+            )}
           </div>
         </div>
-      )}
-    </div>
+      </main>
+    </>
   );
 }

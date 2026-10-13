@@ -275,3 +275,32 @@ def mark_webhook_processed(session: Session, event_id: UUID, error: str | None =
 def merchant_for_paypal_account(session: Session, paypal_merchant_id: str) -> UUID | None:
     return session.execute(text("SELECT merchant_id FROM paypal_connections WHERE paypal_merchant_id = :p"),
                            {"p": paypal_merchant_id}).scalar()
+
+
+def case_summaries(session: Session, dispute_ids: list[UUID]) -> dict[UUID, dict[str, Any]]:
+    """What a person needs on the queue: the product, the order, how many things to check, draft state.
+    One query for the whole page (lateral joins on the latest analysis and draft)."""
+    if not dispute_ids:
+        return {}
+    rows = session.execute(text("""
+        SELECT d.id,
+               d.provider_payload #>> '{disputed_transactions,0,items,0,item_name}' AS item,
+               d.provider_payload #>> '{disputed_transactions,0,invoice_number}'    AS invoice,
+               a.findings, a.facts, dr.status AS draft_status
+        FROM disputes d
+        LEFT JOIN LATERAL (SELECT findings, facts FROM analyses
+                           WHERE dispute_id = d.id ORDER BY created_at DESC LIMIT 1) a ON true
+        LEFT JOIN LATERAL (SELECT status FROM drafts
+                           WHERE dispute_id = d.id ORDER BY revision DESC LIMIT 1) dr ON true
+        WHERE d.id = ANY(:ids)"""), {"ids": list(dispute_ids)}).all()
+    out: dict[UUID, dict[str, Any]] = {}
+    for r in rows:
+        findings = r.findings or []
+        order = next((f["value"] for f in (r.facts or []) if f["field"] == "order_id" and f["status"] != "rejected"),
+                     r.invoice)
+        item = (r.item or "").removeprefix("SAL synthetic test: ").strip() or None
+        out[r.id] = {"item": item, "order_ref": order,
+                     "missing": sum(1 for f in findings if f["kind"] == "missing"),
+                     "conflicts": sum(1 for f in findings if f["kind"] == "conflict"),
+                     "draft_status": r.draft_status}
+    return out

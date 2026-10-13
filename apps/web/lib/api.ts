@@ -18,6 +18,13 @@ export type Dispute = {
   deadline_at: string | null;
   allowed_actions: string[];
   version: number;
+  summary: {
+    item: string | null;
+    order_ref: string | null;
+    missing: number;
+    conflicts: number;
+    draft_status: string | null;
+  } | null;
 };
 
 export type SourceRef = { evidence_id: string; line: number };
