@@ -97,14 +97,21 @@ def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
     return s
 
 
-def evaluate(split: str, planner=None, extractor=None, drafter=None) -> dict[str, Score]:
+def evaluate(split: str, planner=None, extractor=None, drafter=None, limit: int | None = None) -> dict[str, Score]:
     planner, extractor, drafter = planner or ReadAllPlanner(), extractor or RuleExtractor(), drafter or TemplateDrafter()
     by_scenario: dict[str, Score] = defaultdict(Score)
-    for case in load_cases(split):
+    cases = load_cases(split)
+    if limit:  # one case per scenario first, so a small run still covers every scenario
+        cases = sorted(cases, key=lambda c: [x['case_id'] for x in cases if x['scenario'] == c['scenario']].index(c['case_id']))[:limit]
+    for i, case in enumerate(cases, 1):
+        print(f"[{i}/{len(cases)}] {case['case_id']} ...", end=" ", flush=True)
+        t0 = time.perf_counter()
         try:
             result = analyze(to_case_input(case), planner, extractor, drafter)
+            print(f"ok {time.perf_counter() - t0:.1f}s", flush=True)
             by_scenario[case["scenario"]].add(score_case(case, result))
         except Exception as exc:  # noqa: BLE001 — a crash is a measured worker error, not a silent skip
+            print(f"ERROR {type(exc).__name__}", flush=True)
             by_scenario[case["scenario"]].add(Score(cases=1, errors=[f"{case['case_id']}: {exc!r}"]))
     return dict(by_scenario)
 
@@ -135,6 +142,7 @@ def main() -> None:
     parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout"])
     parser.add_argument("--final", action="store_true", help="required to touch the holdout split")
     parser.add_argument("--roles", default="baseline", choices=["baseline", "llm"])
+    parser.add_argument("--limit", type=int, help="score only N cases (free-tier quotas)")
     args = parser.parse_args()
     if args.split == "holdout" and not args.final:
         raise SystemExit("Holdout is locked until rules and prompts are frozen. Re-run with --final.")
@@ -144,10 +152,10 @@ def main() -> None:
         from app.config import get_settings
         get_settings()  # loads apps/api/.env
         llm = LLMRoles()
-        scores = evaluate(args.split, extractor=llm, drafter=llm)
+        scores = evaluate(args.split, extractor=llm, drafter=llm, limit=args.limit)
         print(f"split={args.split} roles=llm model={llm.model}")
     else:
-        scores = evaluate(args.split)
+        scores = evaluate(args.split, limit=args.limit)
         print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor, TemplateDrafter)")
     print(report(scores))
     print(f"runtime: {time.perf_counter() - started:.2f}s")

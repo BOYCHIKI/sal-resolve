@@ -71,7 +71,7 @@ class LLMRoles:
         self.client = client or OpenAI(
             api_key=os.environ["SAL_LLM_API_KEY"],
             base_url=os.environ.get("SAL_LLM_BASE_URL", DEFAULT_BASE_URL),
-            max_retries=5,      # free tiers rate-limit; the SDK backs off on 429
+            max_retries=2,      # free tiers have tiny daily quotas; retries spend them
             timeout=60,
         )
 

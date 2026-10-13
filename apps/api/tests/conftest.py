@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import os
+
+# Tests never call a real LLM: an empty key makes the worker use the deterministic baseline roles,
+# and .env loading uses setdefault, so a key in apps/api/.env cannot override this.
+os.environ["SAL_LLM_API_KEY"] = ""
+
 from pathlib import Path
 from uuid import UUID
 
