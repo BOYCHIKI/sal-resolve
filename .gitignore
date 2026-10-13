@@ -3,3 +3,7 @@
 __pycache__/
 *.pyc
 .venv/
+
+# API local env
+apps/api/.env
+.pytest_cache/

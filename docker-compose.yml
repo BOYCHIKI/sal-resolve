@@ -1,0 +1,21 @@
+# Local development database only. Passwords here are dev-only and never used in deployment.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev_only
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - ./apps/api/db/init:/docker-entrypoint-initdb.d:ro
+      - sal_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sal"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  sal_pgdata:
