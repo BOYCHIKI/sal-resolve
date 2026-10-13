@@ -10,10 +10,12 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import repositories as repo
+from app import submission
 from app.config import get_settings
 from app.db import app_engine, tenant_session
 from app.paypal import PayPalDisputes
@@ -146,7 +148,7 @@ def get_analysis(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)
             WHERE a.dispute_id = :d ORDER BY a.created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
         if a is None:
             raise HTTPException(404, detail={"code": "ANALYSIS_NOT_FOUND", "retryable": False})
-        draft = s.execute(text("""SELECT revision, status, claims FROM drafts
+        draft = s.execute(text("""SELECT id, revision, status, claims FROM drafts
                                   WHERE analysis_id = :a ORDER BY revision DESC LIMIT 1"""), {"a": a.id}).first()
         tools = s.execute(text("""SELECT step, tool, args, ok, summary FROM tool_calls
                                   WHERE agent_run_id = :r ORDER BY step"""), {"r": a.run_id}).all()
@@ -154,7 +156,8 @@ def get_analysis(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)
         "analysis_id": str(a.id), "dispute_version": a.dispute_version, "rule_version": a.rule_version,
         "review_required": a.review_required, "snapshot_hash": a.snapshot_hash,
         "facts": a.facts, "findings": a.findings,
-        "draft": {"revision": draft.revision, "status": draft.status, "claims": draft.claims} if draft else None,
+        "draft": {"id": str(draft.id), "revision": draft.revision, "status": draft.status,
+                  "claims": draft.claims} if draft else None,
         "agent": {"roles": a.roles, "steps": a.steps,
                   "tool_calls": [dict(t._mapping) for t in tools]},
     }
@@ -170,3 +173,39 @@ def list_evidence(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant
                          {"d": dispute_id}).all()
     return {"items": [{"evidence_id": r.evidence_id, "type": r.doc_type, "lines": r.content_lines or []}
                       for r in rows]}
+
+
+# ---------------------------------------------------------------- approval and submission
+class ApproveBody(BaseModel):
+    revision: int
+    snapshot_hash: str
+
+
+DEMO_ACTOR = "operator:demo"  # replaced by the authenticated user once auth exists
+
+
+def paypal_sink() -> submission.EvidenceSink:
+    return PayPalDisputes()
+
+
+def _submission_error(exc: submission.SubmissionError) -> HTTPException:
+    return HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": exc.status >= 500})
+
+
+@app.post("/api/drafts/{draft_id}/approve")
+def approve_draft(draft_id: UUID, body: ApproveBody, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """The operator approves the exact revision and analysis snapshot they reviewed."""
+    try:
+        return submission.approve(merchant_id, draft_id, body.revision, body.snapshot_hash, DEMO_ACTOR)
+    except submission.SubmissionError as exc:
+        raise _submission_error(exc) from None
+
+
+@app.post("/api/drafts/{draft_id}/submit")
+def submit_draft(draft_id: UUID, merchant_id: UUID = Depends(current_merchant),
+                 paypal: submission.EvidenceSink = Depends(paypal_sink)) -> dict:
+    """Send an approved draft to PayPal Sandbox as evidence. Never called by the agent."""
+    try:
+        return submission.submit(merchant_id, draft_id, DEMO_ACTOR, paypal)
+    except submission.SubmissionError as exc:
+        raise _submission_error(exc) from None

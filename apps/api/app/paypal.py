@@ -1,6 +1,7 @@
 """PayPal Sandbox Disputes adapter (read side). Promoted from spikes/paypal_sandbox; sandbox only."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -86,6 +87,17 @@ class PayPalDisputes:
                 break
             path, params = httpx.URL(nxt).raw_path.decode(), None
         return out
+
+    def provide_evidence(self, dispute_id: str, payload: dict[str, Any],
+                         files: list[tuple[str, bytes]]) -> dict[str, Any]:
+        """Multipart: one `input` JSON part plus `evidence-file` parts (format proven in spike S6)."""
+        parts: list[tuple[str, tuple[str | None, Any, str]]] = [
+            ("input", (None, json.dumps(payload), "application/json"))]
+        parts += [("evidence-file", (name, data, "application/pdf")) for name, data in files]
+        r = self._http.post(f"/v1/customer/disputes/{dispute_id}/provide-evidence", files=parts,
+                            headers=self._auth())
+        r.raise_for_status()
+        return r.json() if r.content else {}
 
     def verify_webhook(self, headers: dict[str, str], event: dict[str, Any], webhook_id: str) -> bool:
         body = {

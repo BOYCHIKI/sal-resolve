@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Card, OriginBadge, primaryButton, SourceLink, StateBadge } from "@/components/ui";
+import { DraftActions } from "@/components/DraftActions";
+import { Badge, Card, OriginBadge, SourceLink, StateBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { deadline, label, money } from "@/lib/format";
 
@@ -152,13 +153,18 @@ export default async function CaseWorkspace({ params }: { params: Promise<{ id: 
                   ))}
                 </ul>
               )}
-              <button
-                disabled
-                title="Approval and submission to PayPal are the next step to build."
-                className={`mt-4 w-full ${primaryButton}`}
-              >
-                Approve &amp; send to PayPal (coming next)
-              </button>
+              {analysis.draft && (
+                <DraftActions
+                  disputeId={dispute.id}
+                  draftId={analysis.draft.id}
+                  revision={analysis.draft.revision}
+                  snapshotHash={analysis.snapshot_hash}
+                  status={analysis.draft.status}
+                  sandbox={dispute.origin === "PAYPAL_SANDBOX"}
+                  canProvideEvidence={dispute.allowed_actions.includes("provide_evidence")}
+                  reviewRequired={analysis.review_required}
+                />
+              )}
             </Card>
 
             <Card title="PayPal actions">

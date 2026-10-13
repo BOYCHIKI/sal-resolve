@@ -45,7 +45,7 @@ export type Analysis = {
   snapshot_hash: string;
   facts: Fact[];
   findings: Finding[];
-  draft: { revision: number; status: string; claims: { text: string; fact_fields: string[] }[] } | null;
+  draft: { id: string; revision: number; status: string; claims: { text: string; fact_fields: string[] }[] } | null;
   agent: {
     roles: string;
     steps: number;
@@ -64,6 +64,20 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
   return (await res.json()) as T;
 }
 
+/** For actions whose error codes the UI should show (409 stale, 502 PayPal rejected, ...). */
+export type ActionResult = { ok: true } | { ok: false; code: string; message: string };
+
+async function action(path: string, body?: unknown): Promise<ActionResult> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST", cache: "no-store",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.ok) return { ok: true };
+  const detail = (await res.json().catch(() => ({})))?.detail ?? {};
+  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Request failed" };
+}
+
 export const api = {
   listDisputes: async () => (await call<{ items: Dispute[] }>("/api/disputes?limit=100"))?.items ?? [],
   getDispute: (id: string) => call<Dispute>(`/api/disputes/${encodeURIComponent(id)}`),
@@ -71,5 +85,8 @@ export const api = {
   getEvidence: async (id: string) =>
     (await call<{ items: EvidenceDoc[] }>(`/api/disputes/${encodeURIComponent(id)}/evidence`))?.items ?? [],
   sync: () => call<{ job_id: string }>("/api/disputes/sync", { method: "POST" }),
+  approveDraft: (id: string, revision: number, snapshotHash: string) =>
+    action(`/api/drafts/${encodeURIComponent(id)}/approve`, { revision, snapshot_hash: snapshotHash }),
+  submitDraft: (id: string) => action(`/api/drafts/${encodeURIComponent(id)}/submit`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
 };
