@@ -57,6 +57,22 @@ PayPal ─► POST /webhooks/paypal ─► verify signature ─► webhook_event
 - The API role can only *insert* webhooks; it cannot read their payloads or the PayPal account mapping.
 - Unroutable webhooks are kept with an `error`, never silently dropped.
 
+## Agent (ADR-002)
+
+`app/agent/` runs a fixed pipeline with one bounded agentic stage:
+`load → gather (read-only tools, max 8 steps) → extract → ground → INR rules → snapshot → draft → verify`.
+The worker runs it as job `analyze_dispute`, queued automatically when a sync changes a dispute
+(one job per dispute version). Results are stored in `agent_runs`, `tool_calls`, `analyses` (append-only)
+and a new `drafts` revision; `GET /api/disputes/{id}/analysis` returns them.
+
+Planner, Extractor and Drafter are provider-neutral protocols. Deterministic baselines run today:
+
+```
+python -m app.agent.evaluate                     # development split
+python -m app.agent.evaluate --split calibration
+python -m app.agent.evaluate --split holdout --final
+```
+
 ## Performance notes
 
 - Policies call `(SELECT current_merchant_id())`, evaluated once per query as an InitPlan.

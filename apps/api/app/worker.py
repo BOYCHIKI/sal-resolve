@@ -39,9 +39,12 @@ Handler = Callable[[repo.ClaimedJob, "Context"], dict[str, Any]]
 
 
 class Context:
-    def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource]) -> None:
+    def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource],
+                 roles_factory: Callable[[], Any] | None = None) -> None:
+        from app.agent.runner import baseline_roles
         self.engine = engine
         self.paypal_factory = paypal_factory
+        self.roles_factory = roles_factory or baseline_roles
 
 
 def _sync_all(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
@@ -55,9 +58,17 @@ def _sync_one(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     return sync.sync_one(job.merchant_id, ctx.paypal_factory(), dispute_id, ctx.engine)
 
 
+def _analyze(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    if job.target_id is None:
+        raise PermanentError("analyze_dispute job without target dispute")
+    from app.agent.runner import run_analysis
+    return run_analysis(job.merchant_id, job.target_id, job.id, ctx.roles_factory(), ctx.engine)
+
+
 HANDLERS: dict[str, Handler] = {
     "sync_disputes": _sync_all,
     "sync_dispute": _sync_one,
+    "analyze_dispute": _analyze,
 }
 
 

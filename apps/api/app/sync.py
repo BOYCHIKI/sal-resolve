@@ -30,6 +30,11 @@ def _parse(ts: str | None) -> datetime | None:
     return datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
 
 
+def _queue_analysis(session, merchant_id: UUID, row: repo.DisputeRow) -> None:
+    """One analysis per dispute version; duplicates (webhook + poll) collapse on the key."""
+    repo.enqueue_job(session, merchant_id, "analyze_dispute", f"analyze:{row.id}:v{row.version}", row.id)
+
+
 def sync_all(merchant_id: UUID, source: DisputeSource, engine: Engine | None = None) -> dict[str, int]:
     with tenant_session(merchant_id, engine) as s:
         known = {pid: ts for pid, ts in s.execute(text(
@@ -45,8 +50,10 @@ def sync_all(merchant_id: UUID, source: DisputeSource, engine: Engine | None = N
     changed = 0
     with tenant_session(merchant_id, engine) as s:
         for raw in fetched:
-            _, did_change = repo.upsert_provider_dispute(s, merchant_id, to_internal(raw), redact(raw))
+            row, did_change = repo.upsert_provider_dispute(s, merchant_id, to_internal(raw), redact(raw))
             changed += did_change
+            if did_change:
+                _queue_analysis(s, merchant_id, row)
         repo.write_audit(s, merchant_id, "system:paypal-sync", "disputes.synced",
                          summary={"listed": len(summaries), "fetched": len(fetched), "changed": changed})
     return {"listed": len(summaries), "fetched": len(fetched), "changed": changed}
@@ -56,7 +63,9 @@ def sync_one(merchant_id: UUID, source: DisputeSource, dispute_id: str,
              engine: Engine | None = None) -> dict[str, int]:
     raw = source.get(dispute_id)
     with tenant_session(merchant_id, engine) as s:
-        _, changed = repo.upsert_provider_dispute(s, merchant_id, to_internal(raw), redact(raw))
+        row, changed = repo.upsert_provider_dispute(s, merchant_id, to_internal(raw), redact(raw))
+        if changed:
+            _queue_analysis(s, merchant_id, row)
         repo.write_audit(s, merchant_id, "system:paypal-sync", "dispute.synced", target=dispute_id,
                          summary={"changed": changed})
     return {"fetched": 1, "changed": int(changed)}

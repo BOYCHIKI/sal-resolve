@@ -10,6 +10,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import repositories as repo
@@ -132,3 +133,28 @@ async def paypal_webhook(request: Request, verify: WebhookVerifier = Depends(pay
     with Session(app_engine()) as s, s.begin():
         stored = repo.insert_webhook_event(s, event)
     return {"received": True, "duplicate": not stored}
+
+
+@app.get("/api/disputes/{dispute_id}/analysis")
+def get_analysis(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """Latest analysis, its current draft and the agent's tool trail (for the Case Workspace)."""
+    with tenant_session(merchant_id) as s:
+        a = s.execute(text("""
+            SELECT a.id, a.dispute_version, a.rule_version, a.facts, a.findings, a.review_required,
+                   a.snapshot_hash, a.created_at, r.id AS run_id, r.roles, r.steps
+            FROM analyses a JOIN agent_runs r ON r.id = a.agent_run_id
+            WHERE a.dispute_id = :d ORDER BY a.created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
+        if a is None:
+            raise HTTPException(404, detail={"code": "ANALYSIS_NOT_FOUND", "retryable": False})
+        draft = s.execute(text("""SELECT revision, status, claims FROM drafts
+                                  WHERE analysis_id = :a ORDER BY revision DESC LIMIT 1"""), {"a": a.id}).first()
+        tools = s.execute(text("""SELECT step, tool, args, ok, summary FROM tool_calls
+                                  WHERE agent_run_id = :r ORDER BY step"""), {"r": a.run_id}).all()
+    return {
+        "analysis_id": str(a.id), "dispute_version": a.dispute_version, "rule_version": a.rule_version,
+        "review_required": a.review_required, "snapshot_hash": a.snapshot_hash,
+        "facts": a.facts, "findings": a.findings,
+        "draft": {"revision": draft.revision, "status": draft.status, "claims": draft.claims} if draft else None,
+        "agent": {"roles": a.roles, "steps": a.steps,
+                  "tool_calls": [dict(t._mapping) for t in tools]},
+    }
