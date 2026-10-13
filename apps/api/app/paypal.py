@@ -70,10 +70,36 @@ class PayPalDisputes:
             self._token, self._expires = body["access_token"], time.time() + int(body.get("expires_in", 0))
         return {"Authorization": f"Bearer {self._token}"}
 
-    def list_dispute_ids(self, page_size: int = 50) -> list[str]:
-        r = self._http.get("/v1/customer/disputes", params={"page_size": page_size}, headers=self._auth())
+    def list_summaries(self, page_size: int = 50, max_pages: int = 20) -> dict[str, str | None]:
+        """dispute_id -> update_time for every dispute, following PayPal's `next` links."""
+        out: dict[str, str | None] = {}
+        params: dict[str, Any] | None = {"page_size": page_size}
+        path = "/v1/customer/disputes"
+        for _ in range(max_pages):
+            r = self._http.get(path, params=params, headers=self._auth())
+            r.raise_for_status()
+            body = r.json()
+            for item in body.get("items", []):
+                out[item["dispute_id"]] = item.get("update_time")
+            nxt = next((l["href"] for l in body.get("links", []) if l.get("rel") == "next"), None)
+            if not nxt:
+                break
+            path, params = httpx.URL(nxt).raw_path.decode(), None
+        return out
+
+    def verify_webhook(self, headers: dict[str, str], event: dict[str, Any], webhook_id: str) -> bool:
+        body = {
+            "auth_algo": headers.get("paypal-auth-algo"),
+            "cert_url": headers.get("paypal-cert-url"),
+            "transmission_id": headers.get("paypal-transmission-id"),
+            "transmission_sig": headers.get("paypal-transmission-sig"),
+            "transmission_time": headers.get("paypal-transmission-time"),
+            "webhook_id": webhook_id,
+            "webhook_event": event,
+        }
+        r = self._http.post("/v1/notifications/verify-webhook-signature", json=body, headers=self._auth())
         r.raise_for_status()
-        return [item["dispute_id"] for item in r.json().get("items", [])]
+        return r.json().get("verification_status") == "SUCCESS"
 
     def get(self, dispute_id: str) -> dict[str, Any]:
         r = self._http.get(f"/v1/customer/disputes/{dispute_id}", headers=self._auth())
