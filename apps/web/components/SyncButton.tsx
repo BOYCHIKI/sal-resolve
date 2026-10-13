@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { jobState, startSync } from "@/app/actions";
+import { primaryButton } from "@/components/ui";
 
 export function SyncButton() {
   const router = useRouter();
@@ -37,12 +38,8 @@ export function SyncButton() {
 
   return (
     <div className="flex items-center gap-3">
-      {status && <span className="text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">{status}</span>}
-      <button
-        onClick={onClick}
-        disabled={busy}
-        className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
+      {status && <span className="text-xs text-ink-muted" aria-live="polite">{status}</span>}
+      <button onClick={onClick} disabled={busy} className={primaryButton}>
         {busy ? "Syncing…" : "Sync PayPal"}
       </button>
     </div>

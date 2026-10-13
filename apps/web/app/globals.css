@@ -1,10 +1,95 @@
 @import "tailwindcss";
 
-/* Follow the OS light/dark preference (Tailwind's `dark:` variant uses prefers-color-scheme). */
+/*
+ * Tokens follow apps/web/DESIGN.md (Apple-inspired: one action blue, parchment canvas, white cards with
+ * hairlines, no shadows). Adapted for an operations tool: muted functional tints for warnings/conflicts,
+ * system font stack (resolves to SF on Apple devices; SF Pro itself is not shipped), and a dark mode.
+ */
 :root {
   color-scheme: light dark;
+  --ink: #1d1d1f;
+  --ink-muted: #6e6e73;
+  --canvas: #f5f5f7;          /* parchment page */
+  --surface: #ffffff;         /* cards */
+  --surface-pearl: #fafafc;
+  --hairline: #e0e0e0;
+  --divider: #f0f0f0;
+  --action: #0066cc;
+  --action-focus: #0071e3;
+  --nav: #000000;
+  --on-nav: #f5f5f7;
+  --warn-bg: #fff8e6;  --warn-ink: #8a5a00;
+  --bad-bg: #fff1f0;   --bad-ink: #b42318;
+  --good-bg: #edf8f0;  --good-ink: #1d7a3d;
+  --info-bg: #eaf3fd;  --info-ink: #0058b0;
+  --highlight-cited: #eaf3fd;
+  --highlight-flag: #fff1c7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f5f5f7;
+    --ink-muted: #a1a1a6;
+    --canvas: #000000;
+    --surface: #1d1d1f;
+    --surface-pearl: #272729;
+    --hairline: #38383a;
+    --divider: #2a2a2c;
+    --action: #2997ff;          /* Sky Link Blue on dark surfaces */
+    --action-focus: #2997ff;
+    --nav: #161617;
+    --warn-bg: #3a2e12;  --warn-ink: #ffd27a;
+    --bad-bg: #3b1715;   --bad-ink: #ff9b91;
+    --good-bg: #13301e;  --good-ink: #7ddc9b;
+    --info-bg: #10263f;  --info-ink: #8cc4ff;
+    --highlight-cited: #10263f;
+    --highlight-flag: #3a2e12;
+  }
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-pearl: var(--surface-pearl);
+  --color-hairline: var(--hairline);
+  --color-divider: var(--divider);
+  --color-action: var(--action);
+  --color-action-focus: var(--action-focus);
+  --color-nav: var(--nav);
+  --color-on-nav: var(--on-nav);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-ink: var(--warn-ink);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-ink: var(--bad-ink);
+  --color-good-bg: var(--good-bg);
+  --color-good-ink: var(--good-ink);
+  --color-info-bg: var(--info-bg);
+  --color-info-ink: var(--info-ink);
+  --color-cited: var(--highlight-cited);
+  --color-flag: var(--highlight-flag);
+  --radius-card: 18px;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.47;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* One focus treatment everywhere. */
+:focus-visible {
+  outline: 2px solid var(--action-focus);
+  outline-offset: 2px;
 }

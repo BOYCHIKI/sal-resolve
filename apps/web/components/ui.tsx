@@ -1,18 +1,18 @@
 import { label } from "@/lib/format";
 
 const tones = {
-  neutral: "bg-zinc-100 text-zinc-700 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:ring-zinc-700",
-  info: "bg-sky-50 text-sky-800 ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-900",
-  warn: "bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900",
-  bad: "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-950 dark:text-rose-200 dark:ring-rose-900",
-  good: "bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-900",
+  neutral: "bg-pearl text-ink-muted ring-hairline",
+  info: "bg-info-bg text-info-ink ring-transparent",
+  warn: "bg-warn-bg text-warn-ink ring-transparent",
+  bad: "bg-bad-bg text-bad-ink ring-transparent",
+  good: "bg-good-bg text-good-ink ring-transparent",
 };
 
 export type Tone = keyof typeof tones;
 
 export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: Tone }) {
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${tones[tone]}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${tones[tone]}`}>
       {children}
     </span>
   );
@@ -29,9 +29,9 @@ export function StateBadge({ state }: { state: string }) {
 
 export function Card({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <section className="rounded-card border border-hairline bg-surface p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
+        <h2 className="text-[17px] text-ink">{title}</h2>
         {aside}
       </div>
       {children}
@@ -41,8 +41,13 @@ export function Card({ title, children, aside }: { title: string; children: Reac
 
 export function SourceLink({ evidenceId, line }: { evidenceId: string; line: number }) {
   return (
-    <a href={`#${evidenceId}-L${line}`} className="font-mono text-xs text-sky-700 underline-offset-2 hover:underline dark:text-sky-400">
+    <a href={`#${evidenceId}-L${line}`} className="font-mono text-xs text-action hover:underline underline-offset-2">
       {evidenceId}:{line}
     </a>
   );
 }
+
+/** The single primary action style: Action Blue pill with the press micro-interaction. */
+export const primaryButton =
+  "inline-flex items-center justify-center rounded-full bg-action px-5 py-2 text-[15px] font-normal text-white " +
+  "transition-transform active:scale-95 disabled:cursor-not-allowed disabled:bg-hairline disabled:text-ink-muted disabled:active:scale-100";

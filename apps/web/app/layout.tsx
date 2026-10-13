@@ -11,16 +11,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
-        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <Link href="/disputes" className="text-base font-semibold tracking-tight">
-              SAL <span className="font-normal text-zinc-500">Resolve</span>
+      <body className="min-h-screen">
+        <header className="sticky top-0 z-10 bg-nav text-on-nav">
+          <div className="mx-auto flex h-11 max-w-6xl items-center justify-between px-4 text-xs">
+            <Link href="/disputes" className="text-[15px] font-semibold tracking-tight">
+              SAL <span className="font-normal opacity-70">Resolve</span>
             </Link>
-            <span className="text-xs text-zinc-500">Sandbox demo · no real customer data</span>
+            <span className="opacity-70">Sandbox demo · no real customer data</span>
           </div>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
       </body>
     </html>
   );
