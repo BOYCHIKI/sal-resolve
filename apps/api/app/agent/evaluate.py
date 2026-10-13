@@ -134,12 +134,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout"])
     parser.add_argument("--final", action="store_true", help="required to touch the holdout split")
+    parser.add_argument("--roles", default="baseline", choices=["baseline", "llm"])
     args = parser.parse_args()
     if args.split == "holdout" and not args.final:
         raise SystemExit("Holdout is locked until rules and prompts are frozen. Re-run with --final.")
     started = time.perf_counter()
-    scores = evaluate(args.split)
-    print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor, TemplateDrafter)")
+    if args.roles == "llm":
+        from app.agent.llm import LLMRoles
+        from app.config import get_settings
+        get_settings()  # loads apps/api/.env
+        llm = LLMRoles()
+        scores = evaluate(args.split, extractor=llm, drafter=llm)
+        print(f"split={args.split} roles=llm model={llm.model}")
+    else:
+        scores = evaluate(args.split)
+        print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor, TemplateDrafter)")
     print(report(scores))
     print(f"runtime: {time.perf_counter() - started:.2f}s")
 

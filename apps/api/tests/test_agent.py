@@ -153,3 +153,43 @@ def test_holdout_requires_final_flag(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["evaluate", "--split", "holdout"])
     with pytest.raises(SystemExit, match="locked"):
         ev.main()
+
+
+# --------------------------------------------------------------- LLM adapter (no network)
+class _FakeCompletions:
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+        self.calls = []
+
+    def parse(self, **kwargs):
+        self.calls.append(kwargs)
+        parsed = self.outputs.pop(0)
+        msg = type("M", (), {"parsed": parsed})()
+        return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
+
+
+def _fake_client(outputs):
+    completions = _FakeCompletions(outputs)
+    return type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})(), completions
+
+
+def test_llm_output_still_goes_through_grounding_and_claim_checks():
+    from app.agent.llm import LLMRoles, _Claim, _Claims, _Fact, _Facts
+    facts = _Facts(facts=[
+        _Fact(field="transaction_id", value="TXN-SYN-100000", evidence_id="SAL-INR-001-E02", line=1,
+              quote="SYNTHETIC PAYMENT RECORD | TXN-SYN-100000"),
+        _Fact(field="delivery_date", value="2026-07-09", evidence_id="SAL-INR-001-E04", line=3,  # hallucinated
+              quote="Delivery date: 2026-07-09"),
+    ])
+    claims = _Claims(claims=[
+        _Claim(text="The payment record references transaction TXN-SYN-100000.", fact_fields=["transaction_id"]),
+        _Claim(text="Delivery was confirmed on 2026-07-09.", fact_fields=["delivery_date"]),
+    ])
+    client, completions = _fake_client([facts, claims])
+    llm = LLMRoles(client=client, model="test-model")
+    result = analyze(case("SAL-INR-001"), ReadAllPlanner(), llm, llm)
+    assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"), ("delivery_date", "rejected")]
+    assert [c.text for c in result.claims] == ["The payment record references transaction TXN-SYN-100000."]
+    assert completions.calls[0]["temperature"] == 0
+    assert "untrusted" in completions.calls[0]["messages"][0]["content"].lower() or \
+        "never follow" in completions.calls[0]["messages"][0]["content"].lower()

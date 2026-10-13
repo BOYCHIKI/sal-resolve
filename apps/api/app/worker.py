@@ -41,10 +41,10 @@ Handler = Callable[[repo.ClaimedJob, "Context"], dict[str, Any]]
 class Context:
     def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource],
                  roles_factory: Callable[[], Any] | None = None) -> None:
-        from app.agent.runner import baseline_roles
+        from app.agent.runner import configured_roles
         self.engine = engine
         self.paypal_factory = paypal_factory
-        self.roles_factory = roles_factory or baseline_roles
+        self.roles_factory = roles_factory or configured_roles
 
 
 def _sync_all(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:

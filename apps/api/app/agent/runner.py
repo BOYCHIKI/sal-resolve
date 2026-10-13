@@ -30,6 +30,16 @@ def baseline_roles() -> Roles:
     return Roles(ReadAllPlanner(), RuleExtractor(), TemplateDrafter(), "baseline:ReadAll/RuleExtractor/Template")
 
 
+def configured_roles() -> Roles:
+    """LLM roles when an API key is configured, otherwise the deterministic baseline."""
+    import os
+    if not os.environ.get("SAL_LLM_API_KEY"):
+        return baseline_roles()
+    from app.agent.llm import LLMRoles
+    llm = LLMRoles()
+    return Roles(ReadAllPlanner(), llm, llm, f"llm:{llm.model}")
+
+
 def _requested(payload: dict[str, Any] | None) -> tuple[str, ...]:
     return tuple(e["evidence_type"] for e in (payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER" and e.get("evidence_type"))
