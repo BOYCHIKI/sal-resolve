@@ -99,6 +99,8 @@ def test_missing_conflict_and_review_flags():
     conflicting = analyze(case("SAL-INR-021"), ReadAllPlanner(), RuleExtractor(), TemplateDrafter())
     assert {c.field for c in conflicting.conflicts} == {"delivery_date", "reported_payment_amount"}
     assert not any("2026-08-20" in cl.text for cl in conflicting.claims), "conflicted date must not be asserted"
+    status = {f.field: f.status for f in conflicting.facts}
+    assert status["reported_payment_amount"] == "conflicted" and status["payment_amount"] == "supported"
 
     complete = analyze(case("SAL-INR-001"), ReadAllPlanner(), RuleExtractor(), TemplateDrafter())
     assert complete.findings == [] and not complete.review_required

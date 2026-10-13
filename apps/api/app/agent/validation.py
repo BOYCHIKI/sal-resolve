@@ -106,6 +106,8 @@ def apply_inr_rules(facts: list[Fact], documents: list[Document], dispute_amount
     if paid and reported and Decimal(paid.value) != Decimal(reported.value):
         findings.append(Finding("conflict", "reported_payment_amount", (paid.source, reported.source),
                                 "Buyer-reported amount differs from payment record; do not substitute"))
+        # Only the buyer's figure is in doubt; the settled payment record stays supported.
+        reported.status, reported.reason = "conflicted", "buyer-reported amount differs from payment record"
 
     for field in ("order_amount", "payment_amount"):
         f = first(field)

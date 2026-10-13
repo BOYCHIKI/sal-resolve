@@ -1,8 +1,6 @@
 """Agent persistence through the worker, against Postgres."""
 from __future__ import annotations
 
-import hashlib
-import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,7 +9,6 @@ from sqlalchemy.exc import ProgrammingError
 
 from app import repositories as repo
 from app import worker
-from app.agent.evaluate import load_cases
 from app.agent.runner import baseline_roles, run_analysis
 from app.db import tenant_session
 from app.seed import create_merchant
@@ -20,22 +17,12 @@ pytestmark = pytest.mark.db
 
 
 def seed_golden(app_engine, merchant: UUID, case_id: str) -> UUID:
-    case = next(c for c in load_cases("development") if c["case_id"] == case_id)
-    d = case["dispute"]
+    from app.seed_demo import seed_golden as seed
+    dispute_id = seed(app_engine, merchant, case_id)
     with tenant_session(merchant, app_engine) as s:
-        row, _ = repo.upsert_provider_dispute(s, merchant, {
-            "origin": "SYNTHETIC_FIXTURE", "provider_dispute_id": f"FX-{case_id}-{uuid4().hex[:6]}",
-            "custom": case_id, "reason": d["reason"], "amount": d["amount"], "provider_status": "OPEN"}, {})
-        for e in case["evidence"]:
-            lines = json.dumps(e["content_lines"])
-            s.execute(text("""INSERT INTO evidence (merchant_id, dispute_id, object_key, checksum, mime, size_bytes,
-                                                    uploaded_by, doc_type, content_lines, source_ref)
-                              VALUES (:m, :d, :k, :c, 'application/pdf', :n, 'seed', :t, CAST(:l AS jsonb), :ref)"""),
-                      {"m": merchant, "d": row.id, "k": f"{merchant}/{row.id}/{e['evidence_id']}.pdf",
-                       "c": hashlib.sha256(lines.encode()).hexdigest(), "n": len(lines), "t": e["type"],
-                       "l": lines, "ref": e["evidence_id"]})
-        repo.enqueue_job(s, merchant, "analyze_dispute", f"analyze:{row.id}:v{row.version}", row.id)
-    return row.id
+        version = s.execute(text("SELECT version FROM disputes WHERE id = :d"), {"d": dispute_id}).scalar()
+        repo.enqueue_job(s, merchant, "analyze_dispute", f"analyze:{dispute_id}:v{version}", dispute_id)
+    return dispute_id
 
 
 @pytest.fixture
@@ -143,5 +130,22 @@ def test_analysis_endpoint_is_tenant_scoped(merchant, app_engine, worker_engine)
         assert body["draft"]["revision"] == 1 and body["agent"]["tool_calls"][0]["tool"] == "list_evidence"
         app.dependency_overrides[current_merchant] = lambda: create_merchant("Snoop")
         assert client.get(f"/api/disputes/{dispute_id}/analysis").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_evidence_endpoint_is_tenant_scoped(merchant, app_engine):
+    from fastapi.testclient import TestClient
+
+    from app.main import app, current_merchant
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-001")
+    client = TestClient(app)
+    try:
+        app.dependency_overrides[current_merchant] = lambda: merchant
+        items = client.get(f"/api/disputes/{dispute_id}/evidence").json()["items"]
+        assert [i["evidence_id"] for i in items][:2] == ["SAL-INR-001-E01", "SAL-INR-001-E02"]
+        assert items[0]["lines"][0] == {"line": 1, "text": "SYNTHETIC INVOICE | ORD-SYN-4000"}
+        app.dependency_overrides[current_merchant] = lambda: create_merchant("Snoop2")
+        assert client.get(f"/api/disputes/{dispute_id}/evidence").json()["items"] == []
     finally:
         app.dependency_overrides.clear()

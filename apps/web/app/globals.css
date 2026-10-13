@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Follow the OS light/dark preference (Tailwind's `dark:` variant uses prefers-color-scheme). */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}

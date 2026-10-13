@@ -53,7 +53,7 @@ def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tup
             return None
         rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines
                                  FROM evidence WHERE dispute_id = :id AND content_lines IS NOT NULL
-                                 ORDER BY uploaded_at, id"""), {"id": dispute_id}).all()
+                                 ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"id": dispute_id}).all()
     docs = tuple(Document(r.evidence_id, r.doc_type or "unknown",
                           tuple(Line(int(l["line"]), str(l["text"])) for l in r.content_lines)) for r in rows)
     case = CaseInput(d.case_ref or d.provider_dispute_id, d.reason, f"{d.amount:.2f}", d.currency,

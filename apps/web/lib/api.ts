@@ -1,0 +1,75 @@
+import "server-only";
+
+// Server-side only: the browser never talks to the API directly, so no CORS and no exposed API URL.
+const API_URL = process.env.SAL_API_URL ?? "http://127.0.0.1:8000";
+
+export type Money = { value: string; currency: string };
+
+export type Dispute = {
+  id: string;
+  origin: "PAYPAL_SANDBOX" | "SYNTHETIC_FIXTURE";
+  provider_dispute_id: string;
+  case_ref: string | null;
+  reason: string;
+  amount: Money;
+  provider_status: string;
+  lifecycle_stage: string | null;
+  internal_state: string;
+  deadline_at: string | null;
+  allowed_actions: string[];
+  version: number;
+};
+
+export type SourceRef = { evidence_id: string; line: number };
+
+export type Fact = {
+  field: string;
+  value: string;
+  source: SourceRef;
+  status: "supported" | "conflicted" | "rejected";
+  reason: string | null;
+};
+
+export type Finding = {
+  kind: "missing" | "conflict";
+  field: string;
+  source_refs: SourceRef[];
+  description: string;
+};
+
+export type Analysis = {
+  analysis_id: string;
+  dispute_version: number;
+  rule_version: string;
+  review_required: boolean;
+  snapshot_hash: string;
+  facts: Fact[];
+  findings: Finding[];
+  draft: { revision: number; status: string; claims: { text: string; fact_fields: string[] }[] } | null;
+  agent: {
+    roles: string;
+    steps: number;
+    tool_calls: { step: number; tool: string; args: Record<string, unknown>; ok: boolean; summary: string }[];
+  };
+};
+
+export type EvidenceDoc = { evidence_id: string; type: string | null; lines: { line: number; text: string }[] };
+
+export type Job = { id: string; kind: string; state: string; attempts: number; error: string | null };
+
+async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init });
+  if (res.status === 404 || res.status === 422) return null; // unknown or malformed id
+  if (!res.ok) throw new Error(`SAL API ${res.status} on ${path}`);
+  return (await res.json()) as T;
+}
+
+export const api = {
+  listDisputes: async () => (await call<{ items: Dispute[] }>("/api/disputes?limit=100"))?.items ?? [],
+  getDispute: (id: string) => call<Dispute>(`/api/disputes/${encodeURIComponent(id)}`),
+  getAnalysis: (id: string) => call<Analysis>(`/api/disputes/${encodeURIComponent(id)}/analysis`),
+  getEvidence: async (id: string) =>
+    (await call<{ items: EvidenceDoc[] }>(`/api/disputes/${encodeURIComponent(id)}/evidence`))?.items ?? [],
+  sync: () => call<{ job_id: string }>("/api/disputes/sync", { method: "POST" }),
+  getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
+};

@@ -158,3 +158,15 @@ def get_analysis(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)
         "agent": {"roles": a.roles, "steps": a.steps,
                   "tool_calls": [dict(t._mapping) for t in tools]},
     }
+
+
+@app.get("/api/disputes/{dispute_id}/evidence")
+def list_evidence(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """Parsed evidence text with line numbers, so the UI can show the exact line behind each fact."""
+    with tenant_session(merchant_id) as s:
+        rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines,
+                                        uploaded_at
+                                 FROM evidence WHERE dispute_id = :d ORDER BY uploaded_at, source_ref NULLS LAST, id"""),
+                         {"d": dispute_id}).all()
+    return {"items": [{"evidence_id": r.evidence_id, "type": r.doc_type, "lines": r.content_lines or []}
+                      for r in rows]}
