@@ -7,3 +7,14 @@ __pycache__/
 # API local env
 apps/api/.env
 .pytest_cache/
+
+# Demo video build outputs (regenerate with demo-video/render.py)
+demo-video/*.mp4
+demo-video/*.wav
+demo-video/audio/
+demo-video/preview/
+demo-video/preview_promo/
+demo-video/check_*.png
+
+# Uploaded evidence (local demo storage)
+apps/api/storage/

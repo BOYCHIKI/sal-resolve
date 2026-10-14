@@ -8,13 +8,14 @@ from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import repositories as repo
+from app import evidence as evidence_store
 from app import submission
 from app.config import get_settings
 from app.db import app_engine, tenant_session
@@ -211,3 +212,19 @@ def submit_draft(draft_id: UUID, merchant_id: UUID = Depends(current_merchant),
         return submission.submit(merchant_id, draft_id, DEMO_ACTOR, paypal)
     except submission.SubmissionError as exc:
         raise _submission_error(exc) from None
+
+
+# ---------------------------------------------------------------- evidence upload
+@app.post("/api/disputes/{dispute_id}/evidence", status_code=201)
+async def upload_evidence(dispute_id: UUID, file: UploadFile = File(...), doc_type: str = Form(...),
+                          merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """Attach a document (PDF/JPG/PNG/GIF, < 10 MB). Its text is extracted and the case is re-analyzed."""
+    data = await file.read(evidence_store.MAX_BYTES + 1)  # never read more than the limit allows
+    try:
+        stored = await run_in_threadpool(
+            evidence_store.store, merchant_id, dispute_id, data, file.filename or "", doc_type, DEMO_ACTOR,
+            get_settings().storage_dir)
+    except evidence_store.EvidenceError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": False}) from None
+    return {"evidence_id": str(stored.evidence_id), "mime": stored.mime, "text_lines": stored.lines,
+            "analysis_queued": stored.job_queued}

@@ -28,6 +28,7 @@ class Settings:
     migrator_database_url: str   # sal_migrator — DDL only, used by Alembic
     demo_merchant_id: UUID | None
     env: str
+    storage_dir: Path            # private evidence files (local disk for the demo; never served directly)
 
 
 @lru_cache
@@ -43,4 +44,5 @@ def get_settings() -> Settings:
             "SAL_MIGRATOR_DATABASE_URL", "postgresql+psycopg://sal_migrator:migrator_dev_only@127.0.0.1:54329/sal"),
         demo_merchant_id=UUID(demo) if demo else None,
         env=os.environ.get("SAL_ENV", "dev"),
+        storage_dir=Path(os.environ.get("SAL_STORAGE_DIR") or API_DIR / "storage"),
     )

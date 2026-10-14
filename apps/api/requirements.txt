@@ -6,3 +6,5 @@ alembic>=1.14
 httpx>=0.27
 pytest>=8
 openai>=1.50
+pypdf>=5
+python-multipart>=0.0.9

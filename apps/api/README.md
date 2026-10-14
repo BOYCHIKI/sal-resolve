@@ -57,6 +57,16 @@ PayPal ─► POST /webhooks/paypal ─► verify signature ─► webhook_event
 - The API role can only *insert* webhooks; it cannot read their payloads or the PayPal account mapping.
 - Unroutable webhooks are kept with an `error`, never silently dropped.
 
+## Evidence upload
+
+`POST /api/disputes/{id}/evidence` (multipart: `file`, `doc_type`) accepts PDF, JPG, PNG or GIF under
+10 MB (50 MB per dispute), PayPal's limits. The type is decided from the file's bytes, not its name.
+PDF text is extracted with `pypdf` into numbered lines; images are stored without text (no OCR yet).
+`doc_type` is chosen by the person uploading (`order_invoice`, `payment_record`, `carrier_tracking`,
+`delivery_proof`, `support_message`, `other`) because the rules depend on it. Files go to private local
+storage (`SAL_STORAGE_DIR`, default `apps/api/storage/`, git-ignored); duplicates are rejected; every
+upload queues a fresh analysis. When a reply is sent to PayPal, original uploads are sent as-is.
+
 ## Agent (ADR-002)
 
 `app/agent/` runs a fixed pipeline with one bounded agentic stage:

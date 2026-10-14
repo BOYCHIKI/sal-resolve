@@ -15,6 +15,8 @@ from sqlalchemy import Engine, text
 
 from app import repositories as repo
 from app.db import tenant_session
+from app.config import get_settings
+from app.evidence import read_file
 from app.evidence_pdf import render_text_pdf
 
 
@@ -27,7 +29,7 @@ class SubmissionError(Exception):
 class EvidenceSink(Protocol):
     def get(self, dispute_id: str) -> dict[str, Any]: ...
     def provide_evidence(self, dispute_id: str, payload: dict[str, Any],
-                         files: list[tuple[str, bytes]]) -> dict[str, Any]: ...
+                         files: list[tuple[str, bytes, str]]) -> dict[str, Any]: ...
 
 
 def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str, actor: str,
@@ -77,6 +79,20 @@ def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requeste
     return {"evidences": [entry]}  # one entry: disputes without item_id reject several (spike S6)
 
 
+EXTENSIONS = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif"}
+
+
+def _file_for(doc) -> tuple[str, bytes, str] | None:
+    """The merchant's original upload when we have it; seeded demo documents are rendered from their text."""
+    original = read_file(get_settings().storage_dir, doc.object_key)
+    if original is not None:
+        return f"{doc.evidence_id}.{EXTENSIONS.get(doc.mime, 'pdf')}", original, doc.mime
+    if doc.content_lines:
+        pdf = render_text_pdf([f"Evidence {doc.evidence_id}", ""] + [l["text"] for l in doc.content_lines])
+        return f"{doc.evidence_id}.pdf", pdf, "application/pdf"
+    return None
+
+
 def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
            engine: Engine | None = None) -> dict[str, Any]:
     # 1. Claim the approved draft and gather everything to send, in one short transaction.
@@ -94,14 +110,14 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                             {"id": draft_id}).first()
         if claimed is None:
             raise SubmissionError(409, "NOT_SUBMITTABLE", "Draft must be approved and not already sent")
-        docs = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, content_lines FROM evidence
-                                 WHERE dispute_id = :d AND content_lines IS NOT NULL
+        docs = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, content_lines, object_key, mime
+                                 FROM evidence WHERE dispute_id = :d
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"d": row.dispute_id}).all()
     requested = [e["evidence_type"] for e in (row.provider_payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
     payload = _payload(row.claims, row.facts, requested)
-    files = [(f"{d.evidence_id}.pdf", render_text_pdf(
-        [f"Evidence {d.evidence_id}", ""] + [l["text"] for l in d.content_lines])) for d in docs]
+    files = [_file_for(d) for d in docs]
+    files = [f for f in files if f is not None]
 
     # 2. Network, outside any transaction. Re-check that PayPal still offers the action (spike finding).
     error: str | None = None

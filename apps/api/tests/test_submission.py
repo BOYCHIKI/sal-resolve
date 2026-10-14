@@ -103,7 +103,7 @@ def test_submit_sends_once_with_one_evidence_entry_and_pdfs(client, merchant, ap
     _, payload, files = fake.sent[0]
     assert len(payload["evidences"]) == 1
     assert payload["evidences"][0]["evidence_info"]["tracking_info"][0]["tracking_number"] == "TRK-SYN-70000"
-    assert all(data.startswith(b"%PDF") for _, data in files)
+    assert all(data.startswith(b"%PDF") and mime == "application/pdf" for _, data, mime in files)
     again = client.post(f"/api/drafts/{a['draft']['id']}/submit")
     assert again.status_code == 409 and len(fake.sent) == 1  # never sent twice
 

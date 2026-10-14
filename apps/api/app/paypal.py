@@ -89,11 +89,11 @@ class PayPalDisputes:
         return out
 
     def provide_evidence(self, dispute_id: str, payload: dict[str, Any],
-                         files: list[tuple[str, bytes]]) -> dict[str, Any]:
+                         files: list[tuple[str, bytes, str]]) -> dict[str, Any]:
         """Multipart: one `input` JSON part plus `evidence-file` parts (format proven in spike S6)."""
         parts: list[tuple[str, tuple[str | None, Any, str]]] = [
             ("input", (None, json.dumps(payload), "application/json"))]
-        parts += [("evidence-file", (name, data, "application/pdf")) for name, data in files]
+        parts += [("evidence-file", (name, data, mime)) for name, data, mime in files]
         r = self._http.post(f"/v1/customer/disputes/{dispute_id}/provide-evidence", files=parts,
                             headers=self._auth())
         r.raise_for_status()
