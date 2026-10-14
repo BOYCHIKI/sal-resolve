@@ -31,9 +31,10 @@ def baseline_roles() -> Roles:
 
 
 def configured_roles() -> Roles:
-    """LLM roles when an API key is configured, otherwise the deterministic baseline."""
+    """Deterministic baseline unless the LLM is switched on explicitly (SAL_AGENT_ROLES=llm).
+    A key alone never turns it on: the LLM is postponed for the demo and free tiers are slow and capped."""
     import os
-    if not os.environ.get("SAL_LLM_API_KEY"):
+    if os.environ.get("SAL_AGENT_ROLES", "baseline").lower() != "llm":
         return baseline_roles()
     from app.agent.llm import LLMRoles
     llm = LLMRoles()
@@ -107,7 +108,12 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
             RETURNING revision"""),
             {"m": merchant_id, "d": dispute_id, "body": body, "ph": hashlib.sha256(body.encode()).hexdigest(),
              "a": analysis_id, "claims": json.dumps(claims)}).scalar_one()
-        s.execute(text("UPDATE disputes SET internal_state = 'NEEDS_REVIEW', updated_at = now() WHERE id = :d"),
+        # A reply already sent stays "sent" while PayPal reviews it; only a new request for evidence
+        # (provide_evidence offered again) puts the case back in front of the operator.
+        s.execute(text("""UPDATE disputes SET updated_at = now(), internal_state = CASE
+                              WHEN internal_state = 'SUBMITTED' AND NOT ('provide_evidence' = ANY(allowed_actions))
+                              THEN internal_state ELSE 'NEEDS_REVIEW' END
+                          WHERE id = :d"""),
                   {"d": dispute_id})
         repo.write_audit(s, merchant_id, "agent", "analysis.completed", target=str(dispute_id),
                          summary={"run": str(run_id), "revision": revision, "findings": len(result.findings),

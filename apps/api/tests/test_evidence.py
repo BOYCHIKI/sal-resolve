@@ -159,3 +159,14 @@ def test_submit_sends_the_original_upload(client, merchant, app_engine, worker_e
     files = fake.sent[0]
     assert any(data == PNG and mime == "image/png" and name.endswith(".png") for name, data, mime in files)
     assert sum(1 for _, _, mime in files if mime == "application/pdf") == 5  # seeded docs rendered from text
+
+
+@pytest.mark.db
+def test_batch_upload_queues_one_analysis(client, merchant, app_engine):
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-011")
+    for i in range(3):
+        assert upload(client, dispute_id, render_text_pdf([f"page {i}"]), doc_type="other").status_code == 201
+    with tenant_session(merchant, app_engine) as s:
+        n = s.execute(text("""SELECT count(*) FROM jobs WHERE kind = 'analyze_dispute' AND target_id = :d
+                              AND state = 'QUEUED'"""), {"d": dispute_id}).scalar()
+    assert n == 1

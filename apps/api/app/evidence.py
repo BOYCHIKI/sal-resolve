@@ -109,8 +109,12 @@ def store(merchant_id: UUID, dispute_id: UUID, data: bytes, filename: str, doc_t
             {"id": evidence_id, "m": merchant_id, "d": dispute_id, "k": object_key, "c": checksum, "mime": mime,
              "n": len(data), "by": uploaded_by, "t": doc_type, "lines": json.dumps(lines),
              "name": _display_name(filename, evidence_id)})
-        queued = repo.enqueue_job(s, merchant_id, "analyze_dispute", f"analyze:{dispute_id}:evidence:{evidence_id}",
-                                  dispute_id)
+        # One pending analysis is enough: it reads every document when it runs, so a batch of uploads
+        # triggers one analysis instead of one per file.
+        pending = s.execute(text("""SELECT 1 FROM jobs WHERE kind = 'analyze_dispute' AND target_id = :d
+                                    AND state = 'QUEUED'"""), {"d": dispute_id}).first()
+        queued = pending is not None or repo.enqueue_job(
+            s, merchant_id, "analyze_dispute", f"analyze:{dispute_id}:evidence:{evidence_id}", dispute_id)
         repo.write_audit(s, merchant_id, uploaded_by, "evidence.uploaded", target=str(dispute_id),
                          summary={"evidence_id": str(evidence_id), "type": doc_type, "mime": mime,
                                   "bytes": len(data), "lines": len(lines)})

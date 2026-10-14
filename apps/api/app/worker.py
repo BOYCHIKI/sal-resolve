@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
+import httpx
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
@@ -55,7 +56,12 @@ def _sync_one(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     dispute_id = (job.payload or {}).get("provider_dispute_id")
     if not dispute_id:
         raise PermanentError("sync_dispute job without provider_dispute_id")
-    return sync.sync_one(job.merchant_id, ctx.paypal_factory(), dispute_id, ctx.engine)
+    try:
+        return sync.sync_one(job.merchant_id, ctx.paypal_factory(), dispute_id, ctx.engine)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (400, 403, 404):  # retrying cannot fix a missing or forbidden dispute
+            raise PermanentError(f"PayPal answered {exc.response.status_code} for dispute {dispute_id}") from exc
+        raise
 
 
 def _analyze(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:

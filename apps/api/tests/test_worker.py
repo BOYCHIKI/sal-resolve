@@ -223,3 +223,23 @@ def test_sync_endpoint_queues_and_coalesces(merchant, app_engine):
         assert status["state"] == "QUEUED" and status["kind"] == "sync_disputes"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_paypal_404_fails_fast_instead_of_retrying(merchant, app_engine):
+    import httpx
+
+    class Missing(FakePayPal):
+        def get(self, dispute_id):
+            req = httpx.Request("GET", f"https://api-m.sandbox.paypal.com/v1/customer/disputes/{dispute_id}")
+            raise httpx.HTTPStatusError("404", request=req, response=httpx.Response(404, request=req))
+
+    from app.db import worker_engine as _we
+    c = worker.Context(_we(), lambda: Missing({}))
+    with tenant_session(merchant, app_engine) as s:
+        job_id = repo.enqueue_job_returning(s, merchant, "sync_dispute", f"t:{uuid4()}",
+                                            payload={"provider_dispute_id": "PP-NOPE"})
+    for _ in range(50):  # other tests' jobs may be ahead in the queue
+        if _job(app_engine, merchant, job_id)["state"] != "QUEUED" or not worker.run_one_job(c):
+            break
+    job = _job(app_engine, merchant, job_id)
+    assert job["state"] == "FAILED" and job["attempts"] == 1 and "404" in job["last_error"]

@@ -74,3 +74,22 @@ Case SAL-INR-001 (45.00 USD) → order/capture → INR dispute `PP-R-RVX-1019110
 5. **Item category must be sent on orders**: without it PayPal records `DIGITAL_DOWNLOAD`, which changes which evidence applies.
 6. **Linking needs no extra table**: `custom` and `invoice_number` on the disputed transaction identify the SAL case.
 7. Recorded payloads contain account ids and buyer address; redaction must cover PII, not just tokens.
+
+## End-to-end run through the app (2026-10-14)
+
+Same sandbox dispute `PP-R-RVX-10191107`, now in `CHARGEBACK` / `WAITING_FOR_SELLER_RESPONSE`, driven through the
+real API and worker (baseline agent roles, no LLM):
+
+| Step | Result |
+|---|---|
+| Sync job (PayPal list + detail) | Succeeded; status, stage, amount and offered actions stored |
+| Upload 5 PDFs via `POST /api/disputes/{id}/evidence` | All `201`; text extracted; one analysis queued for the batch |
+| Analysis | 0 findings; 6 statements, each traced to a document |
+| Approve (revision + snapshot hash) | `200` |
+| Submit (`provide-evidence`, one entry, 5 files) | `200`, accepted by PayPal |
+| Sync after submit | PayPal moved the dispute to `UNDER_REVIEW` (only `provide_supporting_info` offered) |
+
+Bugs found and fixed during the run: single-dispute sync retried PayPal `404`s five times (now permanent on
+400/403/404); an API key alone switched the worker to the LLM (now opt-in via `SAL_AGENT_ROLES=llm`); five uploads
+queued five analyses (now one pending analysis per dispute); re-analysis after sending put the case back to
+"needs review" while PayPal was reviewing (now stays `SUBMITTED` unless PayPal asks for evidence again).

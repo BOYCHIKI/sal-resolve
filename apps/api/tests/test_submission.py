@@ -131,3 +131,18 @@ def test_action_not_offered_or_paypal_error_is_recorded_and_retryable(client, me
     with tenant_session(merchant, app_engine) as s:
         actions = s.execute(text("SELECT action FROM audit_logs WHERE action LIKE 'draft.%' ORDER BY id")).scalars().all()
     assert actions == ["draft.approved", "draft.submit_failed", "draft.submit_failed", "draft.submitted"]
+
+
+def test_reanalysis_after_send_keeps_submitted_until_paypal_asks_again(merchant, app_engine, worker_engine):
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-001")
+
+    def state_after_reanalysis(actions):
+        with tenant_session(merchant, app_engine) as s:
+            s.execute(text("""UPDATE disputes SET internal_state = 'SUBMITTED', allowed_actions = :a
+                              WHERE id = :d"""), {"a": actions, "d": dispute_id})
+        run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
+        with tenant_session(merchant, app_engine) as s:
+            return s.execute(text("SELECT internal_state FROM disputes WHERE id = :d"), {"d": dispute_id}).scalar()
+
+    assert state_after_reanalysis(["provide_supporting_info"]) == "SUBMITTED"     # PayPal is reviewing
+    assert state_after_reanalysis(["provide_evidence"]) == "NEEDS_REVIEW"         # PayPal wants more

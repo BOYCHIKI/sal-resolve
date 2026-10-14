@@ -43,7 +43,8 @@ export type Tone = "red" | "amber" | "blue" | "green" | "grey";
 export function nextStep(d: Dispute): { label: string; tone: Tone } {
   const s = d.summary;
   if (d.provider_status === "RESOLVED") return { label: "Closed by PayPal", tone: "grey" };
-  if (d.internal_state === "SUBMITTED") return { label: "Sent, waiting for PayPal", tone: "grey" };
+  if (d.internal_state === "SUBMITTED")
+    return { label: d.provider_status === "UNDER_REVIEW" ? "PayPal is reviewing your reply" : "Sent, waiting for PayPal", tone: "grey" };
   if (d.provider_status === "WAITING_FOR_BUYER_RESPONSE") return { label: "Waiting for the customer", tone: "grey" };
   if (d.internal_state === "APPROVED") return { label: "Approved, ready to send", tone: "blue" };
   if (!s || s.draft_status === null) return { label: "Being prepared", tone: "grey" };
