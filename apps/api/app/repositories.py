@@ -143,14 +143,15 @@ def write_audit(session: Session, merchant_id: UUID, actor: str, action: str,
 
 
 def enqueue_job(session: Session, merchant_id: UUID, kind: str, idempotency_key: str,
-                target_id: UUID | None = None, payload: dict[str, Any] | None = None) -> bool:
+                target_id: UUID | None = None, payload: dict[str, Any] | None = None,
+                delay_seconds: int = 0) -> bool:
     """Returns False when an identical job already exists (duplicate webhook/poll)."""
     row = session.execute(text("""
-        INSERT INTO jobs (merchant_id, kind, target_id, idempotency_key, payload)
-        VALUES (:mid, :kind, :target, :key, CAST(:payload AS jsonb))
+        INSERT INTO jobs (merchant_id, kind, target_id, idempotency_key, payload, run_after)
+        VALUES (:mid, :kind, :target, :key, CAST(:payload AS jsonb), now() + make_interval(secs => :delay))
         ON CONFLICT (idempotency_key) DO NOTHING
         RETURNING id"""), {"mid": merchant_id, "kind": kind, "target": target_id, "key": idempotency_key,
-                           "payload": json.dumps(payload or {})}).first()
+                           "payload": json.dumps(payload or {}), "delay": delay_seconds}).first()
     return row is not None
 
 
@@ -244,6 +245,14 @@ def enqueue_job_returning(session: Session, merchant_id: UUID, kind: str, idempo
     return row.id
 
 
+# ---------------------------------------------------------------- worker liveness
+def worker_heartbeat(session: Session, worker_id: str, jobs_done: int = 0) -> None:
+    session.execute(text("""
+        INSERT INTO worker_heartbeats (worker_id, seen_at, jobs_done) VALUES (:w, now(), :n)
+        ON CONFLICT (worker_id) DO UPDATE SET seen_at = now(), jobs_done = worker_heartbeats.jobs_done + :n"""),
+        {"w": worker_id, "n": jobs_done})
+
+
 # ---------------------------------------------------------------- webhooks
 def insert_webhook_event(session: Session, event: dict[str, Any]) -> bool:
     """API role (insert-only). Returns False for a duplicate delivery."""
@@ -286,9 +295,9 @@ def case_summaries(session: Session, dispute_ids: list[UUID]) -> dict[UUID, dict
         SELECT d.id,
                d.provider_payload #>> '{disputed_transactions,0,items,0,item_name}' AS item,
                d.provider_payload #>> '{disputed_transactions,0,invoice_number}'    AS invoice,
-               a.findings, a.facts, dr.status AS draft_status
+               a.findings, a.facts, a.assessment ->> 'readiness' AS readiness, dr.status AS draft_status
         FROM disputes d
-        LEFT JOIN LATERAL (SELECT findings, facts FROM analyses
+        LEFT JOIN LATERAL (SELECT findings, facts, assessment FROM analyses
                            WHERE dispute_id = d.id ORDER BY created_at DESC LIMIT 1) a ON true
         LEFT JOIN LATERAL (SELECT status FROM drafts
                            WHERE dispute_id = d.id ORDER BY revision DESC LIMIT 1) dr ON true
@@ -302,5 +311,5 @@ def case_summaries(session: Session, dispute_ids: list[UUID]) -> dict[UUID, dict
         out[r.id] = {"item": item, "order_ref": order,
                      "missing": sum(1 for f in findings if f["kind"] == "missing"),
                      "conflicts": sum(1 for f in findings if f["kind"] == "conflict"),
-                     "draft_status": r.draft_status}
+                     "draft_status": r.draft_status, "readiness": r.readiness}
     return out

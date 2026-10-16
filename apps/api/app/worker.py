@@ -9,7 +9,10 @@ Each job runs in two kinds of transaction: a short cross-tenant one to claim/fin
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
+import socket
 import signal
 import threading
 import time
@@ -21,6 +24,7 @@ import httpx
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from app import logs
 from app import repositories as repo
 from app import sync
 from app.db import worker_engine
@@ -71,10 +75,32 @@ def _analyze(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     return run_analysis(job.merchant_id, job.target_id, job.id, ctx.roles_factory(), ctx.engine)
 
 
+def _reconcile(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    draft_id = (job.payload or {}).get("draft_id")
+    if not draft_id:
+        raise PermanentError("reconcile_submission job without draft_id")
+    from app.submission import reconcile
+    return reconcile(job.merchant_id, UUID(draft_id), ctx.paypal_factory(), ctx.engine)
+
+
+def _paypal_evidence(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    if job.target_id is None:
+        raise PermanentError("paypal_evidence job without target dispute")
+    from app.paypal_evidence import fetch_and_store
+    try:
+        return fetch_and_store(job.merchant_id, job.target_id, ctx.paypal_factory(), ctx.engine)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (400, 401, 403, 404):  # e.g. Transaction Search not enabled for the app
+            raise PermanentError(f"PayPal answered {exc.response.status_code} to Transaction Search") from exc
+        raise
+
+
 HANDLERS: dict[str, Handler] = {
     "sync_disputes": _sync_all,
     "sync_dispute": _sync_one,
     "analyze_dispute": _analyze,
+    "reconcile_submission": _reconcile,
+    "paypal_evidence": _paypal_evidence,
 }
 
 
@@ -124,6 +150,9 @@ def run_one_job(ctx: Context) -> bool:
     stop = threading.Event()
     beat = threading.Thread(target=_heartbeat, args=(ctx.engine, job.id, stop), daemon=True)
     beat.start()
+    tokens = (logs.job_id.set(str(job.id)), logs.merchant_id.set(str(job.merchant_id)),
+              logs.dispute_id.set(str(job.target_id) if job.target_id else None))
+    started = time.perf_counter()
     try:
         handler = HANDLERS.get(job.kind)
         if handler is None:
@@ -139,13 +168,17 @@ def run_one_job(ctx: Context) -> bool:
         stop.set()
         beat.join(timeout=5)
 
+    duration_ms = int((time.perf_counter() - started) * 1000)
     with Session(ctx.engine) as s, s.begin():
         if outcome == "ok":
             repo.complete_job(s, job.id, result)
-            log.info("job %s %s succeeded", job.kind, job.id)
+            log.info("job %s succeeded", job.kind, extra={"kind": job.kind, "outcome": "ok", "duration_ms": duration_ms})
         else:
             state = repo.fail_job(s, job.id, error, retryable=(outcome == "retry"))
-            log.warning("job %s %s failed (%s): %s", job.kind, job.id, state, error)
+            log.warning("job %s failed (%s)", job.kind, state,
+                        extra={"kind": job.kind, "outcome": state, "duration_ms": duration_ms, "error": error})
+    for var, token in zip((logs.job_id, logs.merchant_id, logs.dispute_id), tokens):
+        var.reset(token)
     return True
 
 
@@ -160,10 +193,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logs.setup()
+    from app.config import require_valid
+    log.info("worker config", extra={"kind": "config", "outcome": json.dumps(require_valid().summary())})
+
+    from functools import lru_cache
 
     from app.paypal import PayPalDisputes
-    ctx = Context(worker_engine(), PayPalDisputes)
+    # One PayPal client per worker process: its OAuth token is reused until it expires instead of being
+    # fetched again for every job. Created lazily, so a worker without PayPal credentials still runs analyses.
+    ctx = Context(worker_engine(), lru_cache(maxsize=1)(PayPalDisputes))
+    worker_id = f"{socket.gethostname()}:{os.getpid()}"
     if args.once:
         log.info("drained %d items", drain(ctx))
         return
@@ -172,8 +212,14 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     log.info("worker started")
+    last_beat = 0.0
     while not stopping.is_set():
-        if not drain(ctx, max_items=50):
+        done = drain(ctx, max_items=50)
+        if done or time.monotonic() - last_beat > HEARTBEAT_SECONDS / 2:  # liveness for /api/health
+            with Session(ctx.engine) as s, s.begin():
+                repo.worker_heartbeat(s, worker_id, done)
+            last_beat = time.monotonic()
+        if not done:
             stopping.wait(IDLE_SLEEP_SECONDS)
     log.info("worker stopped")
 

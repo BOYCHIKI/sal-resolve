@@ -1,8 +1,11 @@
 """SAL API. The merchant id always comes from the server-side identity, never from request input."""
 from __future__ import annotations
 
+import hmac
 import json
-import os
+import logging
+import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Protocol
@@ -10,18 +13,70 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from functools import lru_cache
+
+from app import logs
 from app import repositories as repo
 from app import evidence as evidence_store
 from app import submission
-from app.config import get_settings
+from app.config import get_settings, require_valid
 from app.db import app_engine, tenant_session
 from app.paypal import PayPalDisputes
 
-app = FastAPI(title="SAL Resolve API", version="0.1.0")
+log = logging.getLogger("sal.api")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logs.setup()
+    log.info("api starting", extra={"kind": "config", "outcome": json.dumps(require_valid().summary())})
+    yield
+
+
+_prod = get_settings().env == "prod"
+app = FastAPI(title="SAL Resolve API", version="0.1.0", lifespan=lifespan,
+              docs_url=None if _prod else "/docs", redoc_url=None, openapi_url=None if _prod else "/openapi.json")
+
+# ---------------------------------------------------------------- request guard
+# Paths anyone may reach: platform health checks and PayPal's webhook (which carries its own signature).
+OPEN_PATHS = {"/api/health", "/webhooks/paypal"}
+MAX_BODY_BYTES = 256 * 1024              # JSON bodies
+MAX_UPLOAD_BYTES = 11 * 1024 * 1024      # one evidence file (< 10 MB) plus multipart overhead
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    """Before any handler runs: refuse oversized bodies, and, when an internal token is configured (always in
+    prod), answer only the SAL web server. The browser never talks to this API directly."""
+    path = request.url.path
+    declared = request.headers.get("content-length")
+    limit = MAX_UPLOAD_BYTES if path.endswith("/evidence") else MAX_BODY_BYTES
+    if declared is not None and (not declared.isdigit() or int(declared) > limit):
+        return JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE", "retryable": False}}, status_code=413)
+    token = get_settings().internal_token
+    if token and path not in OPEN_PATHS:
+        given = request.headers.get("x-sal-internal-token", "")
+        if not hmac.compare_digest(given.encode(), token.encode()):
+            return JSONResponse({"detail": {"code": "UNAUTHORIZED", "retryable": False}}, status_code=401)
+    return await call_next(request)
+
+
+@app.exception_handler(Exception)
+async def unexpected(request: Request, exc: Exception) -> JSONResponse:
+    """Never leak internals: the caller gets an id, the log gets the stack trace."""
+    error_id = uuid.uuid4().hex[:12]
+    log.error("unhandled error %s on %s %s", error_id, request.method, request.url.path, exc_info=exc)
+    return JSONResponse({"detail": {"code": "INTERNAL_ERROR", "error_id": error_id, "retryable": True}},
+                        status_code=500)
+
+# One PayPal client per API process: the OAuth token is reused until it expires (created on first use).
+_paypal_client = lru_cache(maxsize=1)(PayPalDisputes)
+WORKER_STALE_SECONDS = 60
 
 
 def current_merchant() -> UUID:
@@ -107,10 +162,10 @@ class WebhookVerifier(Protocol):
 
 
 def paypal_verifier() -> WebhookVerifier:
-    webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID")
+    webhook_id = get_settings().paypal_webhook_id
     if not webhook_id:
         raise HTTPException(503, detail={"code": "WEBHOOK_NOT_CONFIGURED", "retryable": True})
-    client = PayPalDisputes()
+    client = _paypal_client()
     return lambda headers, event: client.verify_webhook(headers, event, webhook_id)
 
 
@@ -146,21 +201,21 @@ def get_analysis(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant)
     with tenant_session(merchant_id) as s:
         a = s.execute(text("""
             SELECT a.id, a.dispute_version, a.rule_version, a.facts, a.findings, a.review_required,
-                   a.snapshot_hash, a.created_at, r.id AS run_id, r.roles, r.steps
+                   a.snapshot_hash, a.created_at, a.assessment, r.id AS run_id, r.roles, r.steps
             FROM analyses a JOIN agent_runs r ON r.id = a.agent_run_id
             WHERE a.dispute_id = :d ORDER BY a.created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
         if a is None:
             raise HTTPException(404, detail={"code": "ANALYSIS_NOT_FOUND", "retryable": False})
-        draft = s.execute(text("""SELECT id, revision, status, claims FROM drafts
+        draft = s.execute(text("""SELECT id, revision, status, claims, submit_note FROM drafts
                                   WHERE analysis_id = :a ORDER BY revision DESC LIMIT 1"""), {"a": a.id}).first()
         tools = s.execute(text("""SELECT step, tool, args, ok, summary FROM tool_calls
                                   WHERE agent_run_id = :r ORDER BY step"""), {"r": a.run_id}).all()
     return {
         "analysis_id": str(a.id), "dispute_version": a.dispute_version, "rule_version": a.rule_version,
         "review_required": a.review_required, "snapshot_hash": a.snapshot_hash,
-        "facts": a.facts, "findings": a.findings,
+        "facts": a.facts, "findings": a.findings, "assessment": a.assessment,
         "draft": {"id": str(draft.id), "revision": draft.revision, "status": draft.status,
-                  "claims": draft.claims} if draft else None,
+                  "claims": draft.claims, "submit_note": draft.submit_note} if draft else None,
         "agent": {"roles": a.roles, "steps": a.steps,
                   "tool_calls": [dict(t._mapping) for t in tools]},
     }
@@ -171,11 +226,11 @@ def list_evidence(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant
     """Parsed evidence text with line numbers, so the UI can show the exact line behind each fact."""
     with tenant_session(merchant_id) as s:
         rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines,
-                                        uploaded_at
+                                        uploaded_at, origin
                                  FROM evidence WHERE dispute_id = :d ORDER BY uploaded_at, source_ref NULLS LAST, id"""),
                          {"d": dispute_id}).all()
-    return {"items": [{"evidence_id": r.evidence_id, "type": r.doc_type, "lines": r.content_lines or []}
-                      for r in rows]}
+    return {"items": [{"evidence_id": r.evidence_id, "type": r.doc_type, "lines": r.content_lines or [],
+                       "origin": r.origin} for r in rows]}
 
 
 # ---------------------------------------------------------------- approval and submission
@@ -188,7 +243,48 @@ DEMO_ACTOR = "operator:demo"  # replaced by the authenticated user once auth exi
 
 
 def paypal_sink() -> submission.EvidenceSink:
-    return PayPalDisputes()
+    return _paypal_client()
+
+
+# ---------------------------------------------------------------- health and operations
+@app.get("/api/health")
+def health() -> dict:
+    """Liveness for the hosting platform and the UI banner: database reachable, worker heartbeat recent.
+    No tenant data, so no merchant needed."""
+    try:
+        with Session(app_engine()) as s:
+            beat = s.execute(text("""SELECT max(seen_at) AS seen, extract(epoch FROM now() - max(seen_at)) AS age
+                                     FROM worker_heartbeats""")).one()
+    except Exception as exc:  # noqa: BLE001 — health must answer, not raise
+        return {"status": "down", "database": f"error: {type(exc).__name__}", "worker": None}
+    age = float(beat.age) if beat.age is not None else None
+    alive = age is not None and age < WORKER_STALE_SECONDS
+    return {"status": "ok" if alive else "degraded", "database": "ok",
+            "worker": {"alive": alive, "last_seen": beat.seen, "seconds_since": None if age is None else round(age)}}
+
+
+@app.get("/api/ops")
+def ops(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """What an operator needs to trust the background work: queue, failures, AI fallbacks and cost, last sync."""
+    with tenant_session(merchant_id) as s:
+        queue = {r.state: r.n for r in s.execute(text("SELECT state, count(*) AS n FROM jobs GROUP BY state"))}
+        oldest = s.execute(text("""SELECT extract(epoch FROM now() - min(run_after)) FROM jobs
+                                   WHERE state = 'QUEUED' AND run_after <= now()""")).scalar()
+        failed = s.execute(text("""SELECT kind, target_id, left(last_error, 200) AS error, updated_at FROM jobs
+                                   WHERE state = 'FAILED' AND updated_at > now() - interval '24 hours'
+                                   ORDER BY updated_at DESC LIMIT 10""")).all()
+        runs = s.execute(text("""SELECT count(*) AS runs,
+                                        count(*) FILTER (WHERE roles LIKE '%LLM unavailable%') AS fallbacks,
+                                        coalesce(sum(llm_input_tokens), 0) AS tin,
+                                        coalesce(sum(llm_output_tokens), 0) AS tout
+                                 FROM agent_runs WHERE started_at > now() - interval '24 hours'""")).one()
+        last_sync = s.execute(text("""SELECT max(occurred_at) FROM audit_logs
+                                      WHERE action IN ('disputes.synced', 'dispute.synced')""")).scalar()
+    return {"queue": queue, "oldest_ready_job_seconds": round(oldest) if oldest else 0,
+            "failed_last_24h": [dict(r._mapping) for r in failed],
+            "agent_last_24h": {"runs": runs.runs, "llm_fallbacks": runs.fallbacks,
+                               "llm_input_tokens": runs.tin, "llm_output_tokens": runs.tout},
+            "last_paypal_sync": last_sync}
 
 
 def _submission_error(exc: submission.SubmissionError) -> HTTPException:

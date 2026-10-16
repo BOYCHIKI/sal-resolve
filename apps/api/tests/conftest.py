@@ -2,18 +2,33 @@ from __future__ import annotations
 
 import os
 
-# Tests never call a real LLM: an empty key makes the worker use the deterministic baseline roles,
-# and .env loading uses setdefault, so a key in apps/api/.env cannot override this.
+# Tests never call a real LLM: baseline roles only, and no key. .env loading uses setdefault,
+# so values in apps/api/.env cannot override these.
 os.environ["SAL_LLM_API_KEY"] = ""
+os.environ["SAL_AGENT_ROLES"] = "baseline"
 
 from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.exc import OperationalError
 
-from app.config import get_settings
+from app.config import _load_dotenv, get_settings
+
+# Tests run against their own database ("sal_test"), never the dev/demo one: same server and roles
+# as configured, only the database name changes. migrated_db refuses anything not ending in _test.
+TEST_DB = "sal_test"
+_load_dotenv()
+_configured = get_settings()
+get_settings.cache_clear()
+# Read apps/api/.env once, here. Later reloads would undo what a test sets or deletes with monkeypatch.
+from app import config as _config  # noqa: E402
+_config._load_dotenv = lambda *args, **kwargs: None
+for _key, _url in (("SAL_APP_DATABASE_URL", _configured.app_database_url),
+                   ("SAL_WORKER_DATABASE_URL", _configured.worker_database_url),
+                   ("SAL_MIGRATOR_DATABASE_URL", _configured.migrator_database_url)):
+    os.environ[_key] = make_url(_url).set(database=TEST_DB).render_as_string(hide_password=False)
 
 API_DIR = Path(__file__).resolve().parents[1]
 
@@ -47,6 +62,9 @@ def migrated_db():
     from alembic import command
     from alembic.config import Config
 
+    database = make_url(get_settings().migrator_database_url).database or ""
+    if not database.endswith("_test"):
+        pytest.exit(f"Refusing to reset database {database!r}: tests only run on a *_test database", returncode=2)
     cfg = Config(str(API_DIR / "alembic.ini"))
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
@@ -74,3 +92,11 @@ def worker_engine():
     engine = create_engine(get_settings().worker_database_url)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_settings():
+    """Each test sees the environment as it sets it (settings are cached per process otherwise)."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: postgres_dev_only
       POSTGRES_DB: postgres
     ports:
-      - "127.0.0.1:54329:5432"
+      - "127.0.0.1:15432:5432"   # below the 49152+ range Windows/Hyper-V may reserve
     volumes:
       - ./apps/api/db/init:/docker-entrypoint-initdb.d:ro
       - sal_pgdata:/var/lib/postgresql/data
