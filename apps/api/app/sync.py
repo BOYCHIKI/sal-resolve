@@ -31,8 +31,11 @@ def _parse(ts: str | None) -> datetime | None:
 
 
 def _queue_analysis(session, merchant_id: UUID, row: repo.DisputeRow) -> None:
-    """One analysis per dispute version; duplicates (webhook + poll) collapse on the key."""
+    """One analysis per dispute version; duplicates (webhook + poll) collapse on the key.
+    PayPal's record of the disputed transaction is fetched once per dispute (ADR-005)."""
     repo.enqueue_job(session, merchant_id, "analyze_dispute", f"analyze:{row.id}:v{row.version}", row.id)
+    if row.origin == "PAYPAL_SANDBOX":
+        repo.enqueue_job(session, merchant_id, "paypal_evidence", f"paypal-evidence:{row.id}", row.id)
 
 
 def sync_all(merchant_id: UUID, source: DisputeSource, engine: Engine | None = None) -> dict[str, int]:

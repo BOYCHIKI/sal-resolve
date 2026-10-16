@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -54,8 +54,12 @@ def to_internal(dispute: dict[str, Any]) -> dict[str, Any]:
 class PayPalDisputes:
     def __init__(self, client_id: str | None = None, client_secret: str | None = None,
                  http: httpx.Client | None = None) -> None:
-        self._id = client_id or os.environ["PAYPAL_CLIENT_ID"]
-        self._secret = client_secret or os.environ["PAYPAL_CLIENT_SECRET"]
+        from app.config import get_settings
+        cfg = get_settings()
+        self._id = client_id or cfg.paypal_client_id
+        self._secret = client_secret or cfg.paypal_client_secret
+        if not (self._id and self._secret):
+            raise RuntimeError("PayPal sandbox credentials are not set (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET)")
         self._http = http or httpx.Client(base_url=SANDBOX_BASE_URL, timeout=20.0)
         if str(self._http.base_url).rstrip("/") != SANDBOX_BASE_URL:
             raise ValueError("PayPal adapter is sandbox-only")
@@ -112,6 +116,19 @@ class PayPalDisputes:
         r = self._http.post("/v1/notifications/verify-webhook-signature", json=body, headers=self._auth())
         r.raise_for_status()
         return r.json().get("verification_status") == "SUCCESS"
+
+    def transaction(self, transaction_id: str, around: datetime) -> dict[str, Any] | None:
+        """The PayPal record of one transaction via Transaction Search (read-only; spike S9).
+        The API needs a date window of at most 31 days, so search 15 days either side of `around`."""
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%S-0000"
+        params = {"transaction_id": transaction_id, "fields": "all",
+                  "start_date": (around - timedelta(days=15)).strftime(fmt),
+                  "end_date": min(around + timedelta(days=15), now).strftime(fmt)}
+        r = self._http.get("/v1/reporting/transactions", params=params, headers=self._auth())
+        r.raise_for_status()
+        details = r.json().get("transaction_details") or []
+        return details[0] if details else None
 
     def get(self, dispute_id: str) -> dict[str, Any]:
         r = self._http.get(f"/v1/customer/disputes/{dispute_id}", headers=self._auth())

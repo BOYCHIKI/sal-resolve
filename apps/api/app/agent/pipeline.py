@@ -1,7 +1,7 @@
 """AnalyzeDispute pipeline (Option C): fixed stages, with one bounded agentic stage (gather).
 
-    load -> gather (agent loop, read-only tools, max steps) -> extract -> ground -> rules
-         -> snapshot hash -> draft -> verify claims
+    load -> gather (agent loop, read-only tools, max steps) -> extract -> ground -> rules -> assess
+         -> draft (proven propositions only) -> verify claims -> snapshot hash
 
 Pure function over a CaseInput: no DB, no network. The worker persists the result; the evaluation
 harness scores it against the golden dataset.
@@ -16,6 +16,7 @@ from typing import Any
 from app.agent.models import RULE_VERSION, AnalysisResult, CaseInput
 from app.agent.roles import Drafter, Extractor, Planner
 from app.agent.tools import TOOL_SPECS, CaseToolbox
+from app.agent.assess import assess, claimable
 from app.agent.validation import apply_inr_rules, ground, verify_claims
 
 MAX_GATHER_STEPS = 8
@@ -46,12 +47,18 @@ def analyze(case: CaseInput, planner: Planner, extractor: Extractor, drafter: Dr
     read = [d for d in case.documents if d.evidence_id in set(box.read_ids)]
 
     facts = ground(extractor.extract(read), read)
-    findings = apply_inr_rules(facts, case.documents, case.amount, case.currency)
-    claims, rejected = verify_claims(drafter.draft(facts, findings), facts)
+    inr = case.reason == "ITEM_NOT_RECEIVED"
+    findings = apply_inr_rules(facts, case.documents, case.amount, case.currency, inr=inr)
+    assessment = assess(facts, findings, case.documents, case.amount, case.currency, case.reason,
+                        case.requested_evidence)
+    # The reply may only state what the evidence proves (ADR-005).
+    allowed = claimable(facts, assessment)
+    claims, rejected = verify_claims(drafter.draft(allowed, findings), allowed)
 
     result = AnalysisResult(
         rule_version=RULE_VERSION, facts=facts, findings=findings, claims=claims, rejected_claims=rejected,
-        review_required=bool(findings) or bool(rejected), tool_calls=box.records)
+        review_required=bool(findings) or bool(rejected) or assessment.readiness != "READY",
+        tool_calls=box.records, assessment=assessment)
     result.snapshot_hash = snapshot_hash(result)
     return result
 
@@ -61,5 +68,6 @@ def snapshot_hash(result: AnalysisResult) -> str:
     payload = {"rule_version": result.rule_version,
                "facts": [asdict(f) for f in result.facts],
                "findings": [asdict(f) for f in result.findings],
-               "claims": [asdict(c) for c in result.claims]}
+               "claims": [asdict(c) for c in result.claims],
+               "assessment": asdict(result.assessment) if result.assessment else None}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()

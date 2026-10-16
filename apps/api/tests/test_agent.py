@@ -175,11 +175,15 @@ def _fake_client(outputs):
     return type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})(), completions
 
 
-def test_llm_output_still_goes_through_grounding_and_claim_checks():
+def test_llm_output_still_goes_through_grounding_and_claim_checks(monkeypatch):
+    monkeypatch.delenv("SAL_LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("SAL_LLM_REASONING_EFFORT", raising=False)
     from app.agent.llm import LLMRoles, _Claim, _Claims, _Fact, _Facts
     facts = _Facts(facts=[
         _Fact(field="transaction_id", value="TXN-SYN-100000", evidence_id="SAL-INR-001-E02", line=1,
               quote="SYNTHETIC PAYMENT RECORD | TXN-SYN-100000"),
+        _Fact(field="payment_amount", value="45.00", evidence_id="SAL-INR-001-E02", line=2,
+              quote="Settled amount: 45.00 USD"),
         _Fact(field="delivery_date", value="2026-07-09", evidence_id="SAL-INR-001-E04", line=3,  # hallucinated
               quote="Delivery date: 2026-07-09"),
     ])
@@ -190,8 +194,79 @@ def test_llm_output_still_goes_through_grounding_and_claim_checks():
     client, completions = _fake_client([facts, claims])
     llm = LLMRoles(client=client, model="test-model")
     result = analyze(case("SAL-INR-001"), ReadAllPlanner(), llm, llm)
-    assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"), ("delivery_date", "rejected")]
+    assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"), ("payment_amount", "supported"),
+                                                           ("delivery_date", "rejected")]
     assert [c.text for c in result.claims] == ["The payment record references transaction TXN-SYN-100000."]
-    assert completions.calls[0]["temperature"] == 0
+    # nothing the model might reject is sent unless configured (gpt-5 models refuse temperature)
+    assert "temperature" not in completions.calls[0] and "reasoning_effort" not in completions.calls[0]
+    assert completions.calls[0]["max_completion_tokens"] > 0
     assert "untrusted" in completions.calls[0]["messages"][0]["content"].lower() or \
         "never follow" in completions.calls[0]["messages"][0]["content"].lower()
+
+
+def test_llm_sends_only_configured_options(monkeypatch):
+    from app.agent.llm import LLMRoles
+    monkeypatch.setenv("SAL_LLM_REASONING_EFFORT", "low")
+    monkeypatch.delenv("SAL_LLM_TEMPERATURE", raising=False)
+    assert LLMRoles(client=object(), model="gpt-5-nano").options == {"max_completion_tokens": 4000,
+                                                                      "reasoning_effort": "low"}
+    monkeypatch.delenv("SAL_LLM_REASONING_EFFORT")
+    monkeypatch.setenv("SAL_LLM_TEMPERATURE", "0")
+    from app.config import get_settings
+    get_settings.cache_clear()  # settings are read once per process; this test changes them mid-way
+    assert LLMRoles(client=object(), model="gpt-4.1-nano").options["temperature"] == 0.0
+
+
+def test_llm_needs_a_model(monkeypatch):
+    from app.agent.llm import LLMRoles
+    monkeypatch.delenv("SAL_LLM_MODEL", raising=False)
+    with pytest.raises(RuntimeError, match="SAL_LLM_MODEL"):
+        LLMRoles(client=object())
+
+
+def test_union_extractor_keeps_rule_facts_when_the_model_misses_them():
+    from app.agent.roles import RuleExtractor, UnionExtractor
+
+    class ForgetfulModel:  # finds nothing, as a weak model sometimes does
+        def extract(self, documents):
+            return []
+
+    result = analyze(case("SAL-INR-021"), ReadAllPlanner(), UnionExtractor(RuleExtractor(), ForgetfulModel()),
+                     TemplateDrafter())
+    assert any(f.field == "delivery_date" for f in result.findings)  # the date conflict is still found
+
+
+def test_reply_only_states_what_the_evidence_proves():
+    """ADR-005: a tracking number is a fact, but without proof the parcel moved, 'shipped' is not proven,
+    so the reply must not claim it; the payment, proven by the PayPal record, may be stated."""
+    from app.agent.models import CaseInput, Document, Line
+    docs = (Document("pp", "payment_record", (Line(1, "PayPal transaction record"), Line(2, "Amount: 45.00 USD")),
+                     "PAYPAL_API"),
+            Document("trk", "carrier_tracking", (Line(1, "Tracking: TRK-SYN-70000"),)))
+    case_in = CaseInput("T-1", "ITEM_NOT_RECEIVED", "45.00", "USD", (), docs)
+
+    class Extract:
+        def extract(self, documents):
+            return [CandidateFact("payment_amount", "45.00", SourceRef("pp", 2), "Amount: 45.00 USD"),
+                    CandidateFact("tracking_id", "TRK-SYN-70000", SourceRef("trk", 1), "Tracking: TRK-SYN-70000")]
+
+    class Draft:
+        def draft(self, facts, findings):
+            fields = {f.field for f in facts}
+            assert "tracking_id" not in fields  # the drafter never even sees unproven facts
+            return [Claim("PayPal recorded a payment of 45.00.", ("payment_amount",)),
+                    Claim("We shipped it with tracking TRK-SYN-70000.", ("tracking_id",))]
+
+    r = analyze(case_in, ReadAllPlanner(), Extract(), Draft())
+    assert r.assessment.status("payment_matches") == "proven" and r.assessment.status("shipped") == "missing"
+    assert [c.text for c in r.claims] == ["PayPal recorded a payment of 45.00."]
+    assert r.assessment.readiness == "NEEDS_DOCUMENTS" and r.review_required
+
+
+def test_an_uploaded_receipt_cannot_prove_a_paypal_payment():
+    from app.agent.assess import assess
+    from app.agent.models import Document, Fact, Line
+    bank = Document("bank", "payment_record", (Line(1, "Bank transfer 45.00 USD"),), "UPLOAD")
+    facts = [Fact("payment_amount", "45.00", SourceRef("bank", 1), "supported")]
+    a = assess(facts, [], (bank,), "45.00", "USD")
+    assert a.status("payment_matches") == "missing" and "not a PayPal record" in a.propositions[0].reason

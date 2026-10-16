@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { DraftActions } from "@/components/DraftActions";
+import { UploadEvidence } from "@/components/UploadEvidence";
 import { api } from "@/lib/api";
-import { docName, dueText, explain, origin, readableFacts, summarySentence, type Tone } from "@/lib/plain";
+import { docName, docRef, dueText, explain, origin, propositionLook, propositionTitle, readableFacts, readiness, summarySentence,
+  type Tone } from "@/lib/plain";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,10 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const draft = analysis?.draft;
   const sent = dispute.internal_state === "SUBMITTED";
   const approved = draft?.status === "APPROVED" || draft?.status === "SUBMIT_FAILED";
+  const sending = draft?.status === "SUBMITTING";
+  // Documents can be added until the reply is on its way; PayPal cases also need PayPal to still accept them.
+  const canAddDocuments = !sent && !sending &&
+    (dispute.origin !== "PAYPAL_SANDBOX" || dispute.allowed_actions.includes("provide_evidence"));
   const deadlineDate = dispute.deadline_at ? due.text.replace(/^Reply by /, "").split(" · ")[0] : "None";
 
   const steps: { label: string; state: StepState }[] = [
@@ -84,6 +90,60 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           <Progress steps={steps} />
         </section>
 
+        {analysis?.assessment && (() => {
+          const a = analysis.assessment;
+          const r = readiness(a.readiness);
+          return (
+            <section aria-label="What your documents prove" className="glass-strong flex flex-col gap-4 rounded-[28px] p-6 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-[24px]">What your documents prove</h2>
+                <span className={`rounded-full px-4 py-1.5 text-[15px] font-semibold ${BOX[r.tone]}`}>{r.label}</span>
+              </div>
+              {due.urgent && !sent && (
+                <p role="alert" className={`rounded-[18px] px-5 py-3.5 text-[17px] font-semibold ${BOX.red}`}>
+                  {due.text}. If PayPal gets no reply by then, it closes the case in the buyer’s favour.
+                </p>
+              )}
+              <p className={`rounded-[18px] px-5 py-3.5 text-[17px] ${BOX[r.tone]}`}>
+                <span className="font-semibold">Next: </span>{a.next_action}
+              </p>
+              <ul className="flex flex-col gap-2.5">
+                {a.propositions.map((p) => {
+                  const look = propositionLook(p.status);
+                  const docs = [...new Set(p.sources.map((src) => src.evidence_id))];
+                  return (
+                    <li key={p.id} className="flex items-start gap-3.5 rounded-[18px] bg-surface/70 px-4 py-3.5">
+                      <span aria-hidden="true" className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[17px] font-bold ${BOX[look.tone]}`}>
+                        {look.mark}
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex flex-wrap items-baseline gap-x-2.5">
+                          <span className="text-[17px] font-semibold">{propositionTitle(p.id)}</span>
+                          <span className="text-sm text-ink-muted">{look.word}</span>
+                        </span>
+                        <span className="text-[15px] text-ink-soft">{p.reason}</span>
+                        {docs.length > 0 && (
+                          <span className="flex flex-wrap gap-4 text-[14px]">
+                            {docs.map((evId) => {
+                              const doc = evidence.find((d) => d.evidence_id === evId);
+                              return (
+                                <a key={evId} href={`#${evId}`} className="text-action underline-offset-2 hover:underline">
+                                  See {docRef(doc?.type, doc?.origin)}
+                                </a>
+                              );
+                            })}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-sm text-ink-muted">SAL checks what your documents show. It never predicts how PayPal will decide.</p>
+            </section>
+          );
+        })()}
+
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">
             {analysis && findings.length > 0 && (
@@ -100,7 +160,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                         <span className="flex flex-wrap gap-4 text-[15px]">
                           {docs.map((evId) => (
                             <a key={evId} href={`#${evId}`} className="text-action underline-offset-2 hover:underline">
-                              See {docName(evidence.find((d) => d.evidence_id === evId)?.type).toLowerCase()}
+                              See {docRef(evidence.find((d) => d.evidence_id === evId)?.type, evidence.find((d) => d.evidence_id === evId)?.origin)}
                             </a>
                           ))}
                         </span>
@@ -135,6 +195,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                   sandbox={dispute.origin === "PAYPAL_SANDBOX"}
                   canProvideEvidence={dispute.allowed_actions.includes("provide_evidence")}
                   openItems={findings.length}
+                  note={draft.submit_note}
                 />
               )}
             </section>
@@ -161,12 +222,18 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <section aria-label="Documents" className="glass flex flex-col gap-2.5 rounded-[26px] p-6">
               <h2 className="text-xl">Documents ({evidence.length})</h2>
               {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
+              {canAddDocuments && <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />}
               {evidence.map((doc) => (
                 <details key={doc.evidence_id} id={doc.evidence_id} className="scroll-mt-24 rounded-2xl bg-surface/80 open:bg-surface">
                   <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3.5 px-3.5 py-2.5">
                     <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--action)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
                     <span className="flex flex-1 flex-col">
-                      <span className="font-medium">{docName(doc.type)}</span>
+                      <span className="flex flex-wrap items-center gap-2 font-medium">
+                        {docName(doc.type, doc.origin)}
+                        {doc.origin === "PAYPAL_API" && (
+                          <span className="rounded-full bg-blue-bg px-2.5 py-0.5 text-[12px] font-semibold text-blue-ink">From PayPal</span>
+                        )}
+                      </span>
                       <span className={`text-[13px] ${flaggedDocs.has(doc.evidence_id) ? "text-amber-ink" : "text-ink-muted"}`}>
                         {flaggedDocs.has(doc.evidence_id) ? "Has a detail to check" : "Looks consistent"}
                       </span>

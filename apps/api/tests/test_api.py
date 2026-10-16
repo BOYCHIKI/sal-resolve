@@ -57,6 +57,6 @@ def test_merchant_cannot_be_chosen_by_client(as_tenant, api_seed, tenants):
 
 def test_no_identity_configured_is_503(monkeypatch):
     from app import main
-    monkeypatch.setattr(main, "get_settings", lambda: type("S", (), {"demo_merchant_id": None})())
+    monkeypatch.setattr(main, "get_settings", lambda: type("S", (), {"demo_merchant_id": None, "internal_token": None})())
     app.dependency_overrides.clear()
     assert client.get("/api/disputes").status_code == 503

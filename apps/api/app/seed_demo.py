@@ -35,8 +35,9 @@ def seed_golden(engine: Engine, merchant: UUID, case_id: str, deadline: str | No
         for e in case["evidence"]:
             lines = json.dumps(e["content_lines"])
             s.execute(text("""INSERT INTO evidence (merchant_id, dispute_id, object_key, checksum, mime, size_bytes,
-                                                    uploaded_by, doc_type, content_lines, source_ref)
-                              VALUES (:m, :d, :k, :c, 'application/pdf', :n, 'seed', :t, CAST(:l AS jsonb), :ref)"""),
+                                                    uploaded_by, doc_type, content_lines, source_ref, origin)
+                              VALUES (:m, :d, :k, :c, 'application/pdf', :n, 'seed', :t, CAST(:l AS jsonb), :ref,
+                                      'SEED')"""),
                       {"m": merchant, "d": row.id, "k": f"{merchant}/{row.id}/{e['evidence_id']}.pdf",
                        "c": hashlib.sha256(lines.encode()).hexdigest(), "n": len(lines), "t": e["type"],
                        "l": lines, "ref": e["evidence_id"]})

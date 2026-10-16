@@ -3,6 +3,7 @@
     python -m app.agent.evaluate                      # development split, baseline roles
     python -m app.agent.evaluate --split calibration
     python -m app.agent.evaluate --split holdout --final   # only once rules/prompts are frozen
+    python -m app.agent.evaluate --split real_format --roles llm   # realistic layouts (v1.1.0, ADR-004 gate)
 
 The pipeline sees only the dispute and evidence text; ground_truth is used for scoring only.
 """
@@ -23,6 +24,9 @@ from app.agent.validation import PROHIBITED_RE, _appears
 from app.config import REPO_ROOT
 
 GOLDEN_DIR = REPO_ROOT / "data" / "golden" / "v1.0.0"
+# Realistic layouts (dates in words, symbols, e-mails, scans). Not frozen like v1.0.0; regenerate with
+# data/golden/make_real_format.py.
+SPLIT_DIRS = {"real_format": REPO_ROOT / "data" / "golden" / "v1.1.0"}
 
 
 def load_cases(split: str, golden_dir: Path = GOLDEN_DIR) -> list[dict[str, Any]]:
@@ -32,8 +36,9 @@ def load_cases(split: str, golden_dir: Path = GOLDEN_DIR) -> list[dict[str, Any]
 
 def to_case_input(case: dict[str, Any]) -> CaseInput:
     d = case["dispute"]
-    docs = tuple(Document(e["evidence_id"], e["type"], tuple(Line(l["line"], l["text"]) for l in e["content_lines"]))
-                 for e in case["evidence"])
+    # Dataset documents stand in for what PayPal and the merchant would provide (practice data: SEED).
+    docs = tuple(Document(e["evidence_id"], e["type"], tuple(Line(l["line"], l["text"]) for l in e["content_lines"]),
+                          "SEED") for e in case["evidence"])
     return CaseInput(case["case_id"], d["reason"], d["amount"]["value"], d["amount"]["currency"], (), docs)
 
 
@@ -51,6 +56,7 @@ class Score:
     conflict_fp: int = 0
     conflict_fn: int = 0
     review_correct: int = 0
+    readiness_correct: int = 0    # ASSESS readiness vs the readiness implied by the labels (ADR-005)
     claims: int = 0
     unsupported_claims: int = 0   # kept claims not traceable to a GT-supported fact value
     prohibited_claims: int = 0
@@ -67,6 +73,21 @@ class Score:
 
 def _ratio(a: int, b: int) -> str:
     return f"{a / b:.2f}" if b else "n/a"
+
+
+def expected_readiness(case: dict[str, Any]) -> str:
+    """Readiness implied by the labels alone, independent of extraction:
+    any labelled conflict -> NEEDS_CHECK; no courier documents at all -> WEAK; anything missing (including a
+    payment record) -> NEEDS_DOCUMENTS; otherwise READY."""
+    gt = case["ground_truth"]
+    if gt["conflicts"]:
+        return "NEEDS_CHECK"
+    missing = set(gt["missing_evidence"])
+    if {"carrier_tracking", "delivery_proof"} <= missing:
+        return "WEAK"
+    if missing or not any(e["type"] == "payment_record" for e in case["evidence"]):
+        return "NEEDS_DOCUMENTS"
+    return "READY"
 
 
 def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
@@ -89,6 +110,7 @@ def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
     s.conflict_tp, s.conflict_fp, s.conflict_fn = len(gc & pc), len(pc - gc), len(gc - pc)
 
     s.review_correct = int(result.review_required == gt["review_required"])
+    s.readiness_correct = int(result.assessment is not None and result.assessment.readiness == expected_readiness(case))
     gt_values = {str(f["value"]) for f in gt["supported_facts"]}
     s.claims = len(result.claims)
     s.unsupported_claims = sum(1 for c in result.claims if not any(_appears(v, c.text) for v in gt_values))
@@ -100,7 +122,7 @@ def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
 def evaluate(split: str, planner=None, extractor=None, drafter=None, limit: int | None = None) -> dict[str, Score]:
     planner, extractor, drafter = planner or ReadAllPlanner(), extractor or RuleExtractor(), drafter or TemplateDrafter()
     by_scenario: dict[str, Score] = defaultdict(Score)
-    cases = load_cases(split)
+    cases = load_cases(split, SPLIT_DIRS.get(split, GOLDEN_DIR))
     if limit:  # one case per scenario first, so a small run still covers every scenario
         cases = sorted(cases, key=lambda c: [x['case_id'] for x in cases if x['scenario'] == c['scenario']].index(c['case_id']))[:limit]
     for i, case in enumerate(cases, 1):
@@ -108,8 +130,10 @@ def evaluate(split: str, planner=None, extractor=None, drafter=None, limit: int 
         t0 = time.perf_counter()
         try:
             result = analyze(to_case_input(case), planner, extractor, drafter)
-            print(f"ok {time.perf_counter() - t0:.1f}s", flush=True)
-            by_scenario[case["scenario"]].add(score_case(case, result))
+            scored = score_case(case, result)
+            print(f"ok {time.perf_counter() - t0:.1f}s  facts {scored.facts_found}/{scored.facts_expected}"
+                  f"  rejected {sum(f.status == 'rejected' for f in result.facts)}", flush=True)
+            by_scenario[case["scenario"]].add(scored)
         except Exception as exc:  # noqa: BLE001 — a crash is a measured worker error, not a silent skip
             print(f"ERROR {type(exc).__name__}", flush=True)
             by_scenario[case["scenario"]].add(Score(cases=1, errors=[f"{case['case_id']}: {exc!r}"]))
@@ -121,14 +145,15 @@ def report(scores: dict[str, Score]) -> str:
     for s in scores.values():
         total.add(s)
     rows = [("scenario", "cases", "fact P", "fact R", "provenance", "missing R", "missing P",
-             "conflict R", "conflict P", "review acc", "unsupported", "prohibited", "errors")]
+             "conflict R", "conflict P", "review acc", "ready acc", "unsupported", "prohibited", "errors")]
     for name, s in sorted(scores.items()) + [("ALL", total)]:
         rows.append((name, str(s.cases), _ratio(s.facts_correct, s.facts_predicted),
                      _ratio(s.facts_found, s.facts_expected), _ratio(s.provenance_ok, s.facts_found),
                      _ratio(s.missing_tp, s.missing_tp + s.missing_fn), _ratio(s.missing_tp, s.missing_tp + s.missing_fp),
                      _ratio(s.conflict_tp, s.conflict_tp + s.conflict_fn),
                      _ratio(s.conflict_tp, s.conflict_tp + s.conflict_fp),
-                     _ratio(s.review_correct, s.cases), _ratio(s.unsupported_claims, s.claims),
+                     _ratio(s.review_correct, s.cases), _ratio(s.readiness_correct, s.cases),
+                     _ratio(s.unsupported_claims, s.claims),
                      str(s.prohibited_claims), str(len(s.errors))))
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths)) for r in rows]
@@ -139,7 +164,7 @@ def report(scores: dict[str, Score]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout"])
+    parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout", "real_format"])
     parser.add_argument("--final", action="store_true", help="required to touch the holdout split")
     parser.add_argument("--roles", default="baseline", choices=["baseline", "llm"])
     parser.add_argument("--limit", type=int, help="score only N cases (free-tier quotas)")
@@ -151,9 +176,10 @@ def main() -> None:
         from app.agent.llm import LLMRoles
         from app.config import get_settings
         get_settings()  # loads apps/api/.env
-        llm = LLMRoles()
-        scores = evaluate(args.split, extractor=llm, drafter=llm, limit=args.limit)
-        print(f"split={args.split} roles=llm model={llm.model}")
+        from app.agent.roles import RuleExtractor, UnionExtractor
+        llm = LLMRoles()  # same composition as the worker (runner.configured_roles)
+        scores = evaluate(args.split, extractor=UnionExtractor(RuleExtractor(), llm), drafter=llm, limit=args.limit)
+        print(f"split={args.split} roles=rules+llm model={llm.model} {llm.options}")
     else:
         scores = evaluate(args.split, limit=args.limit)
         print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor, TemplateDrafter)")

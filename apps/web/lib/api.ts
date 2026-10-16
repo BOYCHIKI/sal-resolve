@@ -2,6 +2,8 @@ import "server-only";
 
 // Server-side only: the browser never talks to the API directly, so no CORS and no exposed API URL.
 const API_URL = process.env.SAL_API_URL ?? "http://127.0.0.1:8000";
+// Shared secret between this server and the API (required when the API runs with SAL_ENV=prod).
+const INTERNAL = process.env.SAL_INTERNAL_TOKEN ? { "x-sal-internal-token": process.env.SAL_INTERNAL_TOKEN } : undefined;
 
 export type Money = { value: string; currency: string };
 
@@ -24,6 +26,7 @@ export type Dispute = {
     missing: number;
     conflicts: number;
     draft_status: string | null;
+    readiness?: Readiness | null;
   } | null;
 };
 
@@ -44,6 +47,17 @@ export type Finding = {
   description: string;
 };
 
+export type Readiness = "READY" | "NEEDS_DOCUMENTS" | "NEEDS_CHECK" | "WEAK";
+
+export type Proposition = {
+  id: string;
+  status: "proven" | "missing" | "contradicted" | "flagged" | "not_applicable";
+  reason: string;
+  sources: SourceRef[];
+};
+
+export type Assessment = { propositions: Proposition[]; readiness: Readiness; next_action: string };
+
 export type Analysis = {
   analysis_id: string;
   dispute_version: number;
@@ -52,7 +66,14 @@ export type Analysis = {
   snapshot_hash: string;
   facts: Fact[];
   findings: Finding[];
-  draft: { id: string; revision: number; status: string; claims: { text: string; fact_fields: string[] }[] } | null;
+  assessment: Assessment | null;
+  draft: {
+    id: string;
+    revision: number;
+    status: string;
+    claims: { text: string; fact_fields: string[] }[];
+    submit_note: string | null;
+  } | null;
   agent: {
     roles: string;
     steps: number;
@@ -60,12 +81,17 @@ export type Analysis = {
   };
 };
 
-export type EvidenceDoc = { evidence_id: string; type: string | null; lines: { line: number; text: string }[] };
+export type EvidenceDoc = {
+  evidence_id: string;
+  type: string | null;
+  lines: { line: number; text: string }[];
+  origin?: "UPLOAD" | "PAYPAL_API" | "SEED";
+};
 
 export type Job = { id: string; kind: string; state: string; attempts: number; error: string | null };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init });
+  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { ...INTERNAL, ...init?.headers } });
   if (res.status === 404 || res.status === 422) return null; // unknown or malformed id
   if (!res.ok) throw new Error(`SAL API ${res.status} on ${path}`);
   return (await res.json()) as T;
@@ -77,7 +103,7 @@ export type ActionResult = { ok: true } | { ok: false; code: string; message: st
 async function action(path: string, body?: unknown): Promise<ActionResult> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST", cache: "no-store",
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: { ...INTERNAL, ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.ok) return { ok: true };
@@ -85,7 +111,24 @@ async function action(path: string, body?: unknown): Promise<ActionResult> {
   return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Request failed" };
 }
 
+/** Multipart upload of one document; the API checks type, size, duplicates and ownership. */
+async function upload(path: string, form: FormData): Promise<ActionResult> {
+  const res = await fetch(`${API_URL}${path}`, { method: "POST", cache: "no-store", body: form, headers: INTERNAL });
+  if (res.ok) return { ok: true };
+  const detail = (await res.json().catch(() => ({})))?.detail ?? {};
+  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Upload failed" };
+}
+
+export type Health = { status: "ok" | "degraded" | "down"; worker: { alive: boolean; seconds_since: number | null } | null };
+
 export const api = {
+  health: async (): Promise<Health | null> => {
+    try {
+      return await call<Health>("/api/health");
+    } catch {
+      return null;
+    }
+  },
   listDisputes: async () => (await call<{ items: Dispute[] }>("/api/disputes?limit=100"))?.items ?? [],
   getDispute: (id: string) => call<Dispute>(`/api/disputes/${encodeURIComponent(id)}`),
   getAnalysis: (id: string) => call<Analysis>(`/api/disputes/${encodeURIComponent(id)}/analysis`),
@@ -95,5 +138,7 @@ export const api = {
   approveDraft: (id: string, revision: number, snapshotHash: string) =>
     action(`/api/drafts/${encodeURIComponent(id)}/approve`, { revision, snapshot_hash: snapshotHash }),
   submitDraft: (id: string) => action(`/api/drafts/${encodeURIComponent(id)}/submit`),
+  uploadEvidence: (disputeId: string, form: FormData) =>
+    upload(`/api/disputes/${encodeURIComponent(disputeId)}/evidence`, form),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
 };

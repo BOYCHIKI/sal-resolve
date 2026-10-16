@@ -1,0 +1,70 @@
+{
+  "recorded_at": "20261015T081714Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "GET",
+    "path": "/v1/reporting/transactions",
+    "params": {
+      "transaction_id": "2MK81285P20231246",
+      "fields": "all"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "transaction_details": [
+        {
+          "transaction_info": {
+            "paypal_account_id": "TEBRGUNLD82MG",
+            "transaction_id": "2MK81285P20231246",
+            "paypal_reference_id": "2X920845424009805",
+            "paypal_reference_id_type": "TXN",
+            "transaction_event_code": "T0006",
+            "transaction_initiation_date": "2026-10-12T10:40:17Z",
+            "transaction_updated_date": "2026-10-12T10:40:17Z",
+            "transaction_amount": {
+              "currency_code": "USD",
+              "value": "45.00"
+            },
+            "fee_amount": {
+              "currency_code": "USD",
+              "value": "-1.83"
+            },
+            "transaction_status": "S",
+            "transaction_subject": "SAL synthetic test: Wireless Keyboard",
+            "invoice_id": "SAL-INR-001-20261012103550",
+            "custom_field": "SAL-INR-001",
+            "protection_eligibility": "01",
+            "instrument_type": "PayPal",
+            "instrument_sub_type": "PayPal Wallet"
+          },
+          "cart_info": {
+            "item_details": [
+              {
+                "item_name": "SAL synthetic test: Wireless Keyboard",
+                "item_description": "SAL synthetic test: Wireless Keyboard",
+                "item_quantity": "1",
+                "item_unit_price": {
+                  "currency_code": "USD",
+                  "value": "45.00"
+                },
+                "item_amount": {
+                  "currency_code": "USD",
+                  "value": "45.00"
+                },
+                "total_item_amount": {
+                  "currency_code": "USD",
+                  "value": "45.00"
+                },
+                "invoice_number": "SAL-INR-001-20261012103550"
+              }
+            ]
+          },
+          "store_info": {},
+          "auction_info": {},
+          "incentive_info": {}
+        }
+      ]
+    }
+  }
+}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-RULE_VERSION = "SAL-SYN-INR-1"
+RULE_VERSION = "SAL-SYN-INR-2"  # 2: one field/two values is a conflict; ASSESS stage (ADR-005)
 
 FactStatus = Literal["supported", "conflicted", "rejected"]
 
@@ -21,6 +21,7 @@ class Document:
     evidence_id: str
     type: str                 # order_invoice | payment_record | carrier_tracking | delivery_proof | support_message
     lines: tuple[Line, ...]
+    origin: str = "UPLOAD"    # UPLOAD (merchant file) | PAYPAL_API (fetched from PayPal) | SEED (practice data)
 
     def line_text(self, n: int) -> str | None:
         return next((l.text for l in self.lines if l.line == n), None)
@@ -85,6 +86,29 @@ class ToolCallRecord:
     summary: str
 
 
+PropositionStatus = Literal["proven", "missing", "contradicted", "flagged", "not_applicable"]
+Readiness = Literal["READY", "NEEDS_DOCUMENTS", "NEEDS_CHECK", "WEAK"]
+
+
+@dataclass(frozen=True)
+class Proposition:
+    """Something the evidence must show (ADR-005), with the lines that show it or the reason it doesn't."""
+    id: str
+    status: PropositionStatus
+    reason: str
+    sources: tuple[SourceRef, ...] = ()
+
+
+@dataclass(frozen=True)
+class Assessment:
+    propositions: tuple[Proposition, ...]
+    readiness: Readiness
+    next_action: str
+
+    def status(self, proposition_id: str) -> str:
+        return next(p.status for p in self.propositions if p.id == proposition_id)
+
+
 @dataclass
 class AnalysisResult:
     rule_version: str
@@ -95,6 +119,7 @@ class AnalysisResult:
     review_required: bool
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     snapshot_hash: str = ""
+    assessment: Assessment | None = None
 
     @property
     def missing(self) -> list[str]:

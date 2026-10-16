@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID
@@ -17,13 +18,18 @@ from sqlalchemy import Engine, text
 from app import repositories as repo
 from app.agent.models import CaseInput, Document, Line
 from app.agent.pipeline import analyze
-from app.agent.roles import Drafter, Extractor, Planner, ReadAllPlanner, RuleExtractor, TemplateDrafter
+from app.agent.roles import (Drafter, Extractor, Planner, ReadAllPlanner, RuleExtractor, TemplateDrafter,
+                             UnionExtractor)
 from app.db import tenant_session
+
+log = logging.getLogger("sal.agent")
 
 
 class Roles:
-    def __init__(self, planner: Planner, extractor: Extractor, drafter: Drafter, label: str) -> None:
+    def __init__(self, planner: Planner, extractor: Extractor, drafter: Drafter, label: str,
+                 fallback: "Roles | None" = None) -> None:
         self.planner, self.extractor, self.drafter, self.label = planner, extractor, drafter, label
+        self.fallback = fallback  # used when these roles fail (e.g. the LLM is down or out of quota)
 
 
 def baseline_roles() -> Roles:
@@ -33,12 +39,13 @@ def baseline_roles() -> Roles:
 def configured_roles() -> Roles:
     """Deterministic baseline unless the LLM is switched on explicitly (SAL_AGENT_ROLES=llm).
     A key alone never turns it on: the LLM is postponed for the demo and free tiers are slow and capped."""
-    import os
-    if os.environ.get("SAL_AGENT_ROLES", "baseline").lower() != "llm":
+    from app.config import get_settings
+    if get_settings().agent_roles != "llm":
         return baseline_roles()
     from app.agent.llm import LLMRoles
     llm = LLMRoles()
-    return Roles(ReadAllPlanner(), llm, llm, f"llm:{llm.model}")
+    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), llm), llm, f"rules+llm:{llm.model}",
+                 fallback=baseline_roles())
 
 
 def _requested(payload: dict[str, Any] | None) -> tuple[str, ...]:
@@ -52,11 +59,11 @@ def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tup
                                      provider_payload FROM disputes WHERE id = :id"""), {"id": dispute_id}).first()
         if d is None:
             return None
-        rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines
+        rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines, origin
                                  FROM evidence WHERE dispute_id = :id AND content_lines IS NOT NULL
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"id": dispute_id}).all()
     docs = tuple(Document(r.evidence_id, r.doc_type or "unknown",
-                          tuple(Line(int(l["line"]), str(l["text"])) for l in r.content_lines)) for r in rows)
+                          tuple(Line(int(l["line"]), str(l["text"])) for l in r.content_lines), r.origin) for r in rows)
     case = CaseInput(d.case_ref or d.provider_dispute_id, d.reason, f"{d.amount:.2f}", d.currency,
                      _requested(d.provider_payload), docs)
     return case, d.version
@@ -69,8 +76,18 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
         return {"skipped": "dispute not found"}
     case, version = loaded
 
-    result = analyze(case, roles.planner, roles.extractor, roles.drafter)
+    label = roles.label
+    try:
+        result = analyze(case, roles.planner, roles.extractor, roles.drafter)
+    except Exception as exc:  # noqa: BLE001 — degrade, never block (ADR-004)
+        if roles.fallback is None:
+            raise
+        # The SDK already retried. Missing-evidence checks still work without the model; the run says so.
+        log.warning("%s failed (%s); falling back to %s", roles.label, type(exc).__name__, roles.fallback.label)
+        label = f"{roles.fallback.label} (LLM unavailable: {type(exc).__name__})"
+        result = analyze(case, roles.fallback.planner, roles.fallback.extractor, roles.fallback.drafter)
 
+    usage = getattr(roles.drafter, "usage", None)  # tokens spent, even when the run fell back to rules
     claims = [asdict(c) for c in result.claims]
     body = "\n".join(c.text for c in result.claims)
     with tenant_session(merchant_id, engine) as s:
@@ -81,10 +98,12 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
             return {"discarded": "stale", "analyzed_version": version, "current_version": current}
 
         run_id = s.execute(text("""
-            INSERT INTO agent_runs (merchant_id, dispute_id, job_id, roles, status, steps, ended_at)
-            VALUES (:m, :d, :j, :roles, 'SUCCEEDED', :steps, now()) RETURNING id"""),
-            {"m": merchant_id, "d": dispute_id, "j": job_id, "roles": roles.label,
-             "steps": len(result.tool_calls)}).scalar_one()
+            INSERT INTO agent_runs (merchant_id, dispute_id, job_id, roles, status, steps, ended_at,
+                                    llm_input_tokens, llm_output_tokens)
+            VALUES (:m, :d, :j, :roles, 'SUCCEEDED', :steps, now(), :tin, :tout) RETURNING id"""),
+            {"m": merchant_id, "d": dispute_id, "j": job_id, "roles": label, "steps": len(result.tool_calls),
+             "tin": usage.get("input_tokens") if usage else None,
+             "tout": usage.get("output_tokens") if usage else None}).scalar_one()
         for call in result.tool_calls:
             s.execute(text("""INSERT INTO tool_calls (merchant_id, agent_run_id, step, tool, args, ok, summary)
                               VALUES (:m, :r, :step, :tool, CAST(:args AS jsonb), :ok, :summary)"""),
@@ -92,14 +111,19 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
                        "args": json.dumps(call.args), "ok": call.ok, "summary": call.summary})
         analysis_id = s.execute(text("""
             INSERT INTO analyses (merchant_id, dispute_id, agent_run_id, dispute_version, rule_version, facts,
-                                  findings, review_required, snapshot_hash)
-            VALUES (:m, :d, :r, :v, :rv, CAST(:facts AS jsonb), CAST(:findings AS jsonb), :review, :hash)
+                                  findings, review_required, snapshot_hash, assessment)
+            VALUES (:m, :d, :r, :v, :rv, CAST(:facts AS jsonb), CAST(:findings AS jsonb), :review, :hash,
+                    CAST(:assessment AS jsonb))
             RETURNING id"""),
             {"m": merchant_id, "d": dispute_id, "r": run_id, "v": version, "rv": result.rule_version,
              "facts": json.dumps([asdict(f) for f in result.facts]),
              "findings": json.dumps([asdict(f) for f in result.findings]),
-             "review": result.review_required, "hash": result.snapshot_hash}).scalar_one()
-        s.execute(text("UPDATE drafts SET status = 'SUPERSEDED' WHERE dispute_id = :d AND status = 'DRAFT'"),
+             "review": result.review_required, "hash": result.snapshot_hash,
+             "assessment": json.dumps(asdict(result.assessment)) if result.assessment else None}).scalar_one()
+        # A new analysis also cancels an approval that was not sent yet: the operator approved what they
+        # saw, and the documents or the case have changed since (ADR-003 D1).
+        s.execute(text("""UPDATE drafts SET status = 'SUPERSEDED'
+                          WHERE dispute_id = :d AND status IN ('DRAFT', 'APPROVED', 'SUBMIT_FAILED')"""),
                   {"d": dispute_id})
         revision = s.execute(text("""
             INSERT INTO drafts (merchant_id, dispute_id, revision, body, payload_hash, analysis_id, claims)

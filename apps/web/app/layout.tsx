@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SAL Resolve",
-  description: "Reply to PayPal disputes with proof from your own documents. You approve before anything is sent.",
+  description: "The evidence copilot for PayPal disputes: know what your documents prove before you reply. You approve before anything is sent.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

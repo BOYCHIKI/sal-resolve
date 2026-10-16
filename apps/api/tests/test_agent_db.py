@@ -149,3 +149,20 @@ def test_evidence_endpoint_is_tenant_scoped(merchant, app_engine):
         assert client.get(f"/api/disputes/{dispute_id}/evidence").json()["items"] == []
     finally:
         app.dependency_overrides.clear()
+
+
+def test_llm_failure_falls_back_to_baseline_and_says_so(merchant, app_engine, worker_engine):
+    from app.agent.roles import ReadAllPlanner, TemplateDrafter
+    from app.agent.runner import Roles
+
+    class DownExtractor:
+        def extract(self, documents):
+            raise TimeoutError("model did not answer")
+
+    roles = Roles(ReadAllPlanner(), DownExtractor(), TemplateDrafter(), "llm:test-model", fallback=baseline_roles())
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-011")
+    out = run_analysis(merchant, dispute_id, None, roles, worker_engine)
+    assert out["findings"] >= 2  # missing tracking + delivery proof still detected without the model
+    with tenant_session(merchant, app_engine) as s:
+        label = s.execute(text("SELECT roles FROM agent_runs WHERE dispute_id = :d"), {"d": dispute_id}).scalar()
+    assert label.startswith("baseline:") and "LLM unavailable: TimeoutError" in label

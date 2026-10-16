@@ -56,6 +56,10 @@ _PATTERNS: dict[str, list[tuple[str, str, str]]] = {
         ("payment_amount", r"^Settled amount: (\d+\.\d{2}) ([A-Z]{3})$", "{0}"),
         ("payment_currency", r"^Settled amount: (\d+\.\d{2}) ([A-Z]{3})$", "{1}"),
         ("order_id", r"^Order reference: (ORD-[A-Z0-9-]+)$", "{0}"),
+        # SAL's own rendering of PayPal's transaction record (app/paypal_evidence.py): exact, so always read.
+        ("transaction_id", r"^Transaction ID: ([A-Z0-9]{17})$", "{0}"),
+        ("payment_amount", r"^Amount: (\d+\.\d{2}) ([A-Z]{3})$", "{0}"),
+        ("payment_currency", r"^Amount: (\d+\.\d{2}) ([A-Z]{3})$", "{1}"),
     ],
     "carrier_tracking": [
         ("tracking_id", r"^SYNTHETIC TRACKING \| (TRK-[A-Z0-9-]+)$", "{0}"),
@@ -113,3 +117,15 @@ class TemplateDrafter:
                 claims.append(Claim(template.format(v=supported[field].value, currency=currency).replace("  ", " "),
                                     (field,) if field != "order_amount" else ("order_amount", "currency")))
         return claims
+
+
+class UnionExtractor:
+    """Candidates from several extractors, first ones first. Rules read known layouts exactly every time;
+    the model covers everything else. Grounding treats all candidates the same, and when two disagree on a
+    field the first extractor's fact is the one the rules use."""
+
+    def __init__(self, *extractors: Extractor) -> None:
+        self.extractors = extractors
+
+    def extract(self, documents):
+        return [c for e in self.extractors for c in e.extract(documents)]

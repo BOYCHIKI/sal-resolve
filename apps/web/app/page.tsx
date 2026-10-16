@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "SAL Resolve — reply to PayPal disputes with proof",
+  title: "SAL Resolve — the evidence copilot for PayPal disputes",
   description: "When a customer says an order never arrived, SAL checks your documents, flags what doesn’t add up and drafts the reply. You approve before anything is sent.",
 };
 
@@ -48,11 +48,12 @@ export default function Landing() {
 
       <main className="mx-auto max-w-5xl">
         <section className="flex flex-col items-center gap-6 pb-16 pt-24 text-center">
-          <span className="glass rounded-full px-4 py-1.5 text-sm text-ink-soft">For online sellers who use PayPal · Demo with a test account</span>
-          <h1 className="max-w-3xl text-[40px] leading-[1.06] sm:text-6xl">Customer says it never arrived? Reply with proof, in minutes.</h1>
+          <span className="glass rounded-full px-4 py-1.5 text-sm text-ink-soft">The evidence copilot for PayPal disputes · Demo with a test account</span>
+          <h1 className="max-w-3xl text-[40px] leading-[1.06] sm:text-6xl">Customer says it never arrived? Know what your proof shows.</h1>
           <p className="max-w-2xl text-lg text-ink-soft sm:text-xl">
-            When a customer opens a PayPal dispute, SAL gathers your invoice, payment and delivery documents, points out anything that
-            doesn’t add up, and writes the reply for you. You read it, approve it, and send.
+            When a customer opens a PayPal dispute, SAL pulls the payment record from PayPal, reads your invoice and delivery
+            documents, and shows what they prove, what’s missing and what doesn’t add up. Then it drafts a reply from proven facts
+            only. You read it, approve it, and send.
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-3">
             <Link href="/disputes" className="btn-primary">Open the demo</Link>

@@ -1,6 +1,6 @@
 // Turns system codes into words an operations or finance person reads without a glossary.
 // The API keeps its codes; only the UI speaks plainly.
-import type { Analysis, Dispute, Fact, Finding } from "@/lib/api";
+import type { Analysis, Dispute, Fact, Finding, Proposition, Readiness } from "@/lib/api";
 
 const REASONS: Record<string, string> = {
   ITEM_NOT_RECEIVED: "Says it never arrived",
@@ -43,26 +43,73 @@ export type Tone = "red" | "amber" | "blue" | "green" | "grey";
 export function nextStep(d: Dispute): { label: string; tone: Tone } {
   const s = d.summary;
   if (d.provider_status === "RESOLVED") return { label: "Closed by PayPal", tone: "grey" };
+  if (s?.draft_status === "SUBMITTING") return { label: "Sending to PayPal…", tone: "blue" };
+  const evidenceStep = s?.readiness && s.readiness !== "READY" ? READINESS[s.readiness] : null;
   if (d.internal_state === "SUBMITTED")
     return { label: d.provider_status === "UNDER_REVIEW" ? "PayPal is reviewing your reply" : "Sent, waiting for PayPal", tone: "grey" };
   if (d.provider_status === "WAITING_FOR_BUYER_RESPONSE") return { label: "Waiting for the customer", tone: "grey" };
   if (d.internal_state === "APPROVED") return { label: "Approved, ready to send", tone: "blue" };
   if (!s || s.draft_status === null) return { label: "Being prepared", tone: "grey" };
+  if (s.readiness === "WEAK") return READINESS.WEAK;
   if (s.missing > 0) return { label: s.missing === 1 ? "Missing 1 document" : `Missing ${s.missing} documents`, tone: "red" };
   if (s.conflicts > 0) return { label: s.conflicts === 1 ? "Check 1 detail first" : `Check ${s.conflicts} details first`, tone: "amber" };
+  if (evidenceStep) return evidenceStep;  // e.g. no PayPal transaction record yet
   return { label: "Review the reply", tone: "amber" };
 }
 
-const DOCS: Record<string, string> = {
+export const DOCS: Record<string, string> = {
   order_invoice: "Invoice",
   payment_record: "Payment receipt",
   carrier_tracking: "Courier tracking",
   delivery_proof: "Delivery receipt",
   support_message: "Customer message",
+  other: "Other document",
 };
 
-export function docName(type: string | null | undefined): string {
+export function docName(type: string | null | undefined, from?: string): string {
+  if (from === "PAYPAL_API" && type === "payment_record") return "PayPal transaction record";
   return (type && DOCS[type]) || "Document";
+}
+
+/** A document's name inside a sentence ("See invoice"), keeping brand capitals ("See PayPal transaction record"). */
+export function docRef(type: string | null | undefined, from?: string): string {
+  const name = docName(type, from);
+  return name.startsWith("PayPal") ? name : name.toLowerCase();
+}
+
+// ---------------------------------------------------------------- what the evidence proves (ADR-005)
+const PROPOSITION_TITLES: Record<string, string> = {
+  payment_matches: "The PayPal payment matches the dispute",
+  shipped: "The parcel was shipped",
+  delivered: "The parcel was delivered",
+  delivery_date_consistent: "The delivery dates agree",
+  buyer_messages_clean: "The buyer's messages are clean",
+  paypal_request_covered: "What PayPal asked for is covered",
+};
+
+export function propositionTitle(id: string): string {
+  return PROPOSITION_TITLES[id] ?? id;
+}
+
+export function propositionLook(status: Proposition["status"]): { mark: string; word: string; tone: Tone } {
+  switch (status) {
+    case "proven": return { mark: "✓", word: "Proven", tone: "green" };
+    case "missing": return { mark: "✕", word: "Missing", tone: "red" };
+    case "contradicted": return { mark: "!", word: "Doesn’t match", tone: "amber" };
+    case "flagged": return { mark: "!", word: "Check this", tone: "amber" };
+    default: return { mark: "–", word: "Not needed", tone: "grey" };
+  }
+}
+
+const READINESS: Record<Readiness, { label: string; tone: Tone }> = {
+  READY: { label: "Ready to reply", tone: "green" },
+  NEEDS_DOCUMENTS: { label: "Documents missing", tone: "red" },
+  NEEDS_CHECK: { label: "Check details first", tone: "amber" },
+  WEAK: { label: "Weak evidence", tone: "red" },
+};
+
+export function readiness(r: Readiness): { label: string; tone: Tone } {
+  return READINESS[r];
 }
 
 const FIELDS: Record<string, string> = {

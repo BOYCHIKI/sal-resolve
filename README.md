@@ -1,6 +1,9 @@
 # SAL Resolve
 
-AI-assisted payment-dispute operations copilot for PayPal merchants (PayPal AI Hackathon, submission due 12 Nov 2026 12:00 PT).
+**The evidence copilot for PayPal disputes.** Evidence intelligence for merchants: know what your documents prove
+before you reply. SAL reads your documents and PayPal's own transaction record, shows what they prove and what's missing,
+and drafts a reply only from verified facts. You decide. (PayPal AI Hackathon, submission due 12 Nov 2026 12:00 PT;
+positioning in [ADR-005](docs/adr/ADR-005-evidence-copilot.md).)
 Design docs live in Notion: SAL v1.0 Final Blueprint and SAL v1.1 System Design.
 
 ## Layout
@@ -24,16 +27,32 @@ Design docs live in Notion: SAL v1.0 Final Blueprint and SAL v1.1 System Design.
 
 ## Quick start
 
+Shortcuts (Windows, needs Docker Desktop, Python 3.12+, Node 20+):
+
+```
+.\sal setup     # first time: venv, packages, .env, database, demo cases
+.\sal start     # database + API + worker + web, opens http://localhost:3000
+.\sal backend   # database + API + worker only (docs: http://127.0.0.1:8000/docs)
+.\sal web       # web only (needs the backend)
+.\sal stop      # stop API, worker and web
+.\sal status    # what is running
+.\sal seed      # add demo cases again
+.\sal test      # backend tests (separate sal_test database)
+.\sal eval --split real_format --roles llm   # score the agent (LLM needs SAL_LLM_* in apps/api/.env)
+```
+
+If PowerShell blocks scripts, use `.\sal.cmd start` (same commands). By hand:
+
 ```
 docker compose up -d --wait                       # Postgres
-cd apps/api && pip install -r requirements.txt && copy .env.example .env
+cd apps/api && pip install -r requirements.lock && copy .env.example .env
 alembic upgrade head && python -m app.seed_demo   # put the printed id in SAL_DEMO_MERCHANT_ID
 uvicorn app.main:app --port 8000                  # API
 python -m app.worker                              # worker (second terminal)
 cd apps/web && npm install && npm run dev         # UI on http://localhost:3000
 ```
 
-Note: `pytest` in `apps/api` resets the local database schema, which removes seeded demo data.
+Tests run on their own database (`sal_test`) and leave the demo data in `sal` alone.
 
 ## License
 
