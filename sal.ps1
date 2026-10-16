@@ -1,0 +1,162 @@
+<#
+SAL Resolve: local shortcuts (Windows PowerShell 5.1+).
+
+    .\sal setup    first time: venv, packages, .env, database, demo data
+    .\sal start    database + API + worker + web, opens http://localhost:3000
+    .\sal backend  database + API + worker only (API docs: http://127.0.0.1:8000/docs)
+    .\sal web      web only, opens http://localhost:3000 (needs the backend running)
+    .\sal stop     stops what "start" opened (the database keeps its data)
+    .\sal status   what is running
+    .\sal seed     add the demo cases again
+    .\sal test     run backend tests (own database sal_test; demo data is untouched)
+    .\sal eval     score the agent; extra options pass through, e.g.
+                   .\sal eval --split real_format --roles llm
+#>
+param(
+    [ValidateSet("setup", "start", "backend", "web", "stop", "status", "seed", "test", "eval", "help")][string]$Command = "help",
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest = @()
+)
+
+$ErrorActionPreference = "Stop"
+$Root = $PSScriptRoot
+$Api = Join-Path $Root "apps\api"
+$Web = Join-Path $Root "apps\web"
+$Py = Join-Path $Root ".venv\Scripts\python.exe"
+$EnvFile = Join-Path $Api ".env"
+$PidFile = Join-Path $Root ".sal\pids.txt"
+
+function Say($text) { Write-Host "==> $text" -ForegroundColor Cyan }
+function Fail($text) { Write-Host "x $text" -ForegroundColor Red; exit 1 }
+
+function Need($tool, $hint) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { Fail "$tool not found. $hint" }
+}
+
+function Run($exe, [string[]]$argv, $dir = $Root) {
+    Push-Location $dir
+    try { & $exe @argv; if ($LASTEXITCODE -ne 0) { Fail "$exe $($argv -join ' ') failed (exit $LASTEXITCODE)" } }
+    finally { Pop-Location }
+}
+
+function Database {
+    Need docker "Install Docker Desktop and start it."
+    Say "Starting PostgreSQL (Docker)"
+    Run docker @("compose", "up", "-d", "--wait")
+    # Test database for pytest (created on first start; this covers volumes made before it existed).
+    try { & docker compose exec -T db psql -q -U postgres -f /docker-entrypoint-initdb.d/01_test_db.sql *> $null } catch {}
+    Say "Applying database migrations"
+    Run $Py @("-m", "alembic", "upgrade", "head") $Api
+}
+
+function Seed {
+    Say "Adding demo cases"
+    Push-Location $Api
+    try { $out = & $Py -m app.seed_demo } finally { Pop-Location }
+    $out | Write-Host
+    if ($LASTEXITCODE -ne 0) { Fail "seed_demo failed" }
+    # First run: seed_demo creates a merchant and prints its id; store it so the API knows who the demo user is.
+    $m = $out | Select-String -Pattern "SAL_DEMO_MERCHANT_ID=([0-9a-f-]{36})" | Select-Object -First 1
+    if ($m) {
+        $id = $m.Matches[0].Groups[1].Value
+        $lines = @(Get-Content $EnvFile | Where-Object { $_ -notmatch "^SAL_DEMO_MERCHANT_ID=" }) + "SAL_DEMO_MERCHANT_ID=$id"
+        [IO.File]::WriteAllLines($EnvFile, $lines, (New-Object Text.UTF8Encoding $false))
+        Say "Saved the demo merchant id in apps/api/.env"
+    }
+}
+
+function Setup {
+    Need python "Install Python 3.12+ from python.org (tick 'Add to PATH')."
+    Need npm "Install Node.js 20+ from nodejs.org."
+    if (-not (Test-Path $Py)) { Say "Creating Python environment (.venv)"; Run python @("-m", "venv", ".venv") }
+    Say "Installing backend packages"
+    Run $Py @("-m", "pip", "install", "-q", "-r", "apps\api\requirements.lock")  # exact, tested versions
+    if (-not (Test-Path $EnvFile)) {
+        Copy-Item (Join-Path $Api ".env.example") $EnvFile
+        Say "Created apps/api/.env (fill PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET for PayPal sandbox)"
+    }
+    Say "Installing web packages"
+    Run npm @("install", "--no-fund", "--no-audit") $Web
+    Database
+    Seed
+    Say "Done. Next: .\sal start"
+}
+
+function Window($title, $dir, $cmd) {
+    $line = "`$host.UI.RawUI.WindowTitle = 'SAL $title'; Set-Location '$dir'; $cmd"
+    (Start-Process powershell -ArgumentList "-NoExit", "-Command", $line -PassThru).Id
+}
+
+function Remember($id) {
+    New-Item -ItemType Directory -Force (Split-Path $PidFile) | Out-Null
+    Add-Content $PidFile $id
+}
+
+function Listening($port) {
+    $tcp = New-Object Net.Sockets.TcpClient
+    try { $up = $tcp.ConnectAsync("127.0.0.1", $port).Wait(500) -and $tcp.Connected } catch { $up = $false }
+    $tcp.Close()
+    $up
+}
+
+function Start-Backend {
+    if (-not (Test-Path $Py)) { Fail "Run .\sal setup first." }
+    if (Listening 8000) { Say "API already running on :8000"; return }
+    Database
+    Say "Opening API and worker in their own windows"
+    Remember (Window "API :8000" $Api "& '$Py' -m uvicorn app.main:app --port 8000")
+    Remember (Window "worker" $Api "& '$Py' -m app.worker")
+    foreach ($i in 1..30) { if (Listening 8000) { break }; Start-Sleep 1 }
+    if (-not (Listening 8000)) { Fail "API did not start. Look at the 'SAL API :8000' window for the error." }
+    Say "Backend running. API docs http://127.0.0.1:8000/docs  Stop: .\sal stop"
+}
+
+function Start-Web {
+    if (-not (Test-Path (Join-Path $Web "node_modules"))) { Fail "Run .\sal setup first." }
+    if (-not (Listening 3000)) {
+        if (-not (Listening 8000)) { Say "Note: the API is not running, the web will say it can't reach its server. Run .\sal backend" }
+        Say "Opening web in its own window"
+        Remember (Window "web :3000" $Web "npm run dev")
+        Say "Waiting for the web page"
+        foreach ($i in 1..60) {
+            try { Invoke-WebRequest "http://localhost:3000" -UseBasicParsing -TimeoutSec 2 | Out-Null; break }
+            catch { Start-Sleep 2 }
+        }
+    }
+    Start-Process "http://localhost:3000"
+    Say "Web running at http://localhost:3000  Stop: .\sal stop"
+}
+
+function Start-All {
+    if (Test-Path $PidFile) { Stop-All }
+    Start-Backend
+    Start-Web
+}
+
+function Stop-All {
+    if (Test-Path $PidFile) {
+        foreach ($id in Get-Content $PidFile) { try { & taskkill /PID $id /T /F *> $null } catch {} }
+        Remove-Item $PidFile
+        Say "Stopped API, worker and web"
+    } else { Say "Nothing started by .\sal start, backend or web" }
+}
+
+function Status {
+    foreach ($p in @(@{n = "Database"; port = 15432 }, @{n = "API"; port = 8000 }, @{n = "Web"; port = 3000 })) {
+        Write-Host ("{0,-9} {1}" -f $p.n, $(if (Listening $p.port) { "running" } else { "stopped" }))
+    }
+    $worker = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -like "*app.worker*" }
+    Write-Host ("{0,-9} {1}" -f "Worker", $(if ($worker) { "running" } else { "stopped" }))
+}
+
+switch ($Command) {
+    "setup"  { Setup }
+    "start"  { Start-All }
+    "backend" { Start-Backend }
+    "web"    { Start-Web }
+    "stop"   { Stop-All }
+    "status" { Status }
+    "seed"   { Seed }
+    "test"   { Database; Run $Py @("-m", "pytest", "-q") $Api }
+    "eval"   { Run $Py (@("-m", "app.agent.evaluate") + $Rest) $Api }
+    default  { Get-Help $PSCommandPath; Write-Host "Usage: .\sal setup | start | backend | web | stop | status | seed | test | eval" }
+}
