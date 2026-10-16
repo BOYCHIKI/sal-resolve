@@ -37,3 +37,21 @@ export async function submitDraft(disputeId: string, draftId: string): Promise<A
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
+
+export async function uploadEvidence(disputeId: string, form: FormData): Promise<ActionResult> {
+  const file = form.get("file");
+  const docType = form.get("doc_type");
+  if (!(file instanceof File) || typeof docType !== "string") {
+    return { ok: false, code: "BAD_REQUEST", message: "Choose a file and a document type." };
+  }
+  const outgoing = new FormData();
+  outgoing.append("doc_type", docType);
+  outgoing.append("file", file, file.name);
+  try {
+    const result = await api.uploadEvidence(disputeId, outgoing);
+    revalidatePath(`/disputes/${disputeId}`);
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}

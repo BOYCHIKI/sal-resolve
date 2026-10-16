@@ -13,6 +13,7 @@ type Props = {
   sandbox: boolean;
   canProvideEvidence: boolean;
   openItems: number;
+  note: string | null;
 };
 
 const MESSAGES: Record<string, string> = {
@@ -20,7 +21,9 @@ const MESSAGES: Record<string, string> = {
   STALE_SNAPSHOT: "Something changed since you opened this page. Reload it and read the reply again.",
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new reply.",
   DRAFT_NOT_PENDING: "This reply was already approved.",
-  NOT_SUBMITTABLE: "This reply was already sent.",
+  NOT_SUBMITTABLE: "This reply was already sent, or is being sent.",
+  EVIDENCE_CHANGED: "Documents were added after you approved. SAL is updating the reply; please read and approve it again.",
+  SUBMIT_UNCONFIRMED: "PayPal didn’t answer in time. SAL will check with PayPal in a few minutes whether it arrived. Don’t send it again yet.",
   PAYPAL_REJECTED: "PayPal didn’t accept the documents right now. You can try again.",
   API_UNREACHABLE: "SAL can’t reach its server right now. Please try again in a moment.",
 };
@@ -53,6 +56,14 @@ export function DraftActions(p: Props) {
     return <p className="rounded-2xl bg-green-bg p-4 text-green-ink">Sent to PayPal. You’ll see PayPal’s answer here when it arrives.</p>;
   }
 
+  if (p.status === "SUBMITTING") {
+    return (
+      <p className="rounded-2xl bg-grey-bg p-4 text-ink-soft" role="status">
+        Sending to PayPal. If PayPal doesn’t confirm, SAL checks with PayPal within a few minutes and shows the result here.
+      </p>
+    );
+  }
+
   if (p.status === "DRAFT") {
     return (
       <div className="flex flex-col gap-3">
@@ -76,7 +87,12 @@ export function DraftActions(p: Props) {
       : !p.canProvideEvidence ? "PayPal isn’t accepting documents for this case right now." : null;
     return (
       <div className="flex flex-col gap-3">
-        <p className="text-green-ink">{p.status === "APPROVED" ? "You approved this reply." : "The last send didn’t go through. You can try again."}</p>
+        <p className={p.note === "NEEDS_MANUAL_CHECK" ? "text-amber-ink" : "text-green-ink"}>
+          {p.status === "APPROVED" ? "You approved this reply."
+            : p.note === "NEEDS_MANUAL_CHECK" ? "SAL couldn’t confirm the last send, and PayPal has moved the case on. Check the case in PayPal before sending again."
+            : p.note === "NOT_RECEIVED" ? "PayPal never received the last send. You can send it again."
+            : "The last send didn’t go through. You can try again."}
+        </p>
         <button className="btn-primary w-full text-[17px]" disabled={busy || blocked !== null}
           onClick={() => run(() => submitDraft(p.disputeId, p.draftId), "Sent to PayPal.")}>
           {busy ? "Sending…" : "Send to PayPal"}
