@@ -25,12 +25,26 @@ export function date(value: string | null | undefined): string {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : value;
 }
 
-export function dueText(iso: string | null): { text: string; short: string; urgent: boolean } {
+/** PayPal's deadline with its time, in UTC, so it reads the same wherever the page is rendered. */
+function deadlineStamp(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
+}
+
+/** Time left, rounded down: 3 hours left never reads as "1 day left". */
+export function dueText(iso: string | null, now: number = Date.now()): { text: string; short: string; urgent: boolean } {
   if (!iso) return { text: "Nothing due", short: "", urgent: false };
-  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return { text: `Reply was due ${date(iso)}`, short: "Overdue", urgent: true };
-  const left = `${days} day${days === 1 ? "" : "s"} left`;
-  return { text: `Reply by ${date(iso)} · ${left}`, short: left, urgent: days <= 3 };
+  const ms = new Date(iso).getTime() - now;
+  if (Number.isNaN(ms)) return { text: "Nothing due", short: "", urgent: false };
+  if (ms < 0) return { text: `Reply was due ${deadlineStamp(iso)}`, short: "Overdue", urgent: true };
+  const hours = Math.floor(ms / 3_600_000);
+  const days = Math.floor(hours / 24);
+  const left = hours < 1 ? "Less than 1 hour left"
+    : hours < 24 ? `${hours} hour${hours === 1 ? "" : "s"} left`
+    : `${days} day${days === 1 ? "" : "s"} left`;
+  return { text: `Reply by ${deadlineStamp(iso)} · ${left}`, short: left, urgent: hours < 72 };
 }
 
 export function orderNumber(ref: string | null | undefined): string | null {

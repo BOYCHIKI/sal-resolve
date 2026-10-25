@@ -56,7 +56,7 @@ export default async function DisputesPage() {
         )}
 
         {!error && (
-          <section aria-label="At a glance" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <section aria-label="At a glance" data-reveal-stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Tile tone="red" title="Reply needed within 3 days" value={count((x) => x.due.urgent && x.step.tone !== "grey")}
               hint="If you miss the deadline, PayPal usually sides with the customer." />
             <Tile tone="amber" title="Waiting for your review" value={count((x) => x.step.tone === "amber" || x.step.tone === "red")}
@@ -75,7 +75,7 @@ export default async function DisputesPage() {
         )}
 
         {steps.length > 0 && (
-          <section aria-label="All cases" className="flex flex-col gap-2.5">
+          <section aria-label="All cases" data-reveal-stagger className="flex flex-col gap-2.5">
             {steps.map(({ d, step, due }) => {
               const order = orderNumber(d.summary?.order_ref);
               return (

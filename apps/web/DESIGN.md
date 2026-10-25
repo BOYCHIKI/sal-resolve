@@ -560,3 +560,12 @@ The structural breakpoints that matter for agents: 1440px (content lock), 1068px
 - Dark-mode counterparts for store and accessories utility cards were not surfaced on the analyzed pages; the system documented is the daytime/light-dominant variant Apple ships by default.
 - Atmospheric photography (environment page mountain vista) is a content asset, not a design token; the documented `{component.environment-quote-card}` describes the structural surface only.
 - The exact backdrop-filter blur radius on `{component.sub-nav-frosted}` and `{component.floating-sticky-bar}` is platform-dependent; production CSS uses `saturate(180%) blur(20px)` as a typical baseline but the value isn't formalized as a token.
+
+## Dark-first and motion (SAL)
+
+SAL departs from the Apple reference above in two ways.
+
+- **Dark is the default.** `app/globals.css` defines the dark palette on `:root`; the original light palette lives under `:root[data-theme="light"]`. `--action` (#7d9bff) is for text, links and icon strokes; `--action-fill` (#3d63ff, white text 4.7:1) is for button fills. `--accent` (#8ef0c0) is only for scroll highlights.
+- **Motion** comes from GSAP, driven by data attributes in `components/motion/Motion.tsx`: `data-split="hero" | "reveal"` (lines rise from a mask and unblur: 1.2s, power3.out, 0.06s stagger), `data-reveal` and `data-reveal-stagger` (fade up 2.5rem, 0.6s), `data-tilt` with a `.glare` child (at most 3.5° / 1.5°, fine pointers only), and `data-highlight` (accent while crossing mid-screen). The landing illustration is `components/motion/EvidenceFlow.tsx` (DrawSVG), an original drawing with no Lottie files. Inside the app, motion stays to reveals only.
+- The landing borrows a SaaS marketing rhythm: a thin `.notice-bar` above the nav, proof chips under the hero CTAs, a courier strip (`components/CourierMarquee.tsx`, CSS-only loop that pauses on hover and wraps into a static list under reduced motion), a hairline-divided capability grid, a figures band (`data-count` counts up), audience cards, a closing CTA on `.panel-deep` and a multi-column footer. Every figure and claim there must be true of the product today: no invented metrics, reviews or customer logos.
+- Motion runs only when `prefers-reduced-motion` allows it (the gate script in `app/layout.tsx`), and gives up after 4s if the motion code never loads, so content is never left hidden.

@@ -74,7 +74,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     <>
       <AppHeader back />
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-20 pt-8">
-        <section aria-label="What happened" className="glass-strong flex flex-col gap-6 rounded-[28px] p-6 sm:p-8">
+        <section aria-label="What happened" data-reveal className="glass-strong flex flex-col gap-6 rounded-[28px] p-6 sm:p-8">
           <div className="flex flex-wrap justify-between gap-5">
             <div className="flex max-w-2xl flex-col gap-2.5">
               <span className="self-start rounded-full bg-grey-bg px-3 py-1 text-[13px] text-grey-ink">{origin(dispute.origin)}</span>
@@ -94,7 +94,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           const a = analysis.assessment;
           const r = readiness(a.readiness);
           return (
-            <section aria-label="What your documents prove" className="glass-strong flex flex-col gap-4 rounded-[28px] p-6 sm:p-8">
+            <section aria-label="What your documents prove" data-reveal className="glass-strong flex flex-col gap-4 rounded-[28px] p-6 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-[24px]">What your documents prove</h2>
                 <span className={`rounded-full px-4 py-1.5 text-[15px] font-semibold ${BOX[r.tone]}`}>{r.label}</span>
@@ -147,7 +147,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">
             {analysis && findings.length > 0 && (
-              <section aria-label="Details to check" className="glass flex flex-col gap-3.5 rounded-[26px] p-6">
+              <section aria-label="Details to check" data-reveal className="glass flex flex-col gap-3.5 rounded-[26px] p-6">
                 <h2 className="text-[22px]">{findings.length === 1 ? "1 detail to check" : `${findings.length} details to check`}</h2>
                 {findings.map((f, i) => {
                   const e = explain(f, analysis.facts, currency);
@@ -171,7 +171,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               </section>
             )}
 
-            <section aria-label="Your reply" className="glass-strong flex flex-col gap-4 rounded-[26px] p-6">
+            <section aria-label="Your reply" data-reveal className="glass-strong flex flex-col gap-4 rounded-[26px] p-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-[22px]">Your reply to PayPal</h2>
                 <span className="text-sm text-ink-muted">Written by SAL from your documents</span>
@@ -203,7 +203,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-6">
             {facts.length > 0 && (
-              <section aria-label="What your documents show" className="glass flex flex-col rounded-[26px] p-6">
+              <section aria-label="What your documents show" data-reveal className="glass flex flex-col rounded-[26px] p-6">
                 <h2 className="mb-2.5 text-xl">What your documents show</h2>
                 <dl>
                   {facts.map((f) => (
@@ -219,7 +219,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               </section>
             )}
 
-            <section aria-label="Documents" className="glass flex flex-col gap-2.5 rounded-[26px] p-6">
+            <section aria-label="Documents" data-reveal className="glass flex flex-col gap-2.5 rounded-[26px] p-6">
               <h2 className="text-xl">Documents ({evidence.length})</h2>
               {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
               {canAddDocuments && <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />}
@@ -249,7 +249,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             </section>
 
             {analysis && (
-              <section aria-label="How SAL prepared this" className="glass flex flex-col gap-2.5 rounded-[22px] p-6">
+              <section aria-label="How SAL prepared this" data-reveal className="glass flex flex-col gap-2.5 rounded-[22px] p-6">
                 <h2 className="text-[17px]">How SAL prepared this</h2>
                 <p className="text-[15px] text-ink-soft">
                   Read {read} document{read === 1 ? "" : "s"}, found {facts.length} details, flagged {findings.length} to check,

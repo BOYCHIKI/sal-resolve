@@ -1,12 +1,40 @@
 @import "tailwindcss";
 
 /*
- * Glass look (see the "SAL Resolve — Glass UI" canvas and apps/web/DESIGN.md): frosted panels over a soft
- * tinted ground, one action blue, pill buttons, large radii, no drop shadows. System font stack (SF on
- * Apple devices). Functional tints for things to check (amber), missing proof/urgent (red), done (green).
+ * Glass look, dark-first (see apps/web/DESIGN.md, "Dark-first and motion"): frosted panels over a deep tinted
+ * ground, one action blue, pill buttons, large radii, no drop shadows. System font stack (SF on Apple devices).
+ * Functional tints for things to check (amber), missing proof/urgent (red), done (green).
+ * Dark is the default; light stays available with <html data-theme="light">.
+ * --action is the blue for text, links and icon strokes; --action-fill is the button fill (white text on it).
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --ink: #f5f5f7;
+  --ink-soft: #c9ccd3;
+  --ink-muted: #9a9ea8;
+  --ground: #07080b;
+  --surface: #14161b;
+  --glass: rgba(26, 28, 34, 0.55);
+  --glass-strong: rgba(30, 33, 40, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --action: #7d9bff;
+  --action-fill: #3d63ff;
+  --action-focus: #8aa5ff;
+  --accent: #8ef0c0;
+  --glare: rgba(255, 255, 255, 0.16);
+  --blob-1: #14246a;
+  --blob-2: #0c1c3d;
+  --blob-3: #0f3a2e;
+  --amber-bg: rgba(74, 56, 16, 0.75); --amber-ink: #ffd98a;
+  --red-bg: rgba(80, 26, 22, 0.75);   --red-ink: #ffb0a8;
+  --blue-bg: rgba(18, 38, 96, 0.75);  --blue-ink: #b4c6ff;
+  --green-bg: rgba(19, 56, 34, 0.75); --green-ink: #9be3b3;
+  --grey-bg: rgba(255, 255, 255, 0.08); --grey-ink: #d2d2d7;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
   --ink: #1d1d1f;
   --ink-soft: #424245;
   --ink-muted: #6e6e73;
@@ -17,7 +45,10 @@
   --glass-edge: rgba(255, 255, 255, 0.9);
   --hairline: rgba(0, 0, 0, 0.07);
   --action: #0066cc;
+  --action-fill: #0066cc;
   --action-focus: #0071e3;
+  --accent: #1d6b37;
+  --glare: rgba(255, 255, 255, 0.5);
   --blob-1: #c4dcff;
   --blob-2: #ffe0cc;
   --blob-3: #c9f0e4;
@@ -28,30 +59,6 @@
   --grey-bg: rgba(0, 0, 0, 0.06);        --grey-ink: #424245;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f5f5f7;
-    --ink-soft: #d2d2d7;
-    --ink-muted: #a1a1a6;
-    --ground: #0b0c10;
-    --surface: #1c1c1e;
-    --glass: rgba(36, 36, 40, 0.55);
-    --glass-strong: rgba(44, 44, 48, 0.72);
-    --glass-edge: rgba(255, 255, 255, 0.1);
-    --hairline: rgba(255, 255, 255, 0.08);
-    --action: #2997ff;
-    --action-focus: #2997ff;
-    --blob-1: #17325a;
-    --blob-2: #4a2a1a;
-    --blob-3: #123d33;
-    --amber-bg: rgba(74, 56, 16, 0.75); --amber-ink: #ffd98a;
-    --red-bg: rgba(80, 26, 22, 0.75);   --red-ink: #ffb0a8;
-    --blue-bg: rgba(18, 48, 86, 0.75);  --blue-ink: #a8d1ff;
-    --green-bg: rgba(19, 56, 34, 0.75); --green-ink: #9be3b3;
-    --grey-bg: rgba(255, 255, 255, 0.08); --grey-ink: #d2d2d7;
-  }
-}
-
 @theme inline {
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
@@ -60,6 +67,8 @@
   --color-surface: var(--surface);
   --color-hairline: var(--hairline);
   --color-action: var(--action);
+  --color-action-fill: var(--action-fill);
+  --color-accent: var(--accent);
   --color-amber-bg: var(--amber-bg);
   --color-amber-ink: var(--amber-ink);
   --color-red-bg: var(--red-bg);
@@ -107,7 +116,7 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.025em; }
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 48px; padding: 0 24px; border-radius: 9999px;
-  background: var(--action); color: #fff; font-size: 16px; font-weight: 500;
+  background: var(--action-fill); color: #fff; font-size: 16px; font-weight: 500;
   transition: transform 0.1s;
 }
 .btn-primary:active:not(:disabled) { transform: scale(0.96); }
@@ -118,3 +127,55 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.025em; }
   border: 1px solid var(--hairline); background: var(--glass); color: var(--action); font-size: 16px;
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
 }
+
+/*
+ * Motion (components/motion/Motion.tsx). The inline script in layout.tsx adds .motion to <html> only when the
+ * visitor allows motion, so these start hidden for GSAP to reveal; without JS or with reduced motion they show as-is.
+ */
+.motion [data-split], .motion [data-reveal], .motion [data-reveal-stagger] > * { visibility: hidden; }
+.split-line { padding-bottom: 0.08em; }
+
+/* Tilt cards: the glare follows the pointer through --gx/--gy, set by Motion.tsx. */
+[data-tilt] { position: relative; transform-style: preserve-3d; will-change: transform; }
+[data-tilt] > .glare {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), var(--glare), transparent 60%);
+  transition: opacity 0.3s ease-in-out;
+}
+[data-tilt]:hover > .glare { opacity: 1; }
+
+/* Deep blue panel for the "Nothing goes to PayPal without you" message. */
+.panel-deep {
+  background: linear-gradient(160deg, #1b2a8a 0%, #0d1240 55%, #07080b 100%);
+  border: 1px solid rgba(125, 155, 255, 0.18);
+  color: #f5f5f7;
+  --accent: #8ef0c0;
+}
+
+/* Courier strip (components/CourierMarquee.tsx): two copies slide left by one copy's width, then repeat. */
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track { display: flex; width: max-content; animation: marquee 60s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+.marquee-row { display: flex; gap: 10px; padding-right: 10px; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .marquee { -webkit-mask-image: none; mask-image: none; }
+  .marquee-track { animation: none; width: auto; }
+  .marquee-row { flex-wrap: wrap; justify-content: center; }
+  .marquee-row[aria-hidden] { display: none; }
+}
+/* Without motion on a phone, the wrapped list would run two screens long: keep one row and let it be swiped instead. */
+@media (prefers-reduced-motion: reduce) and (max-width: 639px) {
+  .marquee { overflow-x: auto; scrollbar-width: none; padding: 0 16px; }
+  .marquee-row { flex-wrap: nowrap; justify-content: flex-start; }
+}
+
+/* Thin strip above the nav, for the one thing every visitor should know first. */
+.notice-bar { background: var(--action-fill); color: #fff; }
+
+[data-highlight] { display: inline-block; transition: color 0.3s ease-out, transform 0.3s ease-out; }
+[data-highlight].is-lit { color: var(--accent); transform: scale(1.04); }
