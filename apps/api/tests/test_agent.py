@@ -1,6 +1,8 @@
 """Agent pipeline: guardrails against a misbehaving model, and the golden-dataset harness. Offline."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.agent.evaluate import evaluate, load_cases, to_case_input
@@ -270,3 +272,61 @@ def test_an_uploaded_receipt_cannot_prove_a_paypal_payment():
     facts = [Fact("payment_amount", "45.00", SourceRef("bank", 1), "supported")]
     a = assess(facts, [], (bank,), "45.00", "USD")
     assert a.status("payment_matches") == "missing" and "not a PayPal record" in a.propositions[0].reason
+
+
+def test_unchanged_documents_are_not_sent_to_the_model_again(monkeypatch):
+    """Re-analysis after one new upload extracts only that document; everything else is reused."""
+    monkeypatch.delenv("SAL_LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("SAL_LLM_REASONING_EFFORT", raising=False)
+    from dataclasses import replace
+
+    from app.agent.llm import LLMRoles, _Fact, _Facts
+    from app.agent.models import Line
+    c = case("SAL-INR-001")
+    docs = list(c.documents)
+    payment = next(d for d in docs if d.evidence_id == "SAL-INR-001-E02")
+    first = _Facts(facts=[_Fact(field="transaction_id", value="TXN-SYN-100000", evidence_id=payment.evidence_id,
+                                line=1, quote="SYNTHETIC PAYMENT RECORD | TXN-SYN-100000")])
+    client, completions = _fake_client([first, _Facts(facts=[]), _Facts(facts=[])])
+
+    run1 = LLMRoles(client=client, model="test-model")
+    out1 = run1.extract(docs)
+    assert len(completions.calls) == 1 and run1.cache == {"hits": 0, "misses": len(docs)}
+
+    run2 = LLMRoles(client=client, model="test-model")  # a later job: same documents
+    assert run2.extract(docs) == out1
+    assert len(completions.calls) == 1 and run2.cache == {"hits": len(docs), "misses": 0}
+
+    # one document edited (or a new one uploaded): only that one goes to the model
+    changed = replace(payment, lines=payment.lines + (Line(99, "Note added later"),))
+    run3 = LLMRoles(client=client, model="test-model")
+    run3.extract([changed if d is payment else d for d in docs])
+    sent = json.loads(completions.calls[1]["messages"][1]["content"])["documents"]
+    assert [d["evidence_id"] for d in sent] == [payment.evidence_id]
+    assert run3.cache == {"hits": len(docs) - 1, "misses": 1}
+
+    # a different model never reuses another model's extraction
+    run4 = LLMRoles(client=client, model="other-model")
+    run4.extract(docs)
+    assert len(completions.calls) == 3 and run4.cache["hits"] == 0
+
+
+def test_a_failed_model_call_caches_nothing(monkeypatch):
+    monkeypatch.delenv("SAL_LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("SAL_LLM_REASONING_EFFORT", raising=False)
+    from app.agent.llm import LLMRoles, _Facts
+
+    class Down:
+        calls = 0
+
+        def parse(self, **kwargs):
+            Down.calls += 1
+            raise TimeoutError("model down")
+
+    client = type("Client", (), {"chat": type("Chat", (), {"completions": Down()})()})()
+    docs = list(case("SAL-INR-001").documents)
+    with pytest.raises(TimeoutError):
+        LLMRoles(client=client, model="test-model").extract(docs)
+    ok_client, completions = _fake_client([_Facts(facts=[])])
+    LLMRoles(client=ok_client, model="test-model").extract(docs)
+    assert len(completions.calls) == 1  # nothing was cached by the failed attempt

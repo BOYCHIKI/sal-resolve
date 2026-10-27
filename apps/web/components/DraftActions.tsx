@@ -68,10 +68,10 @@ export function DraftActions(p: Props) {
     return (
       <div className="flex flex-col gap-3">
         <label className="flex items-start gap-3 rounded-2xl bg-grey-bg px-4 py-3.5">
-          <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-[var(--action)]" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
+          <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-[var(--lp-mint)]" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
           <span>I’ve read the reply{p.openItems > 0 ? ` and checked the ${p.openItems === 1 ? "detail" : `${p.openItems} details`} above` : ""}.</span>
         </label>
-        <button className="btn-primary w-full text-[17px]" disabled={!reviewed || busy}
+        <button className="lp-btn w-full" disabled={!reviewed || busy}
           onClick={() => run(() => approveDraft(p.disputeId, p.draftId, p.revision, p.snapshotHash), "Approved. You can now send it to PayPal.")}>
           {busy ? "Approving…" : "Approve reply"}
         </button>
@@ -93,7 +93,7 @@ export function DraftActions(p: Props) {
             : p.note === "NOT_RECEIVED" ? "PayPal never received the last send. You can send it again."
             : "The last send didn’t go through. You can try again."}
         </p>
-        <button className="btn-primary w-full text-[17px]" disabled={busy || blocked !== null}
+        <button className="lp-btn w-full" disabled={busy || blocked !== null}
           onClick={() => run(() => submitDraft(p.disputeId, p.draftId), "Sent to PayPal.")}>
           {busy ? "Sending…" : "Send to PayPal"}
         </button>

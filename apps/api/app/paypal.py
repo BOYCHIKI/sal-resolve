@@ -47,7 +47,7 @@ def to_internal(dispute: dict[str, Any]) -> dict[str, Any]:
         "custom": txn.get("custom"),
         "response_deadline": dispute.get("seller_response_due_date"),
         "updated_at": dispute.get("update_time"),
-        "allowed_actions": sorted({l["rel"] for l in dispute.get("links", []) if l.get("rel") != "self"}),
+        "allowed_actions": sorted({link["rel"] for link in dispute.get("links", []) if link.get("rel") != "self"}),
     }
 
 
@@ -86,7 +86,7 @@ class PayPalDisputes:
             body = r.json()
             for item in body.get("items", []):
                 out[item["dispute_id"]] = item.get("update_time")
-            nxt = next((l["href"] for l in body.get("links", []) if l.get("rel") == "next"), None)
+            nxt = next((link["href"] for link in body.get("links", []) if link.get("rel") == "next"), None)
             if not nxt:
                 break
             path, params = httpx.URL(nxt).raw_path.decode(), None
@@ -129,6 +129,24 @@ class PayPalDisputes:
         r.raise_for_status()
         details = r.json().get("transaction_details") or []
         return details[0] if details else None
+
+    def recent_transactions(self, days: int = 31, page_size: int = 500, max_pages: int = 10) -> list[dict[str, Any]]:
+        """Every Transaction Search row of the last `days` (PayPal's window is at most 31), holds and releases
+        included: `balance_affecting_records_only=N` keeps the T11xx/T21xx rows that do not move the balance."""
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%S-0000"
+        params: dict[str, Any] = {"start_date": (now - timedelta(days=days)).strftime(fmt),
+                                  "end_date": now.strftime(fmt), "fields": "transaction_info",
+                                  "balance_affecting_records_only": "N", "page_size": page_size}
+        rows: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            r = self._http.get("/v1/reporting/transactions", params={**params, "page": page}, headers=self._auth())
+            r.raise_for_status()
+            body = r.json()
+            rows.extend(body.get("transaction_details") or [])
+            if page >= int(body.get("total_pages") or 1):
+                break
+        return rows
 
     def get(self, dispute_id: str) -> dict[str, Any]:
         r = self._http.get(f"/v1/customer/disputes/{dispute_id}", headers=self._auth())

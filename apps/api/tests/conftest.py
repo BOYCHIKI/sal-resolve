@@ -100,3 +100,12 @@ def _fresh_settings():
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_extraction_cache():
+    """The LLM extraction cache lives for the process; each test starts without it."""
+    from app.agent.llm import clear_extraction_cache
+    clear_extraction_cache()
+    yield
+    clear_extraction_cache()

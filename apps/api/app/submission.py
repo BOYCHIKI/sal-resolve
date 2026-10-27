@@ -21,6 +21,8 @@ import httpx
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from app import carriers
+from app.actions import queue_refresh
 from app import repositories as repo
 from app.db import tenant_session
 from app.config import get_settings
@@ -89,15 +91,17 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
     return {"draft_id": str(draft_id), "status": "APPROVED", "revision": row.revision}
 
 
-def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requested: list[str]) -> dict[str, Any]:
+def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requested: list[str],
+             tracking_lines: list[str] = ()) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "evidence_type": requested[0] if requested else "PROOF_OF_FULFILLMENT",
         "notes": " ".join(c["text"] for c in claims)[:2000],
     }
     tracking = [f["value"] for f in facts if f["field"] == "tracking_id" and f["status"] == "supported"]
     if tracking:
+        # The real courier code lets PayPal follow the parcel; "OTHER" only when the document names none we know.
         entry["evidence_info"] = {"tracking_info": [
-            {"carrier_name": "OTHER", "carrier_name_other": "Carrier on file", "tracking_number": tracking[0]}]}
+            carriers.tracking_info(tracking[0], carriers.carrier_for(list(tracking_lines)))]}
     return {"evidences": [entry]}  # one entry: disputes without item_id reject several (spike S6)
 
 
@@ -110,7 +114,7 @@ def _file_for(doc) -> tuple[str, bytes, str] | None:
     if original is not None:
         return f"{doc.evidence_id}.{EXTENSIONS.get(doc.mime, 'pdf')}", original, doc.mime
     if doc.content_lines:
-        pdf = render_text_pdf([f"Evidence {doc.evidence_id}", ""] + [l["text"] for l in doc.content_lines])
+        pdf = render_text_pdf([f"Evidence {doc.evidence_id}", ""] + [line["text"] for line in doc.content_lines])
         return f"{doc.evidence_id}.pdf", pdf, "application/pdf"
     return None
 
@@ -132,7 +136,7 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
         # Read the documents first and hash exactly these rows: what is checked is what is sent, even if an
         # upload commits in the middle of this transaction.
         docs = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, content_lines, object_key, mime,
-                                        checksum
+                                        checksum, doc_type
                                  FROM evidence WHERE dispute_id = :d
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"d": row.dispute_id}).all()
         if row.evidence_hash is not None and row.evidence_hash != _hash_checksums(d.checksum for d in docs):
@@ -149,28 +153,14 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                          payload={"draft_id": str(draft_id)}, delay_seconds=RECONCILE_AFTER_SECONDS)
     requested = [e["evidence_type"] for e in (row.provider_payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
-    payload = _payload(row.claims, row.facts, requested)
+    tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof")
+                      for line in (d.content_lines or [])]
+    payload = _payload(row.claims, row.facts, requested, tracking_lines)
     files = [_file_for(d) for d in docs]
     files = [f for f in files if f is not None]
 
-    # 2. Network, outside any transaction. Re-check that PayPal still offers the action (spike finding).
-    error: str | None = None
-    unknown = False  # True when we cannot tell whether PayPal accepted the documents
-    try:
-        live = paypal.get(row.provider_dispute_id)
-        if "provide_evidence" not in {l.get("rel") for l in live.get("links", [])}:
-            error = f"PayPal no longer offers provide_evidence (status {live.get('status')})"
-        else:
-            try:
-                paypal.provide_evidence(row.provider_dispute_id, payload, files)
-            except httpx.HTTPStatusError as exc:
-                unknown = exc.response.status_code >= 500  # a 4xx is PayPal saying no
-                raise
-            except Exception:
-                unknown = True  # timeout or lost connection: the request may have reached PayPal
-                raise
-    except Exception as exc:  # noqa: BLE001 — the outcome must be recorded either way
-        error = f"{type(exc).__name__}: {exc}"[:500]
+    # 2. Network, outside any transaction.
+    error, unknown = _send(paypal, row.provider_dispute_id, payload, files)
 
     # 3. Record the outcome. An unknown outcome stays SUBMITTING for reconcile() to settle.
     with tenant_session(merchant_id, engine) as s:
@@ -192,6 +182,29 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
     return {"draft_id": str(draft_id), "status": "SUBMITTED", "files": len(files)}
 
 
+def _send(paypal: EvidenceSink, provider_dispute_id: str, payload: dict[str, Any],
+          files: list[tuple[str, bytes, str]]) -> tuple[str | None, bool]:
+    """Send once. Returns (error, unknown): unknown means we cannot tell whether PayPal accepted it (a timeout
+    or a 5xx), so the caller must not mark it failed. PayPal is re-checked first: it may have stopped
+    offering provide_evidence since the operator approved (spike finding)."""
+    unknown = False
+    try:
+        live = paypal.get(provider_dispute_id)
+        if "provide_evidence" not in {link.get("rel") for link in live.get("links", [])}:
+            return f"PayPal no longer offers provide_evidence (status {live.get('status')})", False
+        try:
+            paypal.provide_evidence(provider_dispute_id, payload, files)
+        except httpx.HTTPStatusError as exc:
+            unknown = exc.response.status_code >= 500  # a 4xx is PayPal saying no
+            raise
+        except Exception:
+            unknown = True  # timeout or lost connection: the request may have reached PayPal
+            raise
+    except Exception as exc:  # noqa: BLE001 — the outcome must be recorded either way
+        return f"{type(exc).__name__}: {exc}"[:500], unknown
+    return None, False
+
+
 def _settle(s: Session, merchant_id: UUID, draft_id: UUID, dispute_id: UUID, provider_dispute_id: str,
             actor: str, sent: bool, note: str | None, action: str, summary: dict[str, Any]) -> bool:
     """Record the final outcome of a send exactly once. False if the other path settled it first."""
@@ -206,6 +219,7 @@ def _settle(s: Session, merchant_id: UUID, draft_id: UUID, dispute_id: UUID, pro
         # refresh status/actions from PayPal shortly
         repo.enqueue_job(s, merchant_id, "sync_dispute", f"after-submit:{draft_id}",
                          payload={"provider_dispute_id": provider_dispute_id})
+    queue_refresh(s, merchant_id, dispute_id, f"settled:{draft_id}:{action}")  # the send card closes (ADR-006)
     repo.write_audit(s, merchant_id, actor, action, target=str(draft_id), summary=summary)
     return True
 
@@ -227,7 +241,7 @@ def decide(live: dict[str, Any], started_at: datetime) -> tuple[bool, str | None
         if (e.get("source") == "SUBMITTED_BY_SELLER" and when is not None and when >= since
                 and e.get("documents")):
             return True, None
-    if "provide_evidence" in {l.get("rel") for l in live.get("links", [])}:
+    if "provide_evidence" in {link.get("rel") for link in live.get("links", [])}:
         return False, "NOT_RECEIVED"        # nothing arrived and PayPal still waits: safe to send again
     return False, "NEEDS_MANUAL_CHECK"      # nothing arrived but PayPal moved on: a person must look
 

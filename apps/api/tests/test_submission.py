@@ -130,6 +130,49 @@ def test_submit_sends_once_with_one_evidence_entry_and_pdfs(client, merchant, ap
     assert again.status_code == 409 and len(fake.sent) == 1  # never sent twice
 
 
+def test_two_simultaneous_sends_reach_paypal_once(merchant, app_engine, worker_engine):
+    """A double click, or two tabs pressing Send together: the atomic claim lets exactly one through."""
+    import threading
+    import time
+
+    app.dependency_overrides[current_merchant] = lambda: merchant
+    client = TestClient(app)
+    _, a = analyzed(app_engine, worker_engine, merchant)
+    approve(client, a)
+
+    class SlowPayPal(FakePayPal):  # holds the first send open so the second one arrives mid-flight
+        def provide_evidence(self, dispute_id, payload, files):
+            time.sleep(0.5)
+            return super().provide_evidence(dispute_id, payload, files)
+
+    fake = SlowPayPal()
+    gate = threading.Barrier(2)
+
+    def send(results):
+        gate.wait()
+        results.append(submission.submit(merchant, UUID(a["draft"]["id"]), "operator:test", fake, app_engine))
+
+    outcomes, errors = [], []
+
+    def run():
+        try:
+            send(outcomes)
+        except submission.SubmissionError as exc:
+            errors.append(exc.code)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    app.dependency_overrides.clear()
+    assert len(fake.sent) == 1, "evidence must reach PayPal exactly once"
+    assert len(outcomes) == 1 and errors == ["NOT_SUBMITTABLE"]
+    with tenant_session(merchant, app_engine) as s:
+        sends = s.execute(text("SELECT count(*) FROM audit_logs WHERE action = 'draft.submitted'")).scalar()
+    assert sends == 1
+
+
 def test_synthetic_fixture_is_never_sent(client, merchant, app_engine, worker_engine):
     _, a = analyzed(app_engine, worker_engine, merchant, sandbox=False)
     fake = FakePayPal()

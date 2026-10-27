@@ -88,6 +88,22 @@ export type EvidenceDoc = {
   origin?: "UPLOAD" | "PAYPAL_API" | "SEED";
 };
 
+export type ActionKind = "SEND_EVIDENCE" | "ADD_DOCUMENT" | "REPLY_BEFORE_DEADLINE" | "EXPLAIN_HELD_FUNDS";
+
+/** A suggestion SAL's agent made (ADR-006). The merchant approves the exact card it read, by payload_hash. */
+export type AgentAction = {
+  id: string;
+  dispute_id: string | null;
+  kind: ActionKind;
+  status: string;
+  title: string;
+  rationale: string;
+  payload: Record<string, unknown>;
+  payload_hash: string;
+  due_at: string | null;
+  created_at: string;
+};
+
 export type Job = { id: string; kind: string; state: string; attempts: number; error: string | null };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -140,5 +156,10 @@ export const api = {
   submitDraft: (id: string) => action(`/api/drafts/${encodeURIComponent(id)}/submit`),
   uploadEvidence: (disputeId: string, form: FormData) =>
     upload(`/api/disputes/${encodeURIComponent(disputeId)}/evidence`, form),
+  listActions: async (disputeId?: string) =>
+    (await call<{ items: AgentAction[] }>(`/api/actions${disputeId ? `?dispute_id=${encodeURIComponent(disputeId)}` : ""}`))?.items ?? [],
+  approveAction: (id: string, payloadHash: string) =>
+    action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash }),
+  dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
 };

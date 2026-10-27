@@ -66,9 +66,9 @@ def extract_lines(data: bytes, mime: str) -> list[dict]:
         raise
     except (PdfReadError, ValueError, KeyError, TypeError) as exc:
         raise EvidenceError(422, "PDF_UNREADABLE", "This PDF could not be read.") from exc
-    lines = [" ".join(l.split()) for l in raw]
-    lines = [l for l in lines if l][:MAX_LINES]
-    return [{"line": i, "text": l} for i, l in enumerate(lines, 1)]
+    lines = [" ".join(line.split()) for line in raw]
+    lines = [line for line in lines if line][:MAX_LINES]
+    return [{"line": i, "text": line} for i, line in enumerate(lines, 1)]
 
 
 def store(merchant_id: UUID, dispute_id: UUID, data: bytes, filename: str, doc_type: str, uploaded_by: str,

@@ -16,10 +16,11 @@ from uuid import UUID
 from sqlalchemy import Engine, text
 
 from app import repositories as repo
+from app.actions import queue_refresh
 from app.agent.models import CaseInput, Document, Line
 from app.agent.pipeline import analyze
-from app.agent.roles import (Drafter, Extractor, Planner, ReadAllPlanner, RuleExtractor, TemplateDrafter,
-                             UnionExtractor)
+from app.agent.roles import (Drafter, Extractor, LabelExtractor, Planner, ReadAllPlanner, RuleExtractor,
+                             TemplateDrafter, UnionExtractor)
 from app.db import tenant_session
 
 log = logging.getLogger("sal.agent")
@@ -44,7 +45,7 @@ def configured_roles() -> Roles:
         return baseline_roles()
     from app.agent.llm import LLMRoles
     llm = LLMRoles()
-    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), llm), llm, f"rules+llm:{llm.model}",
+    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), LabelExtractor(), llm), llm, f"rules+llm:{llm.model}",
                  fallback=baseline_roles())
 
 
@@ -63,7 +64,7 @@ def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tup
                                  FROM evidence WHERE dispute_id = :id AND content_lines IS NOT NULL
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"id": dispute_id}).all()
     docs = tuple(Document(r.evidence_id, r.doc_type or "unknown",
-                          tuple(Line(int(l["line"]), str(l["text"])) for l in r.content_lines), r.origin) for r in rows)
+                          tuple(Line(int(line["line"]), str(line["text"])) for line in r.content_lines), r.origin) for r in rows)
     case = CaseInput(d.case_ref or d.provider_dispute_id, d.reason, f"{d.amount:.2f}", d.currency,
                      _requested(d.provider_payload), docs)
     return case, d.version
@@ -79,7 +80,7 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
     label = roles.label
     try:
         result = analyze(case, roles.planner, roles.extractor, roles.drafter)
-    except Exception as exc:  # noqa: BLE001 — degrade, never block (ADR-004)
+    except Exception as exc:  # noqa: BLE001 â€” degrade, never block (ADR-004)
         if roles.fallback is None:
             raise
         # The SDK already retried. Missing-evidence checks still work without the model; the run says so.
@@ -139,8 +140,13 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
                               THEN internal_state ELSE 'NEEDS_REVIEW' END
                           WHERE id = :d"""),
                   {"d": dispute_id})
+        queue_refresh(s, merchant_id, dispute_id, f"analysis:{analysis_id}")  # new facts, new suggestions (ADR-006)
         repo.write_audit(s, merchant_id, "agent", "analysis.completed", target=str(dispute_id),
                          summary={"run": str(run_id), "revision": revision, "findings": len(result.findings),
                                   "review_required": result.review_required})
-    return {"agent_run_id": str(run_id), "analysis_id": str(analysis_id), "draft_revision": revision,
-            "findings": len(result.findings), "claims": len(claims), "review_required": result.review_required}
+    out = {"agent_run_id": str(run_id), "analysis_id": str(analysis_id), "draft_revision": revision,
+           "findings": len(result.findings), "claims": len(claims), "review_required": result.review_required}
+    cache = getattr(roles.drafter, "cache", None)  # documents reused from earlier extractions (LLM roles only)
+    if cache:
+        out["extraction_cache"] = dict(cache)
+    return out

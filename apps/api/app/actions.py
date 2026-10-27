@@ -1,0 +1,333 @@
+"""Agent action proposals (ADR-006): what SAL suggests the merchant does next, one card per step.
+
+Cards come from deterministic rules over the latest assessment, the dispute's PayPal state and the merchant's
+Transaction Search history, never from free model output, so each card can be explained and tested. Only
+SEND_EVIDENCE leads to a PayPal write, and only through submission.submit() after the merchant approves it.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import Engine, text
+
+from app.db import tenant_session
+
+DEADLINE_WINDOW = timedelta(hours=72)
+SENDABLE_DRAFT = {"DRAFT", "APPROVED", "SUBMIT_FAILED"}
+SENT = {"SUBMITTING", "SUBMITTED"}
+
+# The document that proves each proposition, in the merchant's words.
+PROOF_DOCUMENT = {
+    "payment_matches": "the PayPal payment record",
+    "shipped": "courier tracking",
+    "delivered": "proof of delivery",
+}
+PROVEN_WORDS = {"payment_matches": "payment", "shipped": "shipping", "delivered": "delivery",
+                "delivery_date_consistent": "the delivery date", "buyer_messages_clean": "clean buyer messages"}
+
+# Transaction Search hold codes and the code that releases each (PayPal event code reference).
+HOLDS = {"T1110": "dispute", "T2107": "payment", "T2103": "reserve", "T2105": "review"}
+RELEASES = {"T1111": "T1110", "T2108": "T2107", "T2104": "T2103", "T2106": "T2105"}
+HOLD_REASON = {
+    "dispute": "PayPal holds this money while the buyer's dispute is open. It is released when the dispute "
+               "closes in your favour.",
+    "payment": "PayPal is holding this payment, as it does for newer sellers or unusual sales. Adding tracking "
+               "and delivery helps it release sooner; holds usually last up to 21–30 days depending on your country.",
+    "reserve": "PayPal keeps this part of your sales as a reserve and releases it on its own schedule.",
+    "review": "PayPal is reviewing this payment before releasing it.",
+}
+
+
+@dataclass(frozen=True)
+class DisputeState:
+    id: UUID
+    origin: str
+    provider_status: str
+    deadline_at: datetime | None
+    allowed_actions: tuple[str, ...]
+    amount: str
+    currency: str
+
+
+@dataclass(frozen=True)
+class AnalysisState:
+    readiness: str
+    snapshot_hash: str
+    propositions: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class DraftState:
+    id: UUID
+    revision: int
+    status: str
+
+
+@dataclass(frozen=True)
+class Proposal:
+    kind: str
+    subject_key: str
+    title: str
+    rationale: str
+    payload: dict[str, Any]
+    sources: list[dict[str, Any]] = field(default_factory=list)
+    due_at: datetime | None = None
+
+    @property
+    def payload_hash(self) -> str:
+        return hashlib.sha256(json.dumps(self.payload, sort_keys=True).encode()).hexdigest()
+
+
+def _hours_left(deadline: datetime, now: datetime) -> int:
+    return max(1, int((deadline - now).total_seconds() // 3600))
+
+
+def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: DraftState | None,
+                        now: datetime) -> list[Proposal]:
+    """Cards for one dispute, most urgent first. Nothing once PayPal resolved it or the reply was sent."""
+    if d.provider_status == "RESOLVED" or (draft is not None and draft.status in SENT):
+        return []
+    subject = f"dispute:{d.id}"
+    cards: list[Proposal] = []
+    if d.deadline_at is not None and now < d.deadline_at <= now + DEADLINE_WINDOW:
+        hours = _hours_left(d.deadline_at, now)
+        cards.append(Proposal(
+            "REPLY_BEFORE_DEADLINE", subject, f"Reply to PayPal within {hours} hours",
+            f"PayPal needs your reply by {d.deadline_at:%d %b %Y, %H:%M} UTC. Without it, the case can be "
+            "decided without your evidence.",
+            payload={"deadline_at": d.deadline_at.isoformat()}, due_at=d.deadline_at))
+    if analysis is None:
+        return cards
+
+    by_id = {p["id"]: p for p in analysis.propositions}
+    if analysis.readiness in ("NEEDS_DOCUMENTS", "WEAK"):
+        missing = [p["id"] for p in analysis.propositions
+                   if p["status"] == "missing" and p["id"] in PROOF_DOCUMENT]
+        if missing:
+            cards.append(Proposal(
+                "ADD_DOCUMENT", subject, f"Add {PROOF_DOCUMENT[missing[0]]}",
+                f"{by_id[missing[0]]['reason']}. Upload it and SAL checks the case again.",
+                payload={"missing": missing}, due_at=d.deadline_at))
+    elif (analysis.readiness == "READY" and draft is not None and draft.status in SENDABLE_DRAFT
+          and "provide_evidence" in d.allowed_actions and d.origin == "PAYPAL_SANDBOX"):
+        proven = [p for p in analysis.propositions if p["status"] == "proven"]
+        cards.append(Proposal(
+            "SEND_EVIDENCE", subject, "Send your evidence to PayPal",
+            "Your documents prove " + ", ".join(PROVEN_WORDS.get(p["id"], p["id"]) for p in proven)
+            + ". SAL sends them only after you approve.",
+            payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash},
+            sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at))
+    return cards
+
+
+def holds_from_transactions(details: list[dict[str, Any]], now: datetime) -> list[Proposal]:
+    """Money PayPal is still holding, from Transaction Search rows: a hold code with no matching release for the
+    same original payment. One card per payment and hold type, whatever duplicates the search returns."""
+    held: dict[tuple[str, str], dict[str, Any]] = {}
+    released: set[tuple[str, str]] = set()
+    for row in details:
+        info = row.get("transaction_info") or {}
+        code = info.get("transaction_event_code")
+        ref = info.get("paypal_reference_id") or info.get("transaction_id")
+        if code in HOLDS:
+            held.setdefault((ref, code), info)
+        elif code in RELEASES:
+            released.add((ref, RELEASES[code]))
+    cards = []
+    for (ref, code), info in sorted(held.items()):
+        if (ref, code) in released:
+            continue
+        amount = info.get("transaction_amount") or {}
+        value = str(abs(Decimal(amount.get("value", "0"))).quantize(Decimal("0.01")))
+        currency = amount.get("currency_code", "")
+        kind = HOLDS[code]
+        cards.append(Proposal(
+            "EXPLAIN_HELD_FUNDS", f"hold:{ref}:{code}", f"{value} {currency} is on hold",
+            f"{HOLD_REASON[kind]} PayPal's records as of {now:%d %b %Y, %H:%M} UTC.",
+            payload={"payment_id": ref, "hold_transaction_id": info.get("transaction_id"), "event_code": code,
+                     "hold": kind, "amount": value, "currency": currency},
+            sources=[{"transaction_id": info.get("transaction_id"), "event_code": code}]))
+    return cards
+
+
+def save(merchant_id: UUID, subject_key: str, dispute_id: UUID | None, proposals: list[Proposal],
+         engine: Engine | None = None) -> dict[str, int]:
+    """Make the open cards for one subject match `proposals`. An identical card stays as it is (its id and
+    timestamp too); a changed or no-longer-proposed one is SUPERSEDED; a new one is inserted. Worker only."""
+    wanted = {p.kind: p for p in proposals}
+    kept = superseded = inserted = 0
+    with tenant_session(merchant_id, engine) as s:
+        open_rows = s.execute(text("""SELECT id, kind, payload_hash FROM agent_actions
+                                      WHERE subject_key = :k AND status = 'PROPOSED' FOR UPDATE"""),
+                              {"k": subject_key}).all()
+        for row in open_rows:
+            new = wanted.get(row.kind)
+            if new is not None and new.payload_hash == row.payload_hash:
+                wanted.pop(row.kind)
+                kept += 1
+                continue
+            s.execute(text("UPDATE agent_actions SET status = 'SUPERSEDED', decided_at = now() WHERE id = :id"),
+                      {"id": row.id})
+            superseded += 1
+        decided = set(s.execute(text("""SELECT kind, payload_hash FROM agent_actions
+                                        WHERE subject_key = :k AND status IN ('DONE', 'DISMISSED')"""),
+                                {"k": subject_key}).all())
+        for p in wanted.values():
+            if (p.kind, p.payload_hash) in decided:  # the merchant already answered this exact card
+                kept += 1
+                continue
+            s.execute(text("""
+                INSERT INTO agent_actions (merchant_id, dispute_id, kind, subject_key, title, rationale, sources,
+                                           payload, payload_hash, due_at)
+                VALUES (:m, :d, :kind, :k, :title, :why, CAST(:sources AS jsonb), CAST(:payload AS jsonb),
+                        :h, :due)"""),
+                {"m": merchant_id, "d": dispute_id, "kind": p.kind, "k": p.subject_key, "title": p.title,
+                 "why": p.rationale, "sources": json.dumps(p.sources), "payload": json.dumps(p.payload),
+                 "h": p.payload_hash, "due": p.due_at})
+            inserted += 1
+    return {"kept": kept, "superseded": superseded, "inserted": inserted}
+
+
+# ---------------------------------------------------------------- worker: proposing for a dispute
+def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: Engine | None = None) -> dict[str, Any]:
+    """Recompute the open cards for one dispute from its current PayPal state, analysis and draft. Worker only."""
+    with tenant_session(merchant_id, engine) as s:
+        d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency
+                              FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
+        if d is None:
+            return {"skipped": "dispute not found"}
+        a = s.execute(text("""SELECT id, assessment, snapshot_hash FROM analyses WHERE dispute_id = :d
+                              ORDER BY created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
+        dr = s.execute(text("""SELECT id, revision, status FROM drafts WHERE dispute_id = :d
+                               ORDER BY revision DESC LIMIT 1"""), {"d": dispute_id}).first()
+    state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
+                         str(d.amount), d.currency)
+    analysis = (AnalysisState(a.assessment["readiness"], a.snapshot_hash, a.assessment.get("propositions", []))
+                if a is not None and a.assessment else None)
+    draft = DraftState(dr.id, dr.revision, dr.status) if dr is not None else None
+    proposals = propose_for_dispute(state, analysis, draft, now)
+    return save(merchant_id, f"dispute:{dispute_id}", dispute_id, proposals, engine)
+
+
+def scan_holds(merchant_id: UUID, details: list[dict[str, Any]], now: datetime,
+               engine: Engine | None = None) -> dict[str, int]:
+    """Make the open held-funds cards match PayPal's Transaction Search rows: a card per payment still held,
+    and the card of a hold PayPal has since released is superseded. Worker only."""
+    cards = holds_from_transactions(details, now)
+    with tenant_session(merchant_id, engine) as s:
+        open_subjects = set(s.execute(text("""SELECT DISTINCT subject_key FROM agent_actions
+                                              WHERE kind = 'EXPLAIN_HELD_FUNDS' AND status = 'PROPOSED'""")
+                                      ).scalars())
+    totals = {"holds": len(cards), "kept": 0, "superseded": 0, "inserted": 0}
+    by_subject = {c.subject_key: [c] for c in cards}
+    for subject in sorted(open_subjects | set(by_subject)):
+        for key, n in save(merchant_id, subject, None, by_subject.get(subject, []), engine).items():
+            totals[key] += n
+    return totals
+
+
+def refresh_open_disputes(merchant_id: UUID, now: datetime, engine: Engine | None = None) -> dict[str, int]:
+    """Re-propose for every open dispute. Cards change with time as well as with events: a deadline that comes
+    within 72 hours needs a reply card even if nothing else happened. Worker only."""
+    with tenant_session(merchant_id, engine) as s:
+        ids = s.execute(text("""SELECT id FROM disputes WHERE provider_status IS DISTINCT FROM 'RESOLVED'
+                                ORDER BY deadline_at NULLS LAST""")).scalars().all()
+    totals = {"disputes": len(ids), "kept": 0, "superseded": 0, "inserted": 0}
+    for dispute_id in ids:
+        for key, n in refresh_dispute(merchant_id, dispute_id, now, engine).items():
+            if key in totals:
+                totals[key] += n
+    return totals
+
+
+def queue_refresh(session, merchant_id: UUID, dispute_id: UUID, reason: str) -> None:
+    """Ask the worker to re-propose cards for a dispute; `reason` keeps the job key unique per cause."""
+    from app import repositories as repo
+    repo.enqueue_job(session, merchant_id, "propose_actions", f"actions:{dispute_id}:{reason}", dispute_id)
+
+
+# ---------------------------------------------------------------- API: the merchant decides
+class ActionError(Exception):
+    def __init__(self, status: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status, self.code = status, code
+
+
+ACTION_COLUMNS = """id, dispute_id, kind, status, title, rationale, sources, payload, payload_hash, due_at,
+                    created_at, decided_at, result"""
+
+
+def list_actions(merchant_id: UUID, status: str = "PROPOSED", dispute_id: UUID | None = None,
+                 engine: Engine | None = None) -> list[dict[str, Any]]:
+    with tenant_session(merchant_id, engine) as s:
+        rows = s.execute(text(f"""SELECT {ACTION_COLUMNS} FROM agent_actions
+                                  WHERE status = :st AND (CAST(:d AS uuid) IS NULL OR dispute_id = :d)
+                                  ORDER BY due_at ASC NULLS LAST, created_at DESC LIMIT 100"""),
+                         {"st": status, "d": dispute_id}).all()
+    return [dict(r._mapping) for r in rows]
+
+
+def _claim(merchant_id: UUID, action_id: UUID, payload_hash: str | None, to: str, actor: str,
+           engine: Engine | None) -> Any:
+    """Atomically move one PROPOSED card to `to`. Only the first of two simultaneous decisions wins."""
+    from app import repositories as repo
+    with tenant_session(merchant_id, engine) as s:
+        row = s.execute(text(f"SELECT {ACTION_COLUMNS} FROM agent_actions WHERE id = :id FOR UPDATE"),
+                        {"id": action_id}).first()
+        if row is None:
+            raise ActionError(404, "ACTION_NOT_FOUND", "Action not found")
+        if row.status != "PROPOSED":
+            raise ActionError(409, "ACTION_NOT_OPEN", f"This suggestion is already {row.status.lower()}")
+        if payload_hash is not None and payload_hash != row.payload_hash:
+            raise ActionError(409, "STALE_ACTION", "The suggestion changed since you opened it; review it again")
+        s.execute(text("""UPDATE agent_actions SET status = :to, decided_by = :actor, decided_at = now()
+                          WHERE id = :id"""), {"to": to, "actor": actor, "id": action_id})
+        repo.write_audit(s, merchant_id, actor, f"action.{to.lower()}", target=str(action_id),
+                         summary={"kind": row.kind, "payload_hash": row.payload_hash})
+    return row
+
+
+def _finish(merchant_id: UUID, action_id: UUID, status: str, result: dict[str, Any],
+            engine: Engine | None) -> None:
+    with tenant_session(merchant_id, engine) as s:
+        s.execute(text("UPDATE agent_actions SET status = :st, result = CAST(:r AS jsonb) WHERE id = :id"),
+                  {"st": status, "r": json.dumps(result), "id": action_id})
+
+
+def dismiss(merchant_id: UUID, action_id: UUID, actor: str, engine: Engine | None = None) -> dict[str, Any]:
+    _claim(merchant_id, action_id, None, "DISMISSED", actor, engine)
+    return {"id": str(action_id), "status": "DISMISSED"}
+
+
+def approve(merchant_id: UUID, action_id: UUID, payload_hash: str, actor: str, paypal: Any,
+            engine: Engine | None = None) -> dict[str, Any]:
+    """The merchant approves one card. Guidance cards just close; SEND_EVIDENCE approves the exact draft revision
+    the card names and sends it through submission (ADR-003: bound to the evidence, at most once)."""
+    from app import submission
+    row = _claim(merchant_id, action_id, payload_hash, "APPROVED", actor, engine)
+    if row.kind != "SEND_EVIDENCE":
+        _finish(merchant_id, action_id, "DONE", {"outcome": "acknowledged"}, engine)
+        return {"id": str(action_id), "status": "DONE", "kind": row.kind}
+    draft_id = UUID(row.payload["draft_id"])
+    try:
+        with tenant_session(merchant_id, engine) as s:
+            draft_status = s.execute(text("SELECT status FROM drafts WHERE id = :id"), {"id": draft_id}).scalar()
+        if draft_status == "DRAFT":
+            submission.approve(merchant_id, draft_id, row.payload["revision"], row.payload["snapshot_hash"], actor,
+                               engine)
+        sent = submission.submit(merchant_id, draft_id, actor, paypal, engine)
+    except submission.SubmissionError as exc:
+        if exc.code == "SUBMIT_UNCONFIRMED":  # may have reached PayPal; reconcile settles it, never resend
+            _finish(merchant_id, action_id, "DONE", {"outcome": "unconfirmed", "code": exc.code}, engine)
+        else:
+            _finish(merchant_id, action_id, "FAILED", {"outcome": "failed", "code": exc.code, "message": str(exc)},
+                    engine)
+        raise ActionError(exc.status, exc.code, str(exc)) from None
+    _finish(merchant_id, action_id, "DONE", {"outcome": "sent", "files": sent.get("files")}, engine)
+    return {"id": str(action_id), "status": "DONE", "kind": row.kind, "sent": sent}

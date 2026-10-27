@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from app.agent.models import CandidateFact, Claim, Document, Fact, Finding, SourceRef
 from app.agent.tools import ToolSpec
+from app.agent.validation import CURRENCY_CODES, _status_phrase, amounts_in, dates_in
 
 
 class Planner(Protocol):
@@ -117,6 +118,83 @@ class TemplateDrafter:
                 claims.append(Claim(template.format(v=supported[field].value, currency=currency).replace("  ", " "),
                                     (field,) if field != "order_amount" else ("order_amount", "currency")))
         return claims
+
+
+# Labels real invoices, PayPal records and courier pages use (English, Indonesian, Filipino sellers).
+_ID = r"(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9][A-Za-z0-9/-]{3,39}"
+_ORDER_LABEL = re.compile(r"\b(?:invoice(?:\s*no\.?)?|no\.?\s*pesanan|order(?:\s*no\.?)?|or\s*no\.?|nota|"
+                          rf"receipt\s*no\.?)\s*[:#]?\s*(?P<id>{_ID})", re.I)
+_TRACKING_LABEL = re.compile(r"\b(?:no\.?\s*resi|resi|tracking(?:\s*(?:no\.?|number))?|waybill(?:\s*no\.?)?|"
+                             rf"nomor\s*kiriman|awb)\s*[:#]?\s*(?P<id>{_ID})", re.I)
+_PAYPAL_TXN = re.compile(r"\b(?:transaction|transaksi)\b[^A-Z0-9]*(?P<id>[A-Z0-9]{17})\b", re.I)
+_TOTAL = re.compile(r"(?<!sub)(?<!item )\btotal\b", re.I)
+_PAYMENT = re.compile(r"\b(received|payment|amount|money)\b", re.I)
+_ORDER_DATE = re.compile(r"\b(tanggal|tgl|date|ordered|issued)\b", re.I)
+_SHIP_DATE = re.compile(r"\b(ship date|shipped|tanggal kirim|tgl kirim|posting|picked up|accepted)\b", re.I)
+_DELIVERY_DATE = re.compile(r"\b(delivered|diterima)\b", re.I)
+_STATUS_LINE = re.compile(r"^\s*status\s*:\s*(?P<v>.+)$", re.I)
+_CODE = re.compile(r"\b(" + "|".join(CURRENCY_CODES) + r")\b")
+
+
+class LabelExtractor:
+    """Deterministic reader for labelled lines in real documents ("No. Resi: ...", "Total: USD 60.00",
+    "Transaction ID ..."). It gives the model a stable floor: what is plainly labelled is read the same way every
+    run. Values are only proposed; grounding checks them like any other candidate."""
+
+    def extract(self, documents):
+        out: list[CandidateFact] = []
+        for doc in documents:
+            found: dict[str, tuple[str, Any]] = {}
+            for line in doc.lines:
+                for field, value in self._read(doc.type, line.text):
+                    found.setdefault(field, (value, line))
+            out += [CandidateFact(f, v, SourceRef(doc.evidence_id, ln.line), ln.text) for f, (v, ln) in found.items()]
+        return out
+
+    @staticmethod
+    def _one(values: set) -> Any:
+        return next(iter(values)) if len(values) == 1 else None
+
+    def _read(self, doc_type: str, text: str) -> list[tuple[str, str]]:
+        got: list[tuple[str, str]] = []
+        txn = _PAYPAL_TXN.search(text)
+        if txn and doc_type in ("order_invoice", "payment_record"):
+            got.append(("transaction_id", txn.group("id")))
+        amount = self._one(amounts_in(text))
+        code = _CODE.search(text)
+        currency = code.group(1) if code else ("IDR" if re.search(r"\bRp\b", text) else None)
+        one_date = self._one(dates_in(text))
+        if doc_type == "order_invoice":
+            order = _ORDER_LABEL.search(text)
+            if order:
+                got.append(("order_id", order.group("id")))
+            if _TOTAL.search(text) and amount is not None:
+                got.append(("order_amount", f"{amount:.2f}"))
+                if currency:
+                    got.append(("currency", currency))
+            if _ORDER_DATE.search(text) and one_date:
+                got.append(("order_date", one_date))
+        elif doc_type == "payment_record":
+            if _PAYMENT.search(text) and amount is not None and code:
+                got += [("payment_amount", f"{amount:.2f}"), ("payment_currency", code.group(1))]
+        elif doc_type in ("carrier_tracking", "delivery_proof"):
+            tracking = _TRACKING_LABEL.search(text)
+            if tracking:
+                got.append(("tracking_id" if doc_type == "carrier_tracking" else "delivery_tracking_id",
+                            tracking.group("id")))
+            if doc_type == "carrier_tracking":
+                status = _STATUS_LINE.match(text)
+                if status and _status_phrase(status.group("v")):
+                    got.append(("carrier_status", status.group("v").strip()))
+                if _SHIP_DATE.search(text) and one_date:
+                    got.append(("ship_date", one_date))
+                # "Delivered on 3 September 2026", "Diterima oleh: K. TANAKA - 9 Okt 2026": the delivery event.
+                # Read every time, so a disagreeing proof-of-delivery date never depends on the model noticing it.
+                if _status_phrase(text) == "DELIVERED" and one_date:
+                    got.append(("carrier_event_date", one_date))
+            elif _DELIVERY_DATE.search(text) and one_date:
+                got.append(("delivery_date", one_date))
+        return got
 
 
 class UnionExtractor:

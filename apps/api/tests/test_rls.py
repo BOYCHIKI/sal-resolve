@@ -109,7 +109,7 @@ def test_no_runtime_role_can_bypass_rls(app_engine):
 def test_all_tenant_tables_force_rls(app_engine):
     with app_engine.connect() as conn:
         rows = conn.execute(text("""SELECT relname FROM pg_class
-            WHERE relname IN ('merchants','disputes','evidence','drafts','approvals','audit_logs','jobs')
+            WHERE relname IN ('merchants','disputes','evidence','drafts','approvals','audit_logs','jobs','agent_actions')
               AND NOT (relrowsecurity AND relforcerowsecurity)""")).all()
     assert rows == []
 

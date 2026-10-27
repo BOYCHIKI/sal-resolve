@@ -51,6 +51,8 @@ class Settings:
     paypal_webhook_id: str | None
     # web -> API: the API answers only callers that present this token (required in prod)
     internal_token: str | None = field(repr=False)
+    # how often the worker checks PayPal and refreshes suggestions on its own; 0 turns the watch off
+    watch_minutes: int = 10
     problems: tuple[str, ...] = ()
 
     def summary(self) -> dict:
@@ -58,7 +60,8 @@ class Settings:
         return {"env": self.env, "agent_roles": self.agent_roles, "llm_model": self.llm_model or None,
                 "llm_key_set": bool(self.llm_api_key), "paypal_set": bool(self.paypal_client_id and self.paypal_client_secret),
                 "webhook_set": bool(self.paypal_webhook_id), "internal_token_set": bool(self.internal_token),
-                "demo_merchant_set": self.demo_merchant_id is not None, "storage_dir": str(self.storage_dir)}
+                "demo_merchant_set": self.demo_merchant_id is not None, "storage_dir": str(self.storage_dir),
+                "watch_minutes": self.watch_minutes}
 
 
 def _env(name: str, default: str = "") -> str:
@@ -82,6 +85,11 @@ def get_settings() -> Settings:
     except InvalidOperation:
         temperature, _ = None, problems.append("SAL_LLM_TEMPERATURE must be a number, e.g. 0")
 
+    watch_raw = _env("SAL_WATCH_MINUTES", "10")
+    watch = int(watch_raw) if watch_raw.isdigit() else 10
+    if not watch_raw.isdigit():
+        problems.append("SAL_WATCH_MINUTES must be a whole number of minutes (0 turns the watch off)")
+
     s = Settings(
         app_database_url=_env("SAL_APP_DATABASE_URL", "postgresql+psycopg://sal_app:app_dev_only@127.0.0.1:15432/sal"),
         worker_database_url=_env("SAL_WORKER_DATABASE_URL",
@@ -101,6 +109,7 @@ def get_settings() -> Settings:
         paypal_client_secret=_env("PAYPAL_CLIENT_SECRET"),
         paypal_webhook_id=_env("PAYPAL_WEBHOOK_ID") or None,
         internal_token=_env("SAL_INTERNAL_TOKEN") or None,
+        watch_minutes=watch,
     )
     problems += _check(s)
     return Settings(**{**s.__dict__, "problems": tuple(problems)})

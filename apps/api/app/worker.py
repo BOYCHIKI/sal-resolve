@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app import logs
 from app import repositories as repo
 from app import sync
-from app.db import worker_engine
+from app.db import tenant_session, worker_engine
 
 log = logging.getLogger("sal.worker")
 
@@ -95,13 +95,69 @@ def _paypal_evidence(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
         raise
 
 
+def _propose_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    if job.target_id is None:
+        raise PermanentError("propose_actions job without target dispute")
+    from datetime import datetime, timezone
+
+    from app.actions import refresh_dispute
+    return refresh_dispute(job.merchant_id, job.target_id, datetime.now(timezone.utc), ctx.engine)
+
+
+def _scan_holds(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.actions import scan_holds
+    try:
+        rows = ctx.paypal_factory().recent_transactions()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (400, 401, 403):  # e.g. Transaction Search not enabled for the app
+            raise PermanentError(f"PayPal answered {exc.response.status_code} to Transaction Search") from exc
+        raise
+    return scan_holds(job.merchant_id, rows, datetime.now(timezone.utc), ctx.engine)
+
+
+def _refresh_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.actions import refresh_open_disputes
+    return refresh_open_disputes(job.merchant_id, datetime.now(timezone.utc), ctx.engine)
+
+
 HANDLERS: dict[str, Handler] = {
     "sync_disputes": _sync_all,
     "sync_dispute": _sync_one,
     "analyze_dispute": _analyze,
     "reconcile_submission": _reconcile,
     "paypal_evidence": _paypal_evidence,
+    "propose_actions": _propose_actions,
+    "scan_holds": _scan_holds,
+    "refresh_actions": _refresh_actions,
 }
+
+
+# ---------------------------------------------------------------- autonomous watch (ADR-006)
+def watched_merchants(engine: Engine, demo_merchant_id: UUID | None) -> list[UUID]:
+    """Merchants SAL watches on its own: every connected PayPal account, plus the demo merchant."""
+    with Session(engine) as s, s.begin():
+        ids = set(s.execute(text("SELECT DISTINCT merchant_id FROM paypal_connections")).scalars())
+    if demo_merchant_id is not None:
+        ids.add(demo_merchant_id)
+    return sorted(ids, key=str)
+
+
+def watch_tick(engine: Engine, merchants: list[UUID], now_epoch: float, minutes: int, paypal_ready: bool) -> int:
+    """Queue one round of checks per merchant: sync PayPal, scan held funds, refresh every open case's cards.
+    The job key names the time window, so a restart or a second worker never queues the same round twice.
+    Nothing here writes to PayPal; the round only reads and proposes."""
+    window = int(now_epoch // (minutes * 60))
+    kinds = (["sync_disputes", "scan_holds"] if paypal_ready else []) + ["refresh_actions"]
+    queued = 0
+    for merchant_id in merchants:
+        with tenant_session(merchant_id, engine) as s:
+            for kind in kinds:
+                queued += repo.enqueue_job(s, merchant_id, kind, f"watch:{kind}:{merchant_id}:{window}")
+    return queued
 
 
 # ---------------------------------------------------------------- webhooks
@@ -177,7 +233,7 @@ def run_one_job(ctx: Context) -> bool:
             state = repo.fail_job(s, job.id, error, retryable=(outcome == "retry"))
             log.warning("job %s failed (%s)", job.kind, state,
                         extra={"kind": job.kind, "outcome": state, "duration_ms": duration_ms, "error": error})
-    for var, token in zip((logs.job_id, logs.merchant_id, logs.dispute_id), tokens):
+    for var, token in zip((logs.job_id, logs.merchant_id, logs.dispute_id), tokens, strict=True):
         var.reset(token)
     return True
 
@@ -195,7 +251,8 @@ def main() -> None:
     args = parser.parse_args()
     logs.setup()
     from app.config import require_valid
-    log.info("worker config", extra={"kind": "config", "outcome": json.dumps(require_valid().summary())})
+    cfg = require_valid()
+    log.info("worker config", extra={"kind": "config", "outcome": json.dumps(cfg.summary())})
 
     from functools import lru_cache
 
@@ -213,7 +270,17 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     log.info("worker started")
     last_beat = 0.0
+    last_watch = float("-inf")
+    paypal_ready = bool(cfg.paypal_client_id and cfg.paypal_client_secret)
     while not stopping.is_set():
+        if cfg.watch_minutes and time.monotonic() - last_watch >= cfg.watch_minutes * 60:
+            try:
+                queued = watch_tick(ctx.engine, watched_merchants(ctx.engine, cfg.demo_merchant_id), time.time(),
+                                    cfg.watch_minutes, paypal_ready)
+                log.info("watch round queued %d jobs", queued)
+            except Exception:  # noqa: BLE001 — a failed round is retried next window, the worker keeps running
+                log.exception("watch round failed")
+            last_watch = time.monotonic()
         done = drain(ctx, max_items=50)
         if done or time.monotonic() - last_beat > HEARTBEAT_SECONDS / 2:  # liveness for /api/health
             with Session(ctx.engine) as s, s.begin():

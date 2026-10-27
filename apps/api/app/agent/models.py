@@ -24,7 +24,7 @@ class Document:
     origin: str = "UPLOAD"    # UPLOAD (merchant file) | PAYPAL_API (fetched from PayPal) | SEED (practice data)
 
     def line_text(self, n: int) -> str | None:
-        return next((l.text for l in self.lines if l.line == n), None)
+        return next((line.text for line in self.lines if line.line == n), None)
 
 
 @dataclass(frozen=True)

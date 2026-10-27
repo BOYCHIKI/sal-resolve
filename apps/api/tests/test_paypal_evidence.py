@@ -45,7 +45,7 @@ def test_record_is_rendered_from_paypal_fields_without_personal_data():
     assert lines[0].startswith("PayPal transaction record")
     assert "Transaction ID: 2MK81285P20231246" in lines and "Status: Completed" in lines
     assert "Amount: 45.00 USD" in lines and "Date: 2026-10-12" in lines
-    assert any(l.startswith("Invoice ID: SAL-INR-001") for l in lines)
+    assert any(line.startswith("Invoice ID: SAL-INR-001") for line in lines)
     joined = " ".join(lines).lower()
     assert "@" not in joined and "address" not in joined and "payer" not in joined
 

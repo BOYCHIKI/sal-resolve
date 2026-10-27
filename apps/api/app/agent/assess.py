@@ -33,132 +33,142 @@ TRUSTED_PAYMENT_ORIGINS = {"PAYPAL_API", "SEED"}
 MOVING = {"SHIPPED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"}
 
 
+class _Case:
+    """What the proposition checks read: supported facts by field, conflicts by proposition, documents present."""
+
+    def __init__(self, facts: list[Fact], findings: list[Finding],
+                 documents: list[Document] | tuple[Document, ...]) -> None:
+        self.docs = {d.evidence_id: d for d in documents}
+        self.present = {d.type for d in documents}
+        self.supported: dict[str, list[Fact]] = {}
+        for f in facts:
+            if f.status == "supported":
+                self.supported.setdefault(f.field, []).append(f)
+        self.trouble: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.kind == "conflict":
+                self.trouble.setdefault(FIELD_PROPOSITION.get(finding.field, "payment_matches"), []).append(finding)
+
+    def first(self, field: str) -> Fact | None:
+        return (self.supported.get(field) or [None])[0]
+
+    def conflicted(self, pid: str, status: str) -> Proposition | None:
+        """The proposition as the rules' conflict states it, or None when the rules found no conflict."""
+        found = self.trouble.get(pid)
+        if not found:
+            return None
+        return Proposition(pid, status, found[0].description, tuple(r for f in found for r in f.source_refs))
+
+
+def _refs(*facts: Fact | None) -> tuple[SourceRef, ...]:
+    return tuple(f.source for f in facts if f is not None)
+
+
+def _payment_matches(case: _Case, amount: str, currency: str) -> Proposition:
+    """1. The payment PayPal recorded matches the dispute."""
+    if conflict := case.conflicted("payment_matches", "contradicted"):
+        return conflict
+    paid = next((f for f in case.supported.get("payment_amount", [])
+                 if (doc := case.docs.get(f.source.evidence_id)) and doc.origin in TRUSTED_PAYMENT_ORIGINS), None)
+    if paid is None:
+        if "payment_record" in case.present:
+            return Proposition("payment_matches", "missing",
+                               "The payment document is not a PayPal record, so it cannot prove payment")
+        return Proposition("payment_matches", "missing", "No PayPal transaction record yet")
+    cur = case.first("payment_currency")
+    if cur is not None and cur.value != currency:
+        return Proposition("payment_matches", "contradicted",
+                           f"PayPal recorded {cur.value}, the dispute is in {currency}", _refs(paid, cur))
+    if Decimal(paid.value) == Decimal(amount):
+        return Proposition("payment_matches", "proven",
+                           f"PayPal recorded {paid.value} {currency}, the disputed amount", _refs(paid, cur))
+    if Decimal(paid.value) > Decimal(amount):  # a partial dispute, e.g. one item of two
+        return Proposition("payment_matches", "proven",
+                           f"PayPal recorded {paid.value} {currency}; the buyer disputes {amount} of it",
+                           _refs(paid, cur))
+    return Proposition("payment_matches", "contradicted",
+                       f"PayPal recorded only {paid.value}, less than the disputed {amount}", _refs(paid))
+
+
+def _shipped(case: _Case) -> Proposition:
+    """2. The parcel was shipped: a tracking number plus a date or a carrier status that implies it moved."""
+    if conflict := case.conflicted("shipped", "contradicted"):
+        return conflict
+    tracking = case.first("tracking_id")
+    moved = case.first("ship_date") or case.first("carrier_event_date") or next(
+        (f for f in case.supported.get("carrier_status", []) if f.value in MOVING), None)
+    if tracking and moved:
+        return Proposition("shipped", "proven", f"Tracking {tracking.value} shows the parcel moving",
+                           _refs(tracking, moved))
+    if "carrier_tracking" not in case.present:
+        return Proposition("shipped", "missing", "No courier tracking attached")
+    return Proposition("shipped", "missing", "The tracking document shows no tracking number or movement",
+                       _refs(tracking))
+
+
+def _delivered(case: _Case) -> Proposition:
+    """3. It was delivered: the carrier says DELIVERED, or a proof of delivery carries a date."""
+    if conflict := case.conflicted("delivered", "contradicted"):
+        return conflict
+    status, delivered_on = case.first("carrier_status"), case.first("delivery_date")
+    if status is not None and status.value == "DELIVERED":
+        return Proposition("delivered", "proven", "The courier marked the parcel DELIVERED", _refs(status))
+    if delivered_on is not None:
+        return Proposition("delivered", "proven", f"Proof of delivery dated {delivered_on.value}", _refs(delivered_on))
+    if status is not None:
+        return Proposition("delivered", "missing", f"The courier's latest status is {status.value}", _refs(status))
+    if "delivery_proof" not in case.present:
+        return Proposition("delivered", "missing", "No proof of delivery attached")
+    return Proposition("delivered", "missing", "The delivery document shows no date or status")
+
+
+def _delivery_dates_agree(case: _Case) -> Proposition:
+    """4. The delivery dates agree (only when two sources give one)."""
+    if conflict := case.conflicted("delivery_date_consistent", "contradicted"):
+        return conflict
+    carrier_date, delivered_on = case.first("carrier_event_date"), case.first("delivery_date")
+    if carrier_date and delivered_on:
+        return Proposition("delivery_date_consistent", "proven", f"Courier and proof agree on {delivered_on.value}",
+                           _refs(carrier_date, delivered_on))
+    return Proposition("delivery_date_consistent", "not_applicable", "Only one delivery date to compare")
+
+
+def _buyer_messages_clean(case: _Case) -> Proposition:
+    """5. Buyer messages hold no hidden instructions and no contradicting figures."""
+    if conflict := case.conflicted("buyer_messages_clean", "flagged"):
+        return conflict
+    if "support_message" in case.present:
+        return Proposition("buyer_messages_clean", "proven", "No hidden instructions or conflicting figures")
+    return Proposition("buyer_messages_clean", "not_applicable", "No buyer messages attached")
+
+
+def _paypal_request_covered(requested: tuple[str, ...], props: list[Proposition]) -> Proposition:
+    """6. PayPal's own request for evidence is covered by the propositions above."""
+    needs = [(r, REQUEST_NEEDS.get(r)) for r in requested]
+    if not needs:
+        return Proposition("paypal_request_covered", "not_applicable", "PayPal has not asked for specific evidence")
+    by_id = {p.id: p for p in props}
+    unknown = [r for r, n in needs if n is None]
+    gaps = [r for r, n in needs if n and any(by_id[x].status != "proven" for x in n)]
+    asked = ", ".join(r.replace("_", " ").lower() for r in requested)
+    if gaps:
+        return Proposition("paypal_request_covered", "missing", f"PayPal asked for {asked}; not proven yet")
+    if unknown:
+        return Proposition("paypal_request_covered", "flagged",
+                           f"PayPal asked for {asked}; check you have it, SAL can't verify that type")
+    return Proposition("paypal_request_covered", "proven", f"PayPal asked for {asked}; your documents cover it")
+
+
 def assess(facts: list[Fact], findings: list[Finding], documents: list[Document] | tuple[Document, ...],
            dispute_amount: str, dispute_currency: str, reason: str = "ITEM_NOT_RECEIVED",
            requested: tuple[str, ...] = ()) -> Assessment:
     if reason not in SUPPORTED_REASONS:  # never judge e.g. "not as described" by shipping rules
         return Assessment((), "NEEDS_CHECK",
                           "SAL's evidence check covers 'item not received' disputes only. Review this case in PayPal.")
-    docs = {d.evidence_id: d for d in documents}
-    present = {d.type for d in documents}
-    supported: dict[str, list[Fact]] = {}
-    for f in facts:
-        if f.status == "supported":
-            supported.setdefault(f.field, []).append(f)
-
-    def first(field: str) -> Fact | None:
-        return (supported.get(field) or [None])[0]
-
-    # Conflicts and flags from the rules, grouped by proposition.
-    trouble: dict[str, list[Finding]] = {}
-    for fi in findings:
-        if fi.kind == "conflict":
-            trouble.setdefault(FIELD_PROPOSITION.get(fi.field, "payment_matches"), []).append(fi)
-
-    def refs(*fs: Fact | None) -> tuple[SourceRef, ...]:
-        return tuple(f.source for f in fs if f is not None)
-
-    def from_trouble(pid: str, status: str) -> Proposition:
-        found = trouble[pid]
-        return Proposition(pid, status, found[0].description, tuple(r for fi in found for r in fi.source_refs))
-
-    props: list[Proposition] = []
-
-    # 1. The payment PayPal recorded matches the dispute.
-    paid = next((f for f in supported.get("payment_amount", [])
-                 if docs.get(f.source.evidence_id) and docs[f.source.evidence_id].origin in TRUSTED_PAYMENT_ORIGINS),
-                None)
-    if "payment_matches" in trouble:
-        props.append(from_trouble("payment_matches", "contradicted"))
-    elif paid is not None:
-        cur = first("payment_currency")
-        if cur is not None and cur.value != dispute_currency:
-            props.append(Proposition("payment_matches", "contradicted",
-                                     f"PayPal recorded {cur.value}, the dispute is in {dispute_currency}", refs(paid, cur)))
-        elif Decimal(paid.value) == Decimal(dispute_amount):
-            props.append(Proposition("payment_matches", "proven",
-                                     f"PayPal recorded {paid.value} {dispute_currency}, the disputed amount",
-                                     refs(paid, cur)))
-        elif Decimal(paid.value) > Decimal(dispute_amount):  # a partial dispute, e.g. one item of two
-            props.append(Proposition("payment_matches", "proven",
-                                     f"PayPal recorded {paid.value} {dispute_currency}; the buyer disputes "
-                                     f"{dispute_amount} of it", refs(paid, cur)))
-        else:
-            props.append(Proposition("payment_matches", "contradicted",
-                                     f"PayPal recorded only {paid.value}, less than the disputed {dispute_amount}",
-                                     refs(paid)))
-    elif any(d.type == "payment_record" for d in documents):
-        props.append(Proposition("payment_matches", "missing",
-                                 "The payment document is not a PayPal record, so it cannot prove payment"))
-    else:
-        props.append(Proposition("payment_matches", "missing", "No PayPal transaction record yet"))
-
-    # 2. The parcel was shipped: a tracking number plus a date or a carrier status that implies it moved.
-    tracking = first("tracking_id")
-    moved = first("ship_date") or first("carrier_event_date") or next(
-        (f for f in supported.get("carrier_status", []) if f.value in MOVING), None)
-    if "shipped" in trouble:
-        props.append(from_trouble("shipped", "contradicted"))
-    elif tracking and moved:
-        props.append(Proposition("shipped", "proven", f"Tracking {tracking.value} shows the parcel moving",
-                                 refs(tracking, moved)))
-    elif "carrier_tracking" not in present:
-        props.append(Proposition("shipped", "missing", "No courier tracking attached"))
-    else:
-        props.append(Proposition("shipped", "missing", "The tracking document shows no tracking number or movement",
-                                 refs(tracking)))
-
-    # 3. It was delivered: the carrier says DELIVERED, or a proof of delivery carries a date.
-    status = first("carrier_status")
-    delivered_on = first("delivery_date")
-    if "delivered" in trouble:
-        props.append(from_trouble("delivered", "contradicted"))
-    elif status is not None and status.value == "DELIVERED":
-        props.append(Proposition("delivered", "proven", "The courier marked the parcel DELIVERED", refs(status)))
-    elif delivered_on is not None:
-        props.append(Proposition("delivered", "proven", f"Proof of delivery dated {delivered_on.value}",
-                                 refs(delivered_on)))
-    elif status is not None:
-        props.append(Proposition("delivered", "missing", f"The courier's latest status is {status.value}", refs(status)))
-    elif "delivery_proof" not in present:
-        props.append(Proposition("delivered", "missing", "No proof of delivery attached"))
-    else:
-        props.append(Proposition("delivered", "missing", "The delivery document shows no date or status"))
-
-    # 4. The delivery dates agree (only when two sources give one).
-    carrier_date = first("carrier_event_date")
-    if "delivery_date_consistent" in trouble:
-        props.append(from_trouble("delivery_date_consistent", "contradicted"))
-    elif carrier_date and delivered_on:
-        props.append(Proposition("delivery_date_consistent", "proven", f"Courier and proof agree on {delivered_on.value}",
-                                 refs(carrier_date, delivered_on)))
-    else:
-        props.append(Proposition("delivery_date_consistent", "not_applicable", "Only one delivery date to compare"))
-
-    # 5. Buyer messages hold no hidden instructions and no contradicting figures.
-    if "buyer_messages_clean" in trouble:
-        props.append(from_trouble("buyer_messages_clean", "flagged"))
-    elif "support_message" in present:
-        props.append(Proposition("buyer_messages_clean", "proven", "No hidden instructions or conflicting figures"))
-    else:
-        props.append(Proposition("buyer_messages_clean", "not_applicable", "No buyer messages attached"))
-
-    # 6. PayPal's own request for evidence is covered.
-    needs = [(r, REQUEST_NEEDS.get(r)) for r in requested]
-    if not needs:
-        props.append(Proposition("paypal_request_covered", "not_applicable", "PayPal has not asked for specific evidence"))
-    else:
-        by_id = {p.id: p for p in props}
-        unknown = [r for r, n in needs if n is None]
-        gaps = [r for r, n in needs if n and any(by_id[x].status != "proven" for x in n)]
-        asked = ", ".join(r.replace("_", " ").lower() for r in requested)
-        if gaps:
-            props.append(Proposition("paypal_request_covered", "missing", f"PayPal asked for {asked}; not proven yet"))
-        elif unknown:
-            props.append(Proposition("paypal_request_covered", "flagged",
-                                     f"PayPal asked for {asked}; check you have it, SAL can't verify that type"))
-        else:
-            props.append(Proposition("paypal_request_covered", "proven", f"PayPal asked for {asked}; your documents cover it"))
+    case = _Case(facts, findings, documents)
+    props = [_payment_matches(case, dispute_amount, dispute_currency), _shipped(case), _delivered(case),
+             _delivery_dates_agree(case), _buyer_messages_clean(case)]
+    props.append(_paypal_request_covered(requested, props))
     return Assessment(tuple(props), *_readiness(props))
 
 

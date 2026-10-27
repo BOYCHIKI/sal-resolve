@@ -1,13 +1,11 @@
 """Worker, job lifecycle, webhook routing and sync — against real Postgres, with a fake PayPal."""
 from __future__ import annotations
 
-import json
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 from app import repositories as repo
 from app import worker
@@ -46,6 +44,9 @@ class FakePayPal:
         self.get_calls.append(dispute_id)
         return self.disputes[dispute_id]
 
+    def recent_transactions(self) -> list[dict]:
+        return []
+
 
 @pytest.fixture
 def merchant(migrated_db) -> UUID:
@@ -54,6 +55,9 @@ def merchant(migrated_db) -> UUID:
 
 @pytest.fixture
 def ctx(worker_engine):
+    # Jobs other test modules left due (e.g. propose_actions after an analysis) run first, so the jobs a test
+    # here enqueues are the ones it claims.
+    worker.drain(worker.Context(worker_engine, lambda: FakePayPal({})))
     fake = FakePayPal({})
     return worker.Context(worker_engine, lambda: fake), fake
 
@@ -243,3 +247,49 @@ def test_paypal_404_fails_fast_instead_of_retrying(merchant, app_engine):
             break
     job = _job(app_engine, merchant, job_id)
     assert job["state"] == "FAILED" and job["attempts"] == 1 and "404" in job["last_error"]
+
+
+def test_scan_holds_job_turns_transaction_search_into_cards(merchant, app_engine, worker_engine):
+    from tests.test_actions import recorded_holds
+
+    class WithHolds(FakePayPal):
+        def recent_transactions(self):
+            return recorded_holds()
+
+    c = worker.Context(worker_engine, lambda: WithHolds({}))
+    with tenant_session(merchant, app_engine) as s:
+        job_id = repo.enqueue_job_returning(s, merchant, "scan_holds", f"t:{uuid4()}")
+    for _ in range(50):
+        if _job(app_engine, merchant, job_id)["state"] != "QUEUED" or not worker.run_one_job(c):
+            break
+    job = _job(app_engine, merchant, job_id)
+    assert job["state"] == "SUCCEEDED" and job["result"]["inserted"] == 1
+    with tenant_session(merchant, app_engine) as s:
+        title = s.execute(text("SELECT title FROM agent_actions WHERE kind = 'EXPLAIN_HELD_FUNDS'")).scalar()
+    assert title == "43.17 USD is on hold"
+
+
+# --------------------------------------------------------------- autonomous watch
+def test_watch_queues_one_round_per_window_and_never_doubles_it(merchant, app_engine, worker_engine):
+    t = 1_800_000_000.0
+    assert worker.watch_tick(worker_engine, [merchant], t, 10, paypal_ready=True) == 3   # sync, holds, cards
+    assert worker.watch_tick(worker_engine, [merchant], t + 60, 10, paypal_ready=True) == 0  # same window
+    assert worker.watch_tick(worker_engine, [merchant], t + 600, 10, paypal_ready=False) == 1  # cards only
+    with tenant_session(merchant, app_engine) as s:
+        kinds = s.execute(text("SELECT kind FROM jobs WHERE idempotency_key LIKE 'watch:%' ORDER BY kind")).scalars().all()
+    assert kinds == ["refresh_actions", "refresh_actions", "scan_holds", "sync_disputes"]
+
+
+def test_a_deadline_coming_close_adds_a_reply_card_without_any_new_event(merchant, app_engine, worker_engine):
+    from datetime import datetime, timedelta, timezone
+
+    from app.actions import list_actions, refresh_open_disputes
+    from app.agent.runner import baseline_roles, run_analysis
+    from app.seed_demo import seed_golden
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-011", "2026-11-10T23:59:00Z")
+    run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
+    deadline = datetime(2026, 11, 10, 23, 59, tzinfo=timezone.utc)
+    refresh_open_disputes(merchant, deadline - timedelta(days=8), worker_engine)    # a week away: no reply card
+    assert "REPLY_BEFORE_DEADLINE" not in {a["kind"] for a in list_actions(merchant, engine=app_engine)}
+    refresh_open_disputes(merchant, deadline - timedelta(hours=30), worker_engine)  # 30 hours left
+    assert "REPLY_BEFORE_DEADLINE" in {a["kind"] for a in list_actions(merchant, engine=app_engine)}

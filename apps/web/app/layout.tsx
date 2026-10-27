@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
+import { Archivo, Inter } from "next/font/google";
 import { Motion } from "@/components/motion/Motion";
 import "./globals.css";
+
+// Only the landing (.lp in globals.css) reads these; the app screens keep the system stack.
+const display = Archivo({ subsets: ["latin"], variable: "--font-display", display: "swap" });
+const text = Inter({ subsets: ["latin"], variable: "--font-text", display: "swap" });
 
 export const metadata: Metadata = {
   title: "SAL Resolve",
@@ -12,7 +17,7 @@ const MOTION_GATE = `(function(){var d=document.documentElement;if(matchMedia("(
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${text.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: MOTION_GATE }} />
       </head>

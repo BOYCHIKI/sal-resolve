@@ -1,11 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Glass look, dark-first (see apps/web/DESIGN.md, "Dark-first and motion"): frosted panels over a deep tinted
- * ground, one action blue, pill buttons, large radii, no drop shadows. System font stack (SF on Apple devices).
- * Functional tints for things to check (amber), missing proof/urgent (red), done (green).
- * Dark is the default; light stays available with <html data-theme="light">.
- * --action is the blue for text, links and icon strokes; --action-fill is the button fill (white text on it).
+ * Base tokens, dark-first (see apps/web/DESIGN.md, "Dark-first and motion"). Every screen now wraps itself in .lp
+ * (below) for its look; these tokens remain for the functional tints: things to check (amber), missing proof/urgent
+ * (red), ready (blue), done (green). Dark is the default; light stays available with <html data-theme="light">.
  */
 :root {
   color-scheme: dark;
@@ -22,7 +20,6 @@
   --action-fill: #3d63ff;
   --action-focus: #8aa5ff;
   --accent: #8ef0c0;
-  --glare: rgba(255, 255, 255, 0.16);
   --blob-1: #14246a;
   --blob-2: #0c1c3d;
   --blob-3: #0f3a2e;
@@ -48,7 +45,6 @@
   --action-fill: #0066cc;
   --action-focus: #0071e3;
   --accent: #1d6b37;
-  --glare: rgba(255, 255, 255, 0.5);
   --blob-1: #c4dcff;
   --blob-2: #ffe0cc;
   --blob-3: #c9f0e4;
@@ -100,82 +96,261 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.025em; }
 .ground-blobs { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .ground-blobs span { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.85; }
 
-.glass {
-  background: var(--glass);
-  border: 1px solid var(--glass-edge);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-}
-.glass-strong {
-  background: var(--glass-strong);
-  border: 1px solid var(--glass-edge);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
-}
-
-.btn-primary {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 48px; padding: 0 24px; border-radius: 9999px;
-  background: var(--action-fill); color: #fff; font-size: 16px; font-weight: 500;
-  transition: transform 0.1s;
-}
-.btn-primary:active:not(:disabled) { transform: scale(0.96); }
-.btn-primary:disabled { background: var(--grey-bg); color: var(--ink-muted); cursor: not-allowed; }
-.btn-secondary {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-height: 48px; padding: 0 24px; border-radius: 9999px;
-  border: 1px solid var(--hairline); background: var(--glass); color: var(--action); font-size: 16px;
-  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
-}
-
 /*
  * Motion (components/motion/Motion.tsx). The inline script in layout.tsx adds .motion to <html> only when the
  * visitor allows motion, so these start hidden for GSAP to reveal; without JS or with reduced motion they show as-is.
  */
 .motion [data-split], .motion [data-reveal], .motion [data-reveal-stagger] > * { visibility: hidden; }
 .split-line { padding-bottom: 0.08em; }
+/* Travelling diamonds (data-orbit) only exist in motion; standing still they would sit at the drawing's corner. */
+.orbit-dot { visibility: hidden; }
+.motion .orbit-dot { visibility: visible; }
 
-/* Tilt cards: the glare follows the pointer through --gx/--gy, set by Motion.tsx. */
-[data-tilt] { position: relative; transform-style: preserve-3d; will-change: transform; }
-[data-tilt] > .glare {
-  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
-  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), var(--glare), transparent 60%);
-  transition: opacity 0.3s ease-in-out;
+/*
+ * The look of every screen (landing, /demo, /disputes, the case page), each wrapped in .lp. Pure black ground, heavy upper-case
+ * display type (Archivo, via next/font), hairline and dashed rules instead of shadows, small pill labels over each
+ * section, one white band to break the rhythm. Blue is for buttons; mint marks proof and highlights.
+ */
+.lp {
+  --lp-bg: #000;
+  --lp-card: #0d0e10;
+  --lp-card-2: #141518;
+  --lp-line: rgba(255, 255, 255, 0.09);
+  --lp-line-strong: rgba(255, 255, 255, 0.22);
+  --lp-ink: #fff;
+  --lp-muted: #9aa0ab;
+  --lp-blue: #3d63ff;
+  --lp-mint: #8ef0c0;
+  --lp-well: #000; /* inset areas inside a card: the reply text, an open document, form fields */
+  position: relative; z-index: 0; /* covers the app's ground blobs */
+  background: var(--lp-bg); color: var(--lp-ink);
+  font-family: var(--font-text), var(--font-sans);
+  letter-spacing: -0.005em;
 }
-[data-tilt]:hover > .glare { opacity: 1; }
+.lp .display {
+  font-family: var(--font-display), var(--font-sans);
+  font-weight: 800; text-transform: uppercase; letter-spacing: -0.035em; line-height: 0.95;
+}
+.lp .muted { color: var(--lp-muted); }
+.lp .muted strong { color: var(--lp-ink); font-weight: 500; }
+.lp a.muted:hover { color: var(--lp-ink); }
 
-/* Deep blue panel for the "Nothing goes to PayPal without you" message. */
-.panel-deep {
-  background: linear-gradient(160deg, #1b2a8a 0%, #0d1240 55%, #07080b 100%);
-  border: 1px solid rgba(125, 155, 255, 0.18);
-  color: #f5f5f7;
-  --accent: #8ef0c0;
+.lp-label {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 9999px;
+  background: var(--lp-card-2); border: 1px solid var(--lp-line);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.lp-btn, .lp-btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 46px; padding: 0 22px; border-radius: 9999px;
+  font-size: 14px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  transition: transform 0.12s, background-color 0.2s;
+}
+.lp-btn { background: var(--lp-blue); color: #fff; }
+.lp-btn:hover { background: #2f52f0; }
+.lp-btn-ghost { background: var(--lp-card-2); color: var(--lp-ink); border: 1px solid var(--lp-line); }
+.lp-btn:active:not(:disabled), .lp-btn-ghost:active { transform: scale(0.97); }
+.lp-btn:disabled { background: var(--lp-card-2); color: var(--lp-muted); cursor: not-allowed; }
+
+.lp-card { background: var(--lp-card); border: 1px solid var(--lp-line); border-radius: 20px; }
+a.lp-card:hover { border-color: var(--lp-mint); }
+.lp-dashed { border: 1px dashed var(--lp-line-strong); }
+/* Faint dot grid behind the hero and the closing call, fading out at the edges. */
+.lp-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+}
+/* Registration mark: SAL's corner motif, a small cross where dashed rules meet. */
+.lp-cross { position: absolute; width: 11px; height: 11px; }
+.lp-cross::before, .lp-cross::after { content: ""; position: absolute; background: var(--lp-mint); }
+.lp-cross::before { left: 5px; top: 0; width: 1px; height: 11px; }
+.lp-cross::after { top: 5px; left: 0; height: 1px; width: 11px; }
+
+/* The white band. */
+.lp-light {
+  --lp-card: #fff; --lp-card-2: #f2f4f7; --lp-line: #e4e7ec; --lp-line-strong: #c9ced8;
+  --lp-ink: #0a0b0d; --lp-muted: #5d6370; --lp-mint: #12a46b;
+  background: #fff; color: var(--lp-ink);
 }
 
-/* Courier strip (components/CourierMarquee.tsx): two copies slide left by one copy's width, then repeat. */
+/* Case screen still (components/landing/CaseMockup.tsx). */
+.mock { background: #fff; color: #0b0c0f; border-radius: 18px; overflow: hidden; box-shadow: 0 40px 120px -40px rgba(61, 99, 255, 0.55); }
+.mock-fact { background: #e7f6ec; color: #155d2f; border-radius: 4px; padding: 0 3px; }
+.mock-gap { background: #fff1c7; color: #7a5200; border-radius: 4px; padding: 0 3px; }
+
+/* Courier rows (components/CourierMarquee.tsx): two copies slide by one copy's width, then repeat. */
 .marquee {
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
 }
-.marquee-track { display: flex; width: max-content; animation: marquee 60s linear infinite; }
+.marquee-track { display: flex; width: max-content; animation: marquee 70s linear infinite; }
+.marquee-reverse { animation-direction: reverse; }
 .marquee:hover .marquee-track { animation-play-state: paused; }
-.marquee-row { display: flex; gap: 10px; padding-right: 10px; }
+.marquee-row { display: flex; gap: 12px; padding-right: 12px; }
 @keyframes marquee { to { transform: translateX(-50%); } }
+.courier-chip {
+  display: flex; align-items: center; justify-content: space-between; gap: 28px; min-width: 210px;
+  padding: 16px 18px; border-radius: 14px; background: var(--lp-card); border: 1px solid var(--lp-line);
+  font-size: 15px; font-weight: 500; white-space: nowrap;
+}
+.courier-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--lp-mint); }
 @media (prefers-reduced-motion: reduce) {
-  .marquee { -webkit-mask-image: none; mask-image: none; }
-  .marquee-track { animation: none; width: auto; }
-  .marquee-row { flex-wrap: wrap; justify-content: center; }
+  .marquee-track { animation: none; }
   .marquee-row[aria-hidden] { display: none; }
-}
-/* Without motion on a phone, the wrapped list would run two screens long: keep one row and let it be swiped instead. */
-@media (prefers-reduced-motion: reduce) and (max-width: 639px) {
-  .marquee { overflow-x: auto; scrollbar-width: none; padding: 0 16px; }
-  .marquee-row { flex-wrap: nowrap; justify-content: flex-start; }
+  .marquee { overflow-x: auto; scrollbar-width: none; -webkit-mask-image: none; mask-image: none; }
 }
 
-/* Thin strip above the nav, for the one thing every visitor should know first. */
-.notice-bar { background: var(--action-fill); color: #fff; }
+/* The top ticker reuses the marquee loop. */
+.ticker { border-bottom: 1px solid var(--lp-line); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.ticker .marquee-track { animation-duration: 40s; }
+.ticker .marquee-row { gap: 40px; padding: 10px 40px 10px 0; }
 
-[data-highlight] { display: inline-block; transition: color 0.3s ease-out, transform 0.3s ease-out; }
-[data-highlight].is-lit { color: var(--accent); transform: scale(1.04); }
+/* The shipping lane that is "live" on the route map. */
+.lane-live { animation: lane 1.6s linear infinite; }
+@keyframes lane { to { stroke-dashoffset: -18; } }
+@media (prefers-reduced-motion: reduce) { .lane-live { animation: none; } }
+
+/* Hero rings (components/landing/HeroOrbits.tsx) fade out towards the sides and the bottom. */
+.lp-fade {
+  -webkit-mask-image: radial-gradient(ellipse 65% 85% at 50% 30%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 65% 85% at 50% 30%, #000 35%, transparent 100%);
+}
+
+/* The landing nav (data-nav): a full-width bar at the top, a floating pill once the page scrolls. */
+.lp-nav { transition: background-color 0.3s, border-color 0.3s; }
+.lp-nav > nav {
+  border: 1px solid transparent;
+  transition: max-width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), margin-top 0.5s, padding 0.5s, border-radius 0.5s,
+    background-color 0.3s, border-color 0.3s;
+}
+.lp-nav.is-stuck { background: transparent; border-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.lp-nav.is-stuck > nav {
+  max-width: 64rem; margin-top: 10px; padding: 8px 8px 8px 20px; border-radius: 9999px;
+  background: rgba(13, 14, 16, 0.85); border-color: var(--lp-line);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+@media (max-width: 639px) { .lp-nav.is-stuck > nav { margin-left: 12px; margin-right: 12px; } }
+
+/* A light that runs round a button's edge. */
+@property --lp-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.lp-ring { position: relative; isolation: isolate; }
+.lp-ring::before {
+  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; padding: 1px;
+  background: conic-gradient(from var(--lp-angle), transparent 70%, var(--lp-mint) 92%, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: lp-ring 4s linear infinite;
+}
+@keyframes lp-ring { to { --lp-angle: 360deg; } }
+
+/* A dot running down a dashed connector (the hero's line into the case screen). */
+.lp-drip { position: absolute; left: -2px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--lp-mint);
+  animation: lp-drip 2.4s cubic-bezier(0.5, 0, 0.5, 1) infinite; }
+@keyframes lp-drip { 0% { top: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { top: calc(100% - 5px); opacity: 0; } }
+
+/*
+ * The sky: every screen (landing, /demo, /disputes, the case page) adds .sky to .lp. Same tokens, light values:
+ * frosted glass cards over a pale sky with soft blue, lilac and pink clouds; sentence-case type and softer buttons, so
+ * the working screens feel calm rather than loud. The functional tints switch to their light versions.
+ */
+.sky {
+  color-scheme: light;
+  --lp-bg: #eef5ff;
+  --lp-card: rgba(255, 255, 255, 0.62);
+  --lp-card-2: rgba(255, 255, 255, 0.5);
+  --lp-line: rgba(36, 72, 140, 0.1);
+  --lp-line-strong: rgba(36, 72, 140, 0.24);
+  --lp-ink: #0f1d3a;
+  --lp-muted: #55627c;
+  --lp-blue: #3d63ff;
+  --lp-mint: #0e8a58;
+  --lp-well: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --ink: #0f1d3a; --ink-soft: #3b4660; --ink-muted: #5f6b82;
+  --action-focus: #2f5bff;
+  --amber-bg: rgba(255, 240, 200, 0.85); --amber-ink: #6b4500;
+  --red-bg: rgba(255, 228, 226, 0.88);   --red-ink: #a01d12;
+  --blue-bg: rgba(220, 232, 255, 0.88);  --blue-ink: #1d3fae;
+  --green-bg: rgba(214, 245, 228, 0.88); --green-ink: #13693a;
+  --grey-bg: rgba(255, 255, 255, 0.6);   --grey-ink: #3b4660;
+  background: linear-gradient(165deg, #f5f9ff 0%, #e2eeff 45%, #ece8ff 100%);
+}
+/* The clouds: fixed, so the glass blurs them as the page scrolls. */
+.sky::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 34% 16% at 18% 22%, rgba(255, 255, 255, 0.95), transparent 70%),
+    radial-gradient(ellipse 30% 13% at 78% 62%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(circle at 8% 4%, rgba(64, 140, 255, 0.42), transparent 34%),
+    radial-gradient(circle at 92% 14%, rgba(160, 135, 255, 0.36), transparent 36%),
+    radial-gradient(circle at 70% 98%, rgba(255, 165, 210, 0.32), transparent 38%),
+    radial-gradient(circle at 22% 80%, rgba(110, 200, 255, 0.3), transparent 34%);
+}
+.sky .display { text-transform: none; font-weight: 700; letter-spacing: -0.025em; line-height: 1.08; }
+.sky .lp-card {
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46));
+  border-color: var(--glass-edge); border-radius: 24px;
+  -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 14px 40px -18px rgba(40, 80, 170, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.sky a.lp-card { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
+.sky a.lp-card:hover { border-color: #fff; transform: translateY(-2px); box-shadow: 0 20px 44px -18px rgba(40, 80, 170, 0.45), inset 0 1px 0 #fff; }
+.sky .lp-label {
+  background: rgba(255, 255, 255, 0.6); border-color: var(--glass-edge); color: #2346c9;
+  text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.sky .lp-btn, .sky .lp-btn-ghost { text-transform: none; letter-spacing: 0; font-size: 15px; font-weight: 600; }
+.sky .lp-btn { background: linear-gradient(135deg, #5b85ff, #3d63ff); box-shadow: 0 10px 22px -10px rgba(61, 99, 255, 0.75); }
+.sky .lp-btn:hover { background: linear-gradient(135deg, #4a76ff, #2f52f0); }
+.sky .lp-btn:disabled { background: rgba(255, 255, 255, 0.6); color: var(--lp-muted); box-shadow: none; }
+.sky .lp-btn-ghost { background: rgba(255, 255, 255, 0.6); border-color: var(--glass-edge); }
+.sky .lp-dots { background-image: radial-gradient(rgba(36, 72, 140, 0.16) 1px, transparent 1px); }
+.sky .lp-dashed { background: rgba(255, 255, 255, 0.3); }
+.sky .lp-nav.is-stuck > nav { background: rgba(255, 255, 255, 0.72); border-color: var(--glass-edge); box-shadow: 0 10px 30px -14px rgba(40, 80, 170, 0.35); }
+/* The white band turns to frosted glass so the sky still shows through. */
+.sky .lp-light {
+  --lp-card: rgba(255, 255, 255, 0.85); --lp-line: rgba(36, 72, 140, 0.1); --lp-mint: #0e8a58;
+  background: rgba(255, 255, 255, 0.5); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+  border-block: 1px solid var(--glass-edge);
+}
+
+/*
+ * SAL's speech bubbles (components/mascot/SalSays.tsx). The tail points up at SAL on phones and left at SAL on wide screens.
+ * With motion on (the .motion gate in layout.tsx), the bubble pops up, the headline arrives word by word (--i is
+ * the word's place), then the rest of what SAL says; without motion everything simply shows.
+ */
+.speech::before {
+  content: ""; position: absolute; width: 24px; height: 24px; background: rgba(255, 255, 255, 0.8);
+  left: 50%; top: -12px; transform: translateX(-50%) rotate(45deg); border-radius: 4px;
+}
+@media (min-width: 1024px) { .speech::before { left: -12px; top: 50%; transform: translateY(-50%) rotate(45deg); } }
+.speech-word { display: inline-block; }
+.motion .speech-hero { animation: speech-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.25s both; transform-origin: 50% 0; }
+@media (min-width: 1024px) { .motion .speech-hero { transform-origin: 0 50%; } }
+.motion .speech-word { animation: speech-word 0.35s ease-out both; animation-delay: calc(0.75s + var(--i) * 0.11s); }
+.motion .speech-after { animation: speech-word 0.5s ease-out 0.6s both; }
+.motion .speech-late { animation-delay: 1.75s; }
+@keyframes speech-pop { from { opacity: 0; transform: scale(0.85); } }
+@keyframes speech-word { from { opacity: 0; transform: translateY(6px); filter: blur(4px); } }
+
+/*
+ * SAL sits on a small cloud, so the blue shield stands out from the blue sky instead of melting into it.
+ * Sets no position or display: those stay with the utilities on the same element (unlayered CSS would override them).
+ */
+.mascot-cloud { isolation: isolate; }
+.mascot-cloud::before {
+  content: ""; position: absolute; z-index: -1; left: -14%; right: -14%; top: 10%; bottom: -4%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55) 60%, transparent);
+  filter: blur(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky a.lp-card:hover { transform: none; }
+  .lp-ring::before { animation: none; }
+  .lp-drip { display: none; }
+  .lp-nav, .lp-nav > nav { transition: none; }
+}

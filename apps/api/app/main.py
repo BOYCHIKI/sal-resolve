@@ -22,6 +22,7 @@ from functools import lru_cache
 
 from app import logs
 from app import repositories as repo
+from app import actions
 from app import evidence as evidence_store
 from app import submission
 from app.config import get_settings, require_valid
@@ -140,6 +141,7 @@ def sync_disputes(merchant_id: UUID = Depends(current_merchant)) -> dict:
     bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
     with tenant_session(merchant_id) as s:
         job_id = repo.enqueue_job_returning(s, merchant_id, "sync_disputes", f"sync_disputes:{merchant_id}:{bucket}")
+        repo.enqueue_job(s, merchant_id, "scan_holds", f"scan_holds:{merchant_id}:{bucket}")  # held-funds cards
     return {"job_id": str(job_id), "status_url": f"/api/jobs/{job_id}"}
 
 
@@ -308,6 +310,45 @@ def submit_draft(draft_id: UUID, merchant_id: UUID = Depends(current_merchant),
         return submission.submit(merchant_id, draft_id, DEMO_ACTOR, paypal)
     except submission.SubmissionError as exc:
         raise _submission_error(exc) from None
+
+
+# ---------------------------------------------------------------- agent suggestions (ADR-006)
+class ActionApproveBody(BaseModel):
+    payload_hash: str
+
+
+ACTION_STATUSES = {"PROPOSED", "APPROVED", "DONE", "FAILED", "DISMISSED", "SUPERSEDED"}
+
+
+def _action_error(exc: actions.ActionError) -> HTTPException:
+    return HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": exc.status >= 500})
+
+
+@app.get("/api/actions")
+def list_actions(status: str = Query("PROPOSED"), dispute_id: UUID | None = Query(None),
+                 merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """What SAL suggests the merchant does next, most urgent first."""
+    if status not in ACTION_STATUSES:
+        raise HTTPException(422, detail={"code": "BAD_STATUS", "retryable": False})
+    return {"items": actions.list_actions(merchant_id, status, dispute_id)}
+
+
+@app.post("/api/actions/{action_id}/approve")
+def approve_action(action_id: UUID, body: ActionApproveBody, merchant_id: UUID = Depends(current_merchant),
+                   paypal: submission.EvidenceSink = Depends(paypal_sink)) -> dict:
+    """The merchant approves the exact suggestion they read (payload_hash). Only SEND_EVIDENCE writes to PayPal."""
+    try:
+        return actions.approve(merchant_id, action_id, body.payload_hash, DEMO_ACTOR, paypal)
+    except actions.ActionError as exc:
+        raise _action_error(exc) from None
+
+
+@app.post("/api/actions/{action_id}/dismiss")
+def dismiss_action(action_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return actions.dismiss(merchant_id, action_id, DEMO_ACTOR)
+    except actions.ActionError as exc:
+        raise _action_error(exc) from None
 
 
 # ---------------------------------------------------------------- evidence upload

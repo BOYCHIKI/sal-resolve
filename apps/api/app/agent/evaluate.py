@@ -4,6 +4,7 @@
     python -m app.agent.evaluate --split calibration
     python -m app.agent.evaluate --split holdout --final   # only once rules/prompts are frozen
     python -m app.agent.evaluate --split real_format --roles llm   # realistic layouts (v1.1.0, ADR-004 gate)
+    python -m app.agent.evaluate --split sea_dev --roles llm       # Indonesian/Philippine formats (v1.2.0)
 
 The pipeline sees only the dispute and evidence text; ground_truth is used for scoring only.
 """
@@ -26,18 +27,23 @@ from app.config import REPO_ROOT
 GOLDEN_DIR = REPO_ROOT / "data" / "golden" / "v1.0.0"
 # Realistic layouts (dates in words, symbols, e-mails, scans). Not frozen like v1.0.0; regenerate with
 # data/golden/make_real_format.py.
-SPLIT_DIRS = {"real_format": REPO_ROOT / "data" / "golden" / "v1.1.0"}
+SPLIT_DIRS = {"real_format": REPO_ROOT / "data" / "golden" / "v1.1.0",
+              # Indonesian and Philippine seller formats (data/golden/make_sea_format.py). sea_holdout is scored
+              # only with --final, after rules and prompts are frozen.
+              "sea_dev": REPO_ROOT / "data" / "golden" / "v1.2.0",
+              "sea_holdout": REPO_ROOT / "data" / "golden" / "v1.2.0"}
+HOLDOUT_SPLITS = {"holdout", "sea_holdout"}
 
 
 def load_cases(split: str, golden_dir: Path = GOLDEN_DIR) -> list[dict[str, Any]]:
     path = golden_dir / split / "cases.jsonl"
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def to_case_input(case: dict[str, Any]) -> CaseInput:
     d = case["dispute"]
     # Dataset documents stand in for what PayPal and the merchant would provide (practice data: SEED).
-    docs = tuple(Document(e["evidence_id"], e["type"], tuple(Line(l["line"], l["text"]) for l in e["content_lines"]),
+    docs = tuple(Document(e["evidence_id"], e["type"], tuple(Line(line["line"], line["text"]) for line in e["content_lines"]),
                           "SEED") for e in case["evidence"])
     return CaseInput(case["case_id"], d["reason"], d["amount"]["value"], d["amount"]["currency"], (), docs)
 
@@ -156,7 +162,7 @@ def report(scores: dict[str, Score]) -> str:
                      _ratio(s.unsupported_claims, s.claims),
                      str(s.prohibited_claims), str(len(s.errors))))
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-    lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths)) for r in rows]
+    lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths, strict=True)) for r in rows]
     lines.insert(1, "  ".join("-" * w for w in widths))
     lines += [f"error: {e}" for e in total.errors]
     return "\n".join(lines)
@@ -164,21 +170,21 @@ def report(scores: dict[str, Score]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout", "real_format"])
+    parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout", "real_format", "sea_dev", "sea_holdout"])
     parser.add_argument("--final", action="store_true", help="required to touch the holdout split")
     parser.add_argument("--roles", default="baseline", choices=["baseline", "llm"])
     parser.add_argument("--limit", type=int, help="score only N cases (free-tier quotas)")
     args = parser.parse_args()
-    if args.split == "holdout" and not args.final:
+    if args.split in HOLDOUT_SPLITS and not args.final:
         raise SystemExit("Holdout is locked until rules and prompts are frozen. Re-run with --final.")
     started = time.perf_counter()
     if args.roles == "llm":
         from app.agent.llm import LLMRoles
         from app.config import get_settings
         get_settings()  # loads apps/api/.env
-        from app.agent.roles import RuleExtractor, UnionExtractor
+        from app.agent.roles import LabelExtractor, RuleExtractor, UnionExtractor
         llm = LLMRoles()  # same composition as the worker (runner.configured_roles)
-        scores = evaluate(args.split, extractor=UnionExtractor(RuleExtractor(), llm), drafter=llm, limit=args.limit)
+        scores = evaluate(args.split, extractor=UnionExtractor(RuleExtractor(), LabelExtractor(), llm), drafter=llm, limit=args.limit)
         print(f"split={args.split} roles=rules+llm model={llm.model} {llm.options}")
     else:
         scores = evaluate(args.split, limit=args.limit)

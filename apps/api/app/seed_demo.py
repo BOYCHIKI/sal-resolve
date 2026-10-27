@@ -54,6 +54,12 @@ def main() -> None:
         if not exists:
             create_merchant("SAL Demo Merchant", merchant)
     for i, case_id in enumerate(DEMO_CASES):
+        with tenant_session(merchant, app_engine()) as s:  # seeding twice must not add the same practice case again
+            seeded = s.execute(text("SELECT 1 FROM disputes WHERE provider_dispute_id LIKE :p"),
+                               {"p": f"FX-{case_id}-%"}).first()
+        if seeded:
+            print(f"{case_id}: already there")
+            continue
         deadline = f"2026-11-{10 + i * 3:02d}T23:59:00Z"
         dispute_id = seed_golden(app_engine(), merchant, case_id, deadline)
         out = run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine())

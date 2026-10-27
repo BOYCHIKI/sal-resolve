@@ -1,0 +1,73 @@
+{
+  "recorded_at": "20261027T022436Z",
+  "environment": "sandbox",
+  "request": {
+    "method": "GET",
+    "path": "/v1/reporting/transactions",
+    "params": {
+      "start_date": "2026-09-27T00:00:00Z",
+      "end_date": "2026-10-27T00:00:00Z",
+      "fields": "transaction_info",
+      "page_size": 100,
+      "balance_affecting_records_only": "N"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "transaction_details": [
+        {
+          "transaction_info": {
+            "transaction_id": "1F499196LH633474U",
+            "transaction_event_code": "T1900",
+            "transaction_status": "S",
+            "transaction_initiation_date": "2026-10-09T23:45:29Z",
+            "transaction_updated_date": "2026-10-09T23:45:29Z",
+            "transaction_amount": {
+              "currency_code": "USD",
+              "value": "5000.00"
+            },
+            "transaction_subject": "Initial balance"
+          }
+        },
+        {
+          "transaction_info": {
+            "transaction_id": "2MK81285P20231246",
+            "paypal_reference_id": "2X920845424009805",
+            "paypal_reference_id_type": "TXN",
+            "transaction_event_code": "T0006",
+            "transaction_status": "S",
+            "transaction_initiation_date": "2026-10-12T10:40:17Z",
+            "transaction_updated_date": "2026-10-12T10:40:17Z",
+            "transaction_amount": {
+              "currency_code": "USD",
+              "value": "45.00"
+            },
+            "transaction_subject": "SAL synthetic test: Wireless Keyboard"
+          }
+        },
+        {
+          "transaction_info": {
+            "transaction_id": "67096613XF4063838",
+            "paypal_reference_id": "2MK81285P20231246",
+            "paypal_reference_id_type": "TXN",
+            "transaction_event_code": "T1110",
+            "transaction_status": "P",
+            "transaction_initiation_date": "2026-10-12T11:00:04Z",
+            "transaction_updated_date": "2026-10-12T11:00:04Z",
+            "transaction_amount": {
+              "currency_code": "USD",
+              "value": "-43.17"
+            }
+          }
+        }
+      ],
+      "start_date": "2026-09-27T00:00:00Z",
+      "end_date": "2026-10-27T00:00:00Z",
+      "last_refreshed_datetime": "2026-10-27T00:29:59Z",
+      "page": 1,
+      "total_items": 3,
+      "total_pages": 1
+    }
+  }
+}

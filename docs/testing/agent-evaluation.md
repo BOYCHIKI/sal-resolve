@@ -1,0 +1,66 @@
+# Agent evaluation
+
+How SAL's evidence agent is measured, what the numbers are today, and what they do not prove.
+
+## How to run
+
+```
+cd apps/api
+python -m app.agent.evaluate                                   # development split, no model (deterministic floor)
+python -m app.agent.evaluate --split real_format --roles llm   # realistic layouts (v1.1.0)
+python -m app.agent.evaluate --split sea_dev --roles llm       # Indonesian and Philippine sellers (v1.2.0)
+python -m app.agent.evaluate --split sea_holdout --final --roles llm   # only after rules and prompts are frozen
+```
+
+The model only proposes facts. Grounding, the rules and ASSESS decide what is true, so the metrics that matter most
+are `fact P` (nothing wrong accepted), `ready acc` (READY only when the evidence really proves the case) and
+`unsupported` (no claim without a source).
+
+## Datasets
+
+| Split | Cases | What it covers |
+|---|---|---|
+| development (v1.0.0) | 24 | Uniform templates; the regex baseline must stay perfect here |
+| real_format (v1.1.0) | 6 | Dates in words, symbols, e-mails, OCR-like scans, ambiguous dates, an injected instruction |
+| sea_dev (v1.2.0) | 12 | JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, DHL; Indonesian dates and amounts; WhatsApp chats; traps |
+| sea_holdout (v1.2.0) | 8 | Same families, different documents; scored only with `--final` |
+
+All cases are synthetic, with invented names and numbers. `data/golden/make_sea_format.py` writes v1.2.0; edit there,
+not in the JSONL. A dataset test (`test_real_format_labels_are_groundable_and_consistent_with_rules`) checks that
+every label survives grounding and that the rules find exactly the labelled conflicts.
+
+## Results (gpt-5-nano, reasoning effort low, 2026-10-27)
+
+| Split | fact P | fact R | missing R/P | conflict R/P | review acc | ready acc | unsupported |
+|---|---|---|---|---|---|---|---|
+| development (no model) | 1.00 | 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 | 1.00 | 0 |
+| real_format | 1.00 | 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 | 1.00 | 0 |
+| sea_dev | 1.00 | 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 | 1.00 | 0 |
+| sea_holdout | 1.00 | 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 0.88 | 1.00 | 0 |
+
+Before this round, on sea_dev, three seller-side tricks were rated READY (ready to send to PayPal): a proof of
+delivery for a different tracking number, a Rupiah invoice for a USD dispute, and an instruction hidden in Indonesian.
+All three are now NEEDS_CHECK. The one holdout miss is on the safe side: a complete case was flagged for human review
+because one model-written sentence failed claim verification and was dropped.
+
+### What changed to get there
+
+- Grounding reads Indonesian months (Okt, Agt, Mei, Des), decimal commas (USD 120,00), Rupiah (Rp 1.250.000),
+  slashed order numbers and dates with a time.
+- Courier statuses: Terkirim, Selesai antar and "diterima oleh" are delivered; "diterima di Gateway" (a warehouse scan)
+  and negated statuses are not.
+- A fact is accepted only from the document type that can prove it (`DOC_FIELDS`): a buyer chat or an "other" upload
+  never proves delivery or payment.
+- New rule: the proof of delivery must carry the same tracking number as the courier page.
+- `LabelExtractor`: a deterministic reader for labelled lines, so what is plainly written is read the same way on every
+  run instead of depending on the model.
+- Documents reach the model as UTF-8 (`₱` was being sent as `₱`, so no quote ever matched).
+
+## What these numbers do not prove
+
+- The data is synthetic and small (50 cases in total), and the same author wrote the cases and the fixes.
+- The holdout was scored once before a later fix (the carrier delivery-date label rule) and once after; the second run
+  is not blind.
+- Model output varies between runs. The label reader narrows this, it does not remove it. Treat a single run as one
+  sample, not a guarantee.
+- The next step for stronger evidence is a set of real, anonymised seller documents.

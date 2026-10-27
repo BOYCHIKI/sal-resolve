@@ -38,7 +38,7 @@ export function SyncButton() {
   return (
     <div className="flex items-center gap-3">
       {status && <span className="text-sm text-ink-soft" aria-live="polite">{status}</span>}
-      <button onClick={onClick} disabled={busy} className="btn-primary">
+      <button onClick={onClick} disabled={busy} className="lp-btn">
         {busy ? "Checking PayPal…" : "Check PayPal for new cases"}
       </button>
     </div>

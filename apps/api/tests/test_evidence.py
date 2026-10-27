@@ -29,8 +29,8 @@ def test_sniff_by_content_not_name():
 def test_pdf_text_becomes_numbered_lines():
     pdf = render_text_pdf(["Delivery date: 2026-08-20", "", "Delivery status: DELIVERED"])
     lines = evidence.extract_lines(pdf, "application/pdf")
-    assert [l["text"] for l in lines] == ["Delivery date: 2026-08-20", "Delivery status: DELIVERED"]
-    assert [l["line"] for l in lines] == [1, 2]
+    assert [line["text"] for line in lines] == ["Delivery date: 2026-08-20", "Delivery status: DELIVERED"]
+    assert [line["line"] for line in lines] == [1, 2]
 
 
 def test_broken_pdf_is_a_clear_error():

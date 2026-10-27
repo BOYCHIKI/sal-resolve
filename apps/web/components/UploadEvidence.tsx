@@ -68,7 +68,7 @@ export function UploadEvidence({ disputeId, analysisId }: { disputeId: string; a
       <p className="font-medium">Add a document</p>
       <label className="flex flex-col gap-1.5 text-sm text-ink-soft">
         What is it?
-        <select className="rounded-xl border border-hairline bg-surface px-3 py-2.5 text-[15px] text-ink"
+        <select className="rounded-xl border border-(--lp-line) bg-(--lp-well) px-3 py-2.5 text-[15px] text-ink"
           value={docType} onChange={(e) => setDocType(e.target.value)} disabled={busy}>
           {Object.entries(DOCS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -76,7 +76,7 @@ export function UploadEvidence({ disputeId, analysisId }: { disputeId: string; a
       <input ref={input} id="evidence-file" type="file" multiple className="sr-only" disabled={busy}
         accept="application/pdf,image/png,image/jpeg,image/gif" onChange={(e) => send(e.target.files)} />
       <label htmlFor="evidence-file" aria-disabled={busy}
-        className={`btn-primary w-full cursor-pointer text-center text-[16px] ${busy ? "pointer-events-none opacity-60" : ""}`}>
+        className={`lp-btn w-full cursor-pointer text-center text-[16px] ${busy ? "pointer-events-none opacity-60" : ""}`}>
         {busy ? "Adding…" : "Choose files"}
       </label>
       <p className="text-xs text-ink-muted">PDF, JPG, PNG or GIF, up to 10 MB each. Files stay private and are only sent to PayPal when you press “Send to PayPal”.</p>

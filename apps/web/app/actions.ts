@@ -55,3 +55,15 @@ export async function uploadEvidence(disputeId: string, form: FormData): Promise
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
+
+export async function decideAction(id: string, decision: "approve" | "dismiss", payloadHash: string,
+  disputeId: string | null): Promise<ActionResult> {
+  try {
+    const result = decision === "approve" ? await api.approveAction(id, payloadHash) : await api.dismissAction(id);
+    revalidatePath("/disputes");
+    if (disputeId) revalidatePath(`/disputes/${disputeId}`);
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}

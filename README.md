@@ -16,6 +16,7 @@ Design docs live in Notion: SAL v1.0 Final Blueprint and SAL v1.1 System Design.
 | `spikes/paypal_sandbox/` | Gate G1 spike: PayPal Sandbox Disputes API | Sandbox only. See its README. |
 | `contracts/paypal/` | Recorded, redacted sandbox payloads + `sandbox_links.csv` | Source of truth for the PayPal adapter's contract tests. |
 | `docs/adr/` | Architecture decision records | |
+| `docs/engineering-glossary.md` | How SAL maps to standard engineering patterns, with the code for each | Built vs planned is marked per row. |
 
 ## How the golden splits are used
 

@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
 
+// Sits inside a page wrapped in .lp (globals.css), so it takes the landing look.
 export async function AppHeader({ back }: { back?: boolean }) {
   // The worker syncs PayPal and analyses documents; if it stops, say so instead of letting cases stall silently.
   const health = await api.health();
   const workerDown = !health || health.status !== "ok";
   return (
-    <header className="glass sticky top-0 z-10 border-x-0 border-t-0">
+    <header className="sticky top-0 z-10 border-b border-(--lp-line) bg-(--lp-card) backdrop-blur-xl">
       <div className="mx-auto flex min-h-[60px] max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
         {back ? (
-          <Link href="/disputes" className="inline-flex min-h-11 items-center text-action">‹ All disputes</Link>
+          <Link href="/disputes" className="inline-flex min-h-11 items-center text-[15px] font-semibold">‹ All disputes</Link>
         ) : (
-          <Link href="/" className="text-lg font-semibold tracking-tight">
-            SAL <span className="font-normal text-ink-muted">Resolve</span>
+          <Link href="/" className="display text-xl">
+            SAL <span className="muted font-semibold">Resolve</span>
           </Link>
         )}
         <span className="flex flex-wrap items-center gap-2">

@@ -115,8 +115,9 @@ CASES = [
           doc("RF-05-E03", "delivery_proof", "Signature received for JY123456785GB", "Signed by: A. PATEL")],
          [fact("order_id", "2026-118", "RF-05-E01", 1), fact("order_amount", "24.50", "RF-05-E01", 3),
           fact("tracking_id", "JY123456785GB", "RF-05-E02", 1), fact("carrier_status", "DELIVERED", "RF-05-E02", 3)],
-         [], [], False,
-         "05/08 and 07/08 could be day/month or month/day: no date fact may be accepted. No currency code is written."),
+         [], [], True,
+         "05/08 and 07/08 could be day/month or month/day: no date fact may be accepted. No currency code is written. "
+         "No PayPal payment record either, so the case needs documents and a human check."),
 
     case("RF-06", "edge", "89.00", "USD", "Board Shorts",
          [doc("RF-06-E01", "order_invoice", "SUNNY SIDE SURF SHOP", "ORDER 55-1093   DATE: JUL 28 2026",
