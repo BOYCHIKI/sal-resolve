@@ -153,10 +153,11 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                          payload={"draft_id": str(draft_id)}, delay_seconds=RECONCILE_AFTER_SECONDS)
     requested = [e["evidence_type"] for e in (row.provider_payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
-    tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof")
+    tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof", "seller_shipment")
                       for line in (d.content_lines or [])]
     payload = _payload(row.claims, row.facts, requested, tracking_lines)
-    files = [_file_for(d) for d in docs]
+    # A resi the seller typed travels as tracking_info above; it is their word, not a document to attach.
+    files = [_file_for(d) for d in docs if d.doc_type != "seller_shipment"]
     files = [f for f in files if f is not None]
 
     # 2. Network, outside any transaction.

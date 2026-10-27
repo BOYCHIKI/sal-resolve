@@ -23,6 +23,8 @@ DOC_FIELDS: dict[str, tuple[str, ...]] = {
     "carrier_tracking": ("tracking_id", "tracking_order_id", "ship_date", "carrier_status", "carrier_event_date"),
     "delivery_proof": ("delivery_tracking_id", "delivery_status", "delivery_date"),
     "support_message": ("reported_payment_amount",),
+    # A resi the seller typed in (evidence.add_tracking_number): it names the parcel, it proves nothing else.
+    "seller_shipment": ("tracking_id",),
 }
 MONEY_FIELDS = {"order_amount", "payment_amount", "reported_payment_amount"}
 CURRENCY_FIELDS = {"currency", "payment_currency"}

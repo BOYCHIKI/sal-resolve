@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -16,6 +17,7 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy import Engine, text
 
+from app import carriers
 from app import repositories as repo
 from app.db import tenant_session
 
@@ -119,6 +121,59 @@ def store(merchant_id: UUID, dispute_id: UUID, data: bytes, filename: str, doc_t
                          summary={"evidence_id": str(evidence_id), "type": doc_type, "mime": mime,
                                   "bytes": len(data), "lines": len(lines)})
     return Stored(evidence_id, mime, len(lines), queued)
+
+
+# A resi is letters, digits and dashes with at least one digit (JNE 1102846637184921, J&T JP8812345678,
+# EMS EE512340987ID, UPS 1Z999AA10123456784). Spaces people type between groups are dropped.
+_RESI = re.compile(r"(?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9-]{5,39}")
+_COURIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9 &.()-]{1,39}")
+SELLER_TRACKING_REF = "Tracking number (entered by you)"
+
+
+def add_tracking_number(merchant_id: UUID, dispute_id: UUID, tracking_number: str, courier: str | None,
+                        entered_by: str, engine: Engine | None = None) -> dict:
+    """Record a resi the seller typed in, as its own small document (origin SELLER_INPUT).
+
+    It is the seller's word, not proof: grounding accepts only a tracking number from it (validation.DOC_FIELDS),
+    so it names the parcel for PayPal and catches a mismatch with the courier page, but it never shows the parcel
+    moved or arrived. The courier's own page or proof of delivery still has to do that."""
+    resi = "".join(tracking_number.split()).upper()
+    if not _RESI.fullmatch(resi):
+        raise EvidenceError(422, "BAD_TRACKING_NUMBER",
+                            "Enter the tracking number (resi) as printed: 6-40 letters and digits.")
+    name = " ".join((courier or "").split())
+    if name and not _COURIER.fullmatch(name):
+        raise EvidenceError(422, "BAD_COURIER", "Enter the courier's name, for example JNE, J&T or LBC.")
+    carrier = carriers.carrier_for([f"Courier: {name}"] if name else [])
+    shown = carriers.display_name(carrier) if name else None
+    lines = [{"line": 1, "text": f"Tracking number: {resi}"}]
+    if shown:
+        lines.append({"line": 2, "text": f"Courier: {shown}"})
+    body = "\n".join(line["text"] for line in lines)
+    checksum = hashlib.sha256(body.encode()).hexdigest()
+
+    with tenant_session(merchant_id, engine) as s:
+        if s.execute(text("SELECT 1 FROM disputes WHERE id = :d"), {"d": dispute_id}).first() is None:
+            raise EvidenceError(404, "DISPUTE_NOT_FOUND", "Dispute not found.")
+        if s.execute(text("SELECT 1 FROM evidence WHERE dispute_id = :d AND checksum = :c"),
+                     {"d": dispute_id, "c": checksum}).first():
+            raise EvidenceError(409, "DUPLICATE_TRACKING", "This tracking number is already on the case.")
+        evidence_id = s.execute(text("""
+            INSERT INTO evidence (merchant_id, dispute_id, object_key, checksum, mime, size_bytes, uploaded_by,
+                                  doc_type, content_lines, source_ref, origin)
+            VALUES (:m, :d, NULL, :c, 'text/plain', :n, :by, 'seller_shipment', CAST(:lines AS jsonb), :ref,
+                    'SELLER_INPUT')
+            RETURNING id"""),
+            {"m": merchant_id, "d": dispute_id, "c": checksum, "n": len(body.encode()), "by": entered_by,
+             "lines": json.dumps(lines), "ref": f"{SELLER_TRACKING_REF} {resi}"}).scalar_one()
+        pending = s.execute(text("""SELECT 1 FROM jobs WHERE kind = 'analyze_dispute' AND target_id = :d
+                                    AND state = 'QUEUED'"""), {"d": dispute_id}).first()
+        queued = pending is not None or repo.enqueue_job(
+            s, merchant_id, "analyze_dispute", f"analyze:{dispute_id}:tracking:{evidence_id}", dispute_id)
+        repo.write_audit(s, merchant_id, entered_by, "evidence.tracking_entered", target=str(dispute_id),
+                         summary={"evidence_id": str(evidence_id), "carrier": carrier.code if shown else None})
+    return {"evidence_id": str(evidence_id), "tracking_number": resi, "courier": shown,
+            "paypal_carrier": carrier.code if shown else None, "analysis_queued": queued}
 
 
 def _display_name(filename: str, evidence_id: UUID) -> str:

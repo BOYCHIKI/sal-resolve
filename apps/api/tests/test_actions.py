@@ -221,3 +221,13 @@ def test_a_card_the_merchant_answered_is_not_proposed_again(merchant, app_engine
     assert [k for k, _, _ in open_cards(merchant, app_engine)] == ["SEND_EVIDENCE"]
     with tenant_session(merchant, app_engine) as s:
         assert s.execute(text("SELECT count(*) FROM agent_actions WHERE status = 'DISMISSED'")).scalar() == 1
+
+
+@pytest.mark.parametrize("reason, words", [
+    ("MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "partial refund"),
+    ("UNAUTHORISED", "answer it there"),
+])
+def test_a_dispute_sal_does_not_argue_gets_an_explanation_never_a_send(reason, words):
+    cards = actions.propose_for_dispute(dispute(reason=reason), READY, DRAFT, NOW)
+    assert kinds(cards) == ["EXPLAIN_DISPUTE"]
+    assert words in cards[0].rationale and cards[0].payload == {"reason": reason}

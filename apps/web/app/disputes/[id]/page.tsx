@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ActionCard } from "@/components/ActionCard";
+import { AddTracking } from "@/components/AddTracking";
 import { AppHeader } from "@/components/AppHeader";
 import { DraftActions } from "@/components/DraftActions";
 import { UploadEvidence } from "@/components/UploadEvidence";
@@ -231,6 +232,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <section aria-label="Documents" data-reveal className="lp-card flex flex-col gap-2.5 p-6">
               <h2 className="text-xl">Documents ({evidence.length})</h2>
               {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
+              {canAddDocuments && dispute.reason === "ITEM_NOT_RECEIVED" && <AddTracking disputeId={dispute.id} />}
               {canAddDocuments && <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />}
               {evidence.map((doc) => (
                 <details key={doc.evidence_id} id={doc.evidence_id} className="scroll-mt-24 rounded-2xl bg-(--lp-card-2) open:bg-(--lp-well)">

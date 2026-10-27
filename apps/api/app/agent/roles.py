@@ -177,6 +177,10 @@ class LabelExtractor:
         elif doc_type == "payment_record":
             if _PAYMENT.search(text) and amount is not None and code:
                 got += [("payment_amount", f"{amount:.2f}"), ("payment_currency", code.group(1))]
+        elif doc_type == "seller_shipment":
+            tracking = _TRACKING_LABEL.search(text)
+            if tracking:
+                got.append(("tracking_id", tracking.group("id")))
         elif doc_type in ("carrier_tracking", "delivery_proof"):
             tracking = _TRACKING_LABEL.search(text)
             if tracking:

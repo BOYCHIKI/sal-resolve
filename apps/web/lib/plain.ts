@@ -77,6 +77,7 @@ export const DOCS: Record<string, string> = {
   carrier_tracking: "Courier tracking",
   delivery_proof: "Delivery receipt",
   support_message: "Customer message",
+  seller_shipment: "Tracking number you entered",
   other: "Other document",
 };
 

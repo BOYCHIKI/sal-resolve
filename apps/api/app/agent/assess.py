@@ -101,6 +101,10 @@ def _shipped(case: _Case) -> Proposition:
         return Proposition("shipped", "proven", f"Tracking {tracking.value} shows the parcel moving",
                            _refs(tracking, moved))
     if "carrier_tracking" not in case.present:
+        if tracking is not None:  # the seller's own resi: it names the parcel but cannot show it moved
+            return Proposition("shipped", "missing",
+                               f"You gave tracking number {tracking.value}, but no courier page shows it moving",
+                               _refs(tracking))
         return Proposition("shipped", "missing", "No courier tracking attached")
     return Proposition("shipped", "missing", "The tracking document shows no tracking number or movement",
                        _refs(tracking))

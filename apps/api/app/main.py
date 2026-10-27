@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -352,6 +352,21 @@ def dismiss_action(action_id: UUID, merchant_id: UUID = Depends(current_merchant
 
 
 # ---------------------------------------------------------------- evidence upload
+class TrackingBody(BaseModel):
+    tracking_number: str = Field(min_length=1, max_length=60)
+    courier: str | None = Field(default=None, max_length=60)
+
+
+@app.post("/api/disputes/{dispute_id}/tracking", status_code=201)
+def add_tracking(dispute_id: UUID, body: TrackingBody, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """The seller types the resi and courier. SAL records it as the seller's word (not proof), names the PayPal
+    carrier code, and checks the case again; the courier's own page still has to show the parcel moving."""
+    try:
+        return evidence_store.add_tracking_number(merchant_id, dispute_id, body.tracking_number, body.courier,
+                                                  DEMO_ACTOR)
+    except evidence_store.EvidenceError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": False}) from None
+
 @app.post("/api/disputes/{dispute_id}/evidence", status_code=201)
 async def upload_evidence(dispute_id: UUID, file: UploadFile = File(...), doc_type: str = Form(...),
                           merchant_id: UUID = Depends(current_merchant)) -> dict:

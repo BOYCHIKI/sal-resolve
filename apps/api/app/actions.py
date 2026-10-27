@@ -53,6 +53,7 @@ class DisputeState:
     allowed_actions: tuple[str, ...]
     amount: str
     currency: str
+    reason: str = "ITEM_NOT_RECEIVED"
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,9 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
             f"PayPal needs your reply by {d.deadline_at:%d %b %Y, %H:%M} UTC. Without it, the case can be "
             "decided without your evidence.",
             payload={"deadline_at": d.deadline_at.isoformat()}, due_at=d.deadline_at))
+    if d.reason != "ITEM_NOT_RECEIVED":  # SAL argues only "not received"; for the rest it explains, never sends
+        cards.append(_explain_dispute(d, subject))
+        return cards
     if analysis is None:
         return cards
 
@@ -124,6 +128,19 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
             payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash},
             sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at))
     return cards
+
+
+def _explain_dispute(d: DisputeState, subject: str) -> Proposal:
+    if "NOT_AS_DESCRIBED" in d.reason:
+        title = "The buyer says the item is not as described"
+        why = ("SAL only builds replies for parcels that did not arrive, and PayPal Seller Protection does not cover "
+               "'not as described' claims. Realistic choices in PayPal: offer a partial refund, a full refund, or "
+               "a refund after the buyer returns the item. SAL will not argue this case for you.")
+    else:
+        title = "SAL can't prepare a reply for this kind of dispute"
+        why = ("SAL only builds replies for parcels that did not arrive. Read the buyer's claim in PayPal and answer "
+               "it there.")
+    return Proposal("EXPLAIN_DISPUTE", subject, title, why, payload={"reason": d.reason}, due_at=d.deadline_at)
 
 
 def holds_from_transactions(details: list[dict[str, Any]], now: datetime) -> list[Proposal]:
@@ -198,8 +215,8 @@ def save(merchant_id: UUID, subject_key: str, dispute_id: UUID | None, proposals
 def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: Engine | None = None) -> dict[str, Any]:
     """Recompute the open cards for one dispute from its current PayPal state, analysis and draft. Worker only."""
     with tenant_session(merchant_id, engine) as s:
-        d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency
-                              FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
+        d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency,
+                                     reason FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
         if d is None:
             return {"skipped": "dispute not found"}
         a = s.execute(text("""SELECT id, assessment, snapshot_hash FROM analyses WHERE dispute_id = :d
@@ -207,7 +224,7 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
         dr = s.execute(text("""SELECT id, revision, status FROM drafts WHERE dispute_id = :d
                                ORDER BY revision DESC LIMIT 1"""), {"d": dispute_id}).first()
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
-                         str(d.amount), d.currency)
+                         str(d.amount), d.currency, d.reason)
     analysis = (AnalysisState(a.assessment["readiness"], a.snapshot_hash, a.assessment.get("propositions", []))
                 if a is not None and a.assessment else None)
     draft = DraftState(dr.id, dr.revision, dr.status) if dr is not None else None

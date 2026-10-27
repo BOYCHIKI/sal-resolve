@@ -67,3 +67,13 @@ export async function decideAction(id: string, decision: "approve" | "dismiss", 
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
+
+export async function addTracking(disputeId: string, trackingNumber: string, courier: string): Promise<ActionResult> {
+  try {
+    const result = await api.addTracking(disputeId, trackingNumber, courier);
+    revalidatePath(`/disputes/${disputeId}`);
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}

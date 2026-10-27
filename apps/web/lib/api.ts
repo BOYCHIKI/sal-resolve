@@ -85,10 +85,11 @@ export type EvidenceDoc = {
   evidence_id: string;
   type: string | null;
   lines: { line: number; text: string }[];
-  origin?: "UPLOAD" | "PAYPAL_API" | "SEED";
+  origin?: "UPLOAD" | "PAYPAL_API" | "SEED" | "SELLER_INPUT";
 };
 
-export type ActionKind = "SEND_EVIDENCE" | "ADD_DOCUMENT" | "REPLY_BEFORE_DEADLINE" | "EXPLAIN_HELD_FUNDS";
+export type ActionKind = "SEND_EVIDENCE" | "ADD_DOCUMENT" | "REPLY_BEFORE_DEADLINE" | "EXPLAIN_HELD_FUNDS"
+  | "EXPLAIN_DISPUTE";
 
 /** A suggestion SAL's agent made (ADR-006). The merchant approves the exact card it read, by payload_hash. */
 export type AgentAction = {
@@ -154,6 +155,9 @@ export const api = {
   approveDraft: (id: string, revision: number, snapshotHash: string) =>
     action(`/api/drafts/${encodeURIComponent(id)}/approve`, { revision, snapshot_hash: snapshotHash }),
   submitDraft: (id: string) => action(`/api/drafts/${encodeURIComponent(id)}/submit`),
+  addTracking: (disputeId: string, trackingNumber: string, courier: string) =>
+    action(`/api/disputes/${encodeURIComponent(disputeId)}/tracking`,
+      { tracking_number: trackingNumber, courier: courier || null }),
   uploadEvidence: (disputeId: string, form: FormData) =>
     upload(`/api/disputes/${encodeURIComponent(disputeId)}/evidence`, form),
   listActions: async (disputeId?: string) =>

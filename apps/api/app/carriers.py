@@ -116,6 +116,12 @@ def carrier_for(lines: list[str]) -> Carrier:
     return _match(labelled) or _match(lines) or Carrier(OTHER, UNKNOWN_NAME, None)
 
 
+def display_name(carrier: Carrier) -> str:
+    """The courier's name as a merchant knows it (JNE, LBC), for known codes and named OTHERs alike."""
+    known = next((name for code, name, _ in KNOWN if code == carrier.code), None)
+    return known or carrier.name or UNKNOWN_NAME
+
+
 def tracking_info(tracking_number: str, carrier: Carrier) -> dict[str, str]:
     """One entry of PayPal provide-evidence `evidence_info.tracking_info`."""
     info = {"carrier_name": carrier.code, "tracking_number": tracking_number}

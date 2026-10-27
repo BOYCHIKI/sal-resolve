@@ -22,6 +22,7 @@ class Document:
     type: str                 # order_invoice | payment_record | carrier_tracking | delivery_proof | support_message
     lines: tuple[Line, ...]
     origin: str = "UPLOAD"    # UPLOAD (merchant file) | PAYPAL_API (fetched from PayPal) | SEED (practice data)
+                              # | SELLER_INPUT (a resi the seller typed)
 
     def line_text(self, n: int) -> str | None:
         return next((line.text for line in self.lines if line.line == n), None)

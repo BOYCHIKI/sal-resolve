@@ -39,8 +39,15 @@ The merchant approves or dismisses each card. Approval executes it through the A
 | `ADD_DOCUMENT` | Assessment NEEDS_DOCUMENTS or WEAK | Nothing is sent. The card names the missing proposition and the document that proves it, and links to upload | No |
 | `REPLY_BEFORE_DEADLINE` | An open dispute whose `deadline_at` is less than 72 h away and has no approved send yet | Opens the case | No |
 | `EXPLAIN_HELD_FUNDS` | Transaction Search shows a hold code (T1110/T1111 dispute hold, T2107/T2108 payment hold, T2103/T2104 reserve) with no release yet | Nothing is sent. The card explains the hold in plain words and links to the dispute when it is a dispute hold | No |
+| `EXPLAIN_DISPUTE` (migration 0010) | The dispute is not "item not received" (e.g. "not as described") | Nothing is sent. SAL explains it does not argue this kind of case and names the realistic choices in PayPal (partial refund, refund, return) | No |
 
-Only `SEND_EVIDENCE` writes to PayPal. The other three are guidance, which keeps the write surface the same as today.
+Only `SEND_EVIDENCE` writes to PayPal. The others are guidance, which keeps the write surface the same as today.
+
+**Seller-entered tracking numbers (migration 0010).** The seller can type a resi and courier on the case page
+(`POST /api/disputes/{id}/tracking`). It is stored as a small `seller_shipment` document with origin
+`SELLER_INPUT`. It is the seller's word, not proof: grounding accepts only `tracking_id` from it, so it names the
+parcel and the PayPal carrier code for `tracking_info` and exposes a resi that differs from the courier page,
+but it never shows the parcel moved or arrived. It is not attached to the PayPal reply as a file.
 
 ### Out of scope (stated in the README as roadmap)
 
