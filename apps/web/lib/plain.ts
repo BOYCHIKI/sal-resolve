@@ -211,3 +211,32 @@ export function summarySentence(d: Dispute, a: Analysis | null): { headline: str
     return { headline, detail: `${paid} ${delivered ? "Your documents show it was delivered, but " : ""}${conflicts === 1 ? "one detail needs" : `${conflicts} details need`} a quick check before you reply.` };
   return { headline, detail: `${paid} Your documents back this up. Read the reply and approve it.` };
 }
+
+// ---------------------------------------------------------------- demo: one group per job SAL does
+export type DemoJob = { key: string; title: string; what: string; tone: Tone };
+
+export const JOBS: DemoJob[] = [
+  { key: "ready", title: "Ready to send", tone: "green",
+    what: "The documents prove payment, shipping and delivery. SAL drafts the reply; you read it and press send." },
+  { key: "missing", title: "A document is missing", tone: "amber",
+    what: "SAL names the one document that would win the case, so you know exactly what to add." },
+  { key: "check", title: "Something doesn’t add up", tone: "red",
+    what: "Two documents disagree, like a different date or amount. SAL shows where, before PayPal notices." },
+  { key: "chargeback", title: "Chargeback", tone: "red",
+    what: "The buyer went to their bank. SAL explains what changes and asks for stronger proof." },
+  { key: "snad", title: "Not as described", tone: "blue",
+    what: "SAL doesn’t argue these. It explains your options and can send a refund offer you choose." },
+  { key: "sent", title: "Sent to PayPal", tone: "grey",
+    what: "After you approve, SAL sends once and keeps watching the case for you." },
+];
+
+/** Which of SAL's jobs a case shows off, most specific first. */
+export function jobOf(d: Dispute): string {
+  if (d.internal_state === "SUBMITTED") return "sent";
+  if (d.lifecycle_stage === "CHARGEBACK") return "chargeback";
+  if (d.reason !== "ITEM_NOT_RECEIVED") return "snad";
+  const r = d.summary?.readiness;
+  if (r === "READY") return "ready";
+  if (r === "NEEDS_CHECK") return "check";
+  return "missing";
+}

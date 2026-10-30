@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { COURIERS, MARKETS } from "@/components/CourierMarquee";
 import { Check, Label } from "@/components/landing/Label";
 import { Ticker } from "@/components/landing/Ticker";
-import { SalSays } from "@/components/mascot/SalSays";
 import { api, type Dispute } from "@/lib/api";
 import { money } from "@/lib/format";
-import { nextStep, reason, type Tone } from "@/lib/plain";
+import { JOBS, jobOf, type Tone } from "@/lib/plain";
 
 export const metadata: Metadata = {
   title: "Try the demo — SAL Resolve",
@@ -15,9 +13,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-// How many cases the picker offers; the full list is one click away on /disputes.
-const PICKS = 4;
 
 const PILL: Record<Tone, string> = {
   red: "bg-red-bg text-red-ink",
@@ -27,31 +22,49 @@ const PILL: Record<Tone, string> = {
   grey: "bg-grey-bg text-grey-ink",
 };
 
-const figures = [
-  { value: COURIERS.length, label: "couriers recognised on a tracking slip" },
-  { value: MARKETS, label: "Southeast Asian markets with local couriers" },
-  { value: 0, label: "replies sent without your approval" },
-];
+const DOT: Record<Tone, string> = {
+  red: "bg-red-ink", amber: "bg-amber-ink", blue: "bg-blue-ink", green: "bg-green-ink", grey: "bg-grey-ink",
+};
 
-// The seed can hold several copies of one practice case; offer each case once.
-function picks(disputes: Dispute[]): Dispute[] {
-  const seen = new Set<string>();
-  return disputes.filter((d) => {
-    const key = d.case_ref ?? d.id;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, PICKS);
+// One example per job is enough to see it; more of the same reads as noise. Practice cases first.
+const PER_JOB = 2;
+
+function grouped(disputes: Dispute[]): Map<string, Dispute[]> {
+  const out = new Map<string, Dispute[]>();
+  const sorted = [...disputes].sort((a, b) => Number(a.origin === "PAYPAL_SANDBOX") - Number(b.origin === "PAYPAL_SANDBOX"));
+  for (const d of sorted) {
+    const list = out.get(jobOf(d)) ?? [];
+    if (list.length < PER_JOB) list.push(d);
+    out.set(jobOf(d), list);
+  }
+  return out;
+}
+
+function Example({ d }: { d: Dispute }) {
+  const real = d.origin === "PAYPAL_SANDBOX";
+  return (
+    <Link href={`/disputes/${d.id}`}
+      className="group flex items-center gap-3 rounded-2xl border border-(--lp-line) bg-(--lp-well) px-4 py-3 transition-colors hover:border-(--lp-mint)">
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-semibold">{d.summary?.item ?? "Order"}</span>
+        <span className="muted truncate text-[13px]">
+          {money(d.amount)} · {real ? "PayPal test account" : "Practice case"}
+        </span>
+      </span>
+      <span className="text-sm font-semibold whitespace-nowrap">Open <span aria-hidden="true" className="inline-block transition-transform group-hover:translate-x-1">→</span></span>
+    </Link>
+  );
 }
 
 export default async function DemoPage() {
-  let cases: Dispute[] = [];
+  let groups = new Map<string, Dispute[]>();
   let error = false;
   try {
-    cases = picks(await api.listDisputes());
+    groups = grouped(await api.listDisputes());
   } catch {
     error = true;
   }
+  const shown = JOBS.filter((j) => groups.has(j.key));
 
   return (
     <div className="lp sky min-h-screen">
@@ -60,93 +73,74 @@ export default async function DemoPage() {
       <header className="border-b border-(--lp-line)">
         <nav aria-label="Main" className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="display text-xl whitespace-nowrap">SAL <span className="muted font-semibold">Resolve</span></Link>
-          <Link href="/" className="lp-btn-ghost">Back to home</Link>
+          <span className="flex items-center gap-2">
+            <Link href="/disputes" className="lp-btn-ghost hidden sm:inline-flex">All cases</Link>
+            <Link href="/" className="lp-btn-ghost">Home</Link>
+          </span>
         </nav>
       </header>
 
-      <main>
-        <section className="relative overflow-hidden px-4">
-          <div aria-hidden="true" className="lp-dots absolute inset-0" />
-          <div className="relative mx-auto grid max-w-6xl items-start gap-12 py-16 lg:grid-cols-[1.1fr_1fr] lg:py-24">
-            <div className="flex flex-col items-start gap-7 lg:pt-8">
+      <main className="relative px-4">
+        <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-10 pb-16 pt-10 sm:pt-14">
+          <section className="flex flex-wrap items-end justify-between gap-6">
+            <div className="flex max-w-2xl flex-col items-start gap-4">
               <span data-reveal><Label>Try the demo</Label></span>
-              <h1 data-split="hero" className="display text-[42px] sm:text-7xl">
-                See a dispute <span className="muted">answered in minutes.</span>
-              </h1>
-              <p data-reveal className="muted max-w-xl text-lg">
-                Pick a practice case. SAL shows <strong>what your documents prove, what’s missing and what doesn’t add up</strong>,
-                then drafts a reply you can read and approve. No sign-up needed.
+              <h1 className="display text-[34px] leading-tight sm:text-5xl">What do you want to see SAL do?</h1>
+              <p data-reveal className="muted text-[17px]">
+                Each box is one job SAL does on a dispute. Open an example to see the case screen as a seller would.
               </p>
-              <ul data-reveal-stagger className="muted flex flex-col gap-2.5">
-                <li className="flex gap-2.5"><Check />Runs on a PayPal test account</li>
-                <li className="flex gap-2.5"><Check />Made-up orders, no real customers or money</li>
-                <li className="flex gap-2.5"><Check />Practice cases are never sent to PayPal</li>
+              <ul data-reveal-stagger className="muted flex flex-wrap gap-x-5 gap-y-1.5 text-[15px]">
+                <li className="flex gap-2"><Check />PayPal test account</li>
+                <li className="flex gap-2"><Check />Made-up orders, no real money</li>
+                <li className="flex gap-2"><Check />Nothing sent without your OK</li>
               </ul>
-              {/* SAL points across at the case picker. */}
-              <SalSays mascot={<Image src="/mascot/sal-point.png" alt="" width={533} height={509} className="h-auto w-32" />}
-                className="self-stretch lg:self-start" bubbleClassName="px-5 py-4">
-                <p className="text-[17px]">Pick a case and I’ll show you <strong>what I found in its documents</strong>.</p>
-              </SalSays>
             </div>
+            <Image src="/mascot/sal-point.png" alt="" width={533} height={509} className="hidden h-auto w-28 lg:block" />
+          </section>
 
-            <div data-reveal className="rounded-[28px] border border-(--lp-line) bg-(--lp-card-2) p-3 sm:p-5">
-              <div className="lp-card flex flex-col gap-5 p-5 sm:p-7">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-xl font-semibold">Pick a practice case</h2>
-                  <p className="muted text-sm">Each one opens the case screen, where SAL has already checked the documents.</p>
-                </div>
+          {error && (
+            <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">
+              SAL can’t reach its server right now. Please try again in a moment.
+            </p>
+          )}
 
-                {error && (
-                  <p role="alert" className="rounded-2xl bg-red-bg p-4 text-red-ink">
-                    SAL can’t reach its server right now. Please try again in a moment.
-                  </p>
-                )}
+          {!error && shown.length === 0 && (
+            <p className="muted lp-dashed rounded-[20px] p-10 text-center">
+              No practice cases yet. Open <Link href="/disputes" className="font-semibold underline">All cases</Link> and
+              press <strong>Check PayPal for new cases</strong>.
+            </p>
+          )}
 
-                {!error && cases.length === 0 && (
-                  <p className="muted rounded-2xl border border-dashed border-(--lp-line-strong) p-5 text-center">
-                    No practice cases yet. Open the case list and press <strong>Check PayPal for new cases</strong>.
-                  </p>
-                )}
+          {shown.length > 0 && (
+            <section aria-label="SAL's jobs" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {shown.map((job, i) => (
+                <article key={job.key} data-reveal className="lp-card flex flex-col gap-4 p-5 sm:p-6">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`grid h-7 w-7 place-items-center rounded-full text-sm font-semibold ${PILL[job.tone]}`}>{i + 1}</span>
+                    <h2 className="text-lg font-semibold">{job.title}</h2>
+                    <span aria-hidden="true" className={`ml-auto h-2 w-2 rounded-full ${DOT[job.tone]}`} />
+                  </div>
+                  <p className="muted flex-1 text-[15px] leading-relaxed">{job.what}</p>
+                  <div className="flex flex-col gap-2">
+                    {groups.get(job.key)!.map((d) => <Example key={d.id} d={d} />)}
+                  </div>
+                </article>
+              ))}
+            </section>
+          )}
 
-                {cases.length > 0 && (
-                  <ul className="flex flex-col gap-2.5">
-                    {cases.map((d) => {
-                      const step = nextStep(d);
-                      return (
-                        <li key={d.id}>
-                          <Link href={`/disputes/${d.id}`}
-                            className="group grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 rounded-2xl border border-(--lp-line) bg-(--lp-well) px-4 py-3.5 transition-colors hover:border-(--lp-mint)">
-                            <span className="min-w-0">
-                              <span className="block truncate font-semibold">{d.summary?.item ?? "Order"}</span>
-                              <span className="muted block text-sm">{reason(d.reason)} · {money(d.amount)}</span>
-                            </span>
-                            <span aria-hidden="true" className="muted text-xl transition-transform group-hover:translate-x-1">→</span>
-                            <span className="col-span-2 flex flex-wrap gap-2 text-xs font-medium">
-                              <span className={`rounded-full px-2.5 py-1 ${PILL[step.tone]}`}>{step.label}</span>
-                            </span>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-
-                <Link href="/disputes" className="lp-btn self-stretch">See all cases</Link>
-              </div>
+          <section aria-label="Before you ship" className="lp-card flex flex-wrap items-center gap-5 p-5 sm:p-6">
+            <div className="flex min-w-0 flex-[999_1_320px] flex-col gap-1">
+              <h2 className="text-lg font-semibold">Before you ship: packing proof</h2>
+              <p className="muted text-[15px]">
+                Photograph the item going into the box. If the buyer later says it was wrong or damaged, SAL adds the photos
+                to that case for you.
+              </p>
             </div>
-          </div>
-        </section>
-
-        <section aria-label="SAL by the numbers" className="border-t border-(--lp-line) px-4 py-16">
-          <ul data-reveal-stagger className="mx-auto grid max-w-6xl gap-5 sm:grid-cols-3">
-            {figures.map((f) => (
-              <li key={f.label} className="lp-card flex flex-col gap-2 p-7">
-                <span data-count={f.value} className="display text-6xl tabular-nums text-(--lp-mint) sm:text-7xl">{f.value}</span>
-                <span className="muted text-[15px]">{f.label}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+            <Link href="/packing" className="lp-btn">Try packing proof</Link>
+          </section>
+        </div>
       </main>
 
       <footer className="muted mx-auto max-w-6xl border-t border-(--lp-line) px-4 py-6 text-sm">
