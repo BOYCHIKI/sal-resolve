@@ -80,7 +80,8 @@ An unauthorized-payment dispute is argued with the same evidence: PayPal's Selle
 parcel provably went to the address on the transaction, so for this reason the address is required (missing when
 PayPal's record has none) instead of skipped. D17 (delivered to the ship-to postal code) is READY and D18 (PayPal's
 record has no ship-to) is NEEDS_DOCUMENTS, with the deterministic reader and with gpt-5-nano (all facts found, no
-unsupported claims). Sandbox cannot create unauthorized disputes yet, so this is tested on synthetic cases only.
+unsupported claims). So far this is tested on synthetic cases only. A sandbox buyer can open a real one (see
+https://developer.paypal.com/disputes/test-go-live): expect `reason` UNAUTHORISED and stage CHARGEBACK.
 
 ## What these numbers do not prove
 
