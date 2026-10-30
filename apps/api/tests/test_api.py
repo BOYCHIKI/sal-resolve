@@ -60,3 +60,14 @@ def test_no_identity_configured_is_503(monkeypatch):
     monkeypatch.setattr(main, "get_settings", lambda: type("S", (), {"demo_merchant_id": None, "internal_token": None})())
     app.dependency_overrides.clear()
     assert client.get("/api/disputes").status_code == 503
+
+
+@pytest.mark.parametrize("marked, shown", [(True, True), (False, False), (None, None)])
+def test_seller_protection_is_what_paypal_marked_on_the_payment(as_tenant, tenants, app_engine, marked, shown):
+    payload = {} if marked is None else {"disputed_transactions": [{"seller_protection_eligible": marked}]}
+    with tenant_session(tenants["a"], app_engine) as s:
+        row, _ = repo.upsert_provider_dispute(s, tenants["a"], {
+            "origin": "PAYPAL_SANDBOX", "provider_dispute_id": f"PP-PROT-{marked}", "reason": "ITEM_NOT_RECEIVED",
+            "amount": {"value": "45.00", "currency": "USD"}, "provider_status": "OPEN"}, payload)
+    as_tenant("a")
+    assert client.get(f"/api/disputes/{row.id}").json()["seller_protection_eligible"] is shown

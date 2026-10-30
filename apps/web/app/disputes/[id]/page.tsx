@@ -86,7 +86,16 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               <span className="flex flex-wrap gap-2 text-sm font-semibold">
                 <span className={`rounded-full px-3 py-1 ${BOX[type.tone]}`}>{type.title}</span>
                 {stage && <span className={`rounded-full px-3 py-1 ${BOX[stage.tone]}`}>{stage.label}</span>}
+                {dispute.seller_protection_eligible === true && (
+                  <span className={`rounded-full px-3 py-1 ${BOX.green}`}>Seller Protection: eligible</span>
+                )}
+                {dispute.seller_protection_eligible === false && (
+                  <span className={`rounded-full px-3 py-1 ${BOX.grey}`}>Seller Protection: not eligible</span>
+                )}
               </span>
+              {dispute.seller_protection_eligible === true && (
+                <p className="text-sm text-ink-soft">PayPal marks this payment as eligible. You still need to meet its conditions, such as proof of delivery.</p>
+              )}
               {dispute.channel === "EXTERNAL" && (
                 <p className="text-[15px] font-semibold text-red-ink">The buyer’s bank decides. PayPal Seller Protection may not cover it, depending on the reason and your country.</p>
               )}
