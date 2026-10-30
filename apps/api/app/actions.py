@@ -1,8 +1,9 @@
 """Agent action proposals (ADR-006): what SAL suggests the merchant does next, one card per step.
 
 Cards come from deterministic rules over the latest assessment, the dispute's PayPal state and the merchant's
-Transaction Search history, never from free model output, so each card can be explained and tested. Only
-SEND_EVIDENCE leads to a PayPal write, and only through submission.submit() after the merchant approves it.
+Transaction Search history, never from free model output, so each card can be explained and tested. Two cards
+lead to a PayPal write, and only after the merchant approves them: SEND_EVIDENCE through submission.submit(), and
+OFFER_REFUND through make-offer with the amount the merchant typed.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -38,7 +39,7 @@ HOLD_REASON = {
     "dispute": "PayPal holds this money while the buyer's dispute is open. It is released when the dispute "
                "closes in your favour.",
     "payment": "PayPal is holding this payment, as it does for newer sellers or unusual sales. Adding tracking "
-               "and delivery helps it release sooner; holds usually last up to 21–30 days depending on your country.",
+               "and delivery helps it release sooner; holds usually last up to 21â€“30 days depending on your country.",
     "reserve": "PayPal keeps this part of your sales as a reserve and releases it on its own schedule.",
     "review": "PayPal is reviewing this payment before releasing it.",
 }
@@ -56,6 +57,7 @@ class DisputeState:
     reason: str = "ITEM_NOT_RECEIVED"
     lifecycle_stage: str | None = None   # PayPal's stage: INQUIRY, CHARGEBACK, ...
     packing_photos: int = 0              # photos from a packing record attached to the case (ADR-007)
+    offer_types: tuple[str, ...] = ()    # PayPal's allowed_response_options.make_offer.offer_types
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,15 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
             payload={"deadline_at": d.deadline_at.isoformat()}, due_at=d.deadline_at))
     if d.reason != "ITEM_NOT_RECEIVED":  # SAL argues only "not received"; for the rest it explains, never sends
         cards.append(_explain_dispute(d, subject))
+        if _can_offer_refund(d):
+            cap = f"{Decimal(d.amount):.2f}"   # the column keeps 4 decimals; offers are in cents
+            cards.append(Proposal(
+                "OFFER_REFUND", subject, "Offer the buyer a refund",
+                f"You choose the amount, up to {cap} {d.currency}; the buyer keeps the item. PayPal shows the "
+                "offer to the buyer, who can accept or decline. If they accept, PayPal refunds that amount and the "
+                "case closes. SAL sends the offer only after you approve. For a refund after a return, use PayPal.",
+                payload={"offer_type": "REFUND", "max_amount": cap, "currency": d.currency},
+                due_at=d.deadline_at))
         return cards
     if analysis is None:
         return cards
@@ -182,6 +193,12 @@ def _chargeback_cards(d: DisputeState, analysis: AnalysisState, draft: DraftStat
 
 def _packing_note(d: DisputeState) -> str:
     return f" Your {d.packing_photos} packing photo(s) go with them." if d.packing_photos else ""
+
+
+def _can_offer_refund(d: DisputeState) -> bool:
+    """PayPal takes offers only in the inquiry stage; a plain REFUND needs no return address from the seller."""
+    return ("NOT_AS_DESCRIBED" in d.reason and d.origin == "PAYPAL_SANDBOX" and d.lifecycle_stage == "INQUIRY"
+            and "make_offer" in d.allowed_actions and "REFUND" in d.offer_types)
 
 
 def _explain_dispute(d: DisputeState, subject: str) -> Proposal:
@@ -274,7 +291,9 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
     """Recompute the open cards for one dispute from its current PayPal state, analysis and draft. Worker only."""
     with tenant_session(merchant_id, engine) as s:
         d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency,
-                                     reason, lifecycle_stage FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
+                                     reason, lifecycle_stage,
+                                     provider_payload #> '{allowed_response_options,make_offer,offer_types}' AS offers
+                              FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
         if d is None:
             return {"skipped": "dispute not found"}
         a = s.execute(text("""SELECT id, assessment, snapshot_hash FROM analyses WHERE dispute_id = :d
@@ -284,7 +303,7 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
         photos = s.execute(text("""SELECT count(*) FROM evidence WHERE dispute_id = :d AND doc_type = 'packing_proof'
                                    AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar()
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
-                         str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos)
+                         str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos, tuple(d.offers or ()))
     analysis = (AnalysisState(a.assessment["readiness"], a.snapshot_hash, a.assessment.get("propositions", []))
                 if a is not None and a.assessment else None)
     draft = DraftState(dr.id, dr.revision, dr.status) if dr is not None else None
@@ -351,8 +370,9 @@ def list_actions(merchant_id: UUID, status: str = "PROPOSED", dispute_id: UUID |
 
 
 def _claim(merchant_id: UUID, action_id: UUID, payload_hash: str | None, to: str, actor: str,
-           engine: Engine | None) -> Any:
-    """Atomically move one PROPOSED card to `to`. Only the first of two simultaneous decisions wins."""
+           engine: Engine | None, check: Any = None) -> Any:
+    """Atomically move one PROPOSED card to `to`. Only the first of two simultaneous decisions wins.
+    `check(row)` may raise ActionError to refuse the decision while the card stays open (e.g. a bad amount)."""
     from app import repositories as repo
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text(f"SELECT {ACTION_COLUMNS} FROM agent_actions WHERE id = :id FOR UPDATE"),
@@ -363,6 +383,8 @@ def _claim(merchant_id: UUID, action_id: UUID, payload_hash: str | None, to: str
             raise ActionError(409, "ACTION_NOT_OPEN", f"This suggestion is already {row.status.lower()}")
         if payload_hash is not None and payload_hash != row.payload_hash:
             raise ActionError(409, "STALE_ACTION", "The suggestion changed since you opened it; review it again")
+        if check is not None:
+            check(row)
         s.execute(text("""UPDATE agent_actions SET status = :to, decided_by = :actor, decided_at = now()
                           WHERE id = :id"""), {"to": to, "actor": actor, "id": action_id})
         repo.write_audit(s, merchant_id, actor, f"action.{to.lower()}", target=str(action_id),
@@ -383,11 +405,15 @@ def dismiss(merchant_id: UUID, action_id: UUID, actor: str, engine: Engine | Non
 
 
 def approve(merchant_id: UUID, action_id: UUID, payload_hash: str, actor: str, paypal: Any,
-            engine: Engine | None = None) -> dict[str, Any]:
+            engine: Engine | None = None, offer_amount: str | None = None) -> dict[str, Any]:
     """The merchant approves one card. Guidance cards just close; SEND_EVIDENCE approves the exact draft revision
-    the card names and sends it through submission (ADR-003: bound to the evidence, at most once)."""
+    the card names and sends it through submission (ADR-003: bound to the evidence, at most once); OFFER_REFUND
+    sends one refund offer of the amount the merchant typed."""
     from app import submission
-    row = _claim(merchant_id, action_id, payload_hash, "APPROVED", actor, engine)
+    row = _claim(merchant_id, action_id, payload_hash, "APPROVED", actor, engine,
+                 check=lambda r: _offer_amount(r, offer_amount) if r.kind == "OFFER_REFUND" else None)
+    if row.kind == "OFFER_REFUND":
+        return _send_offer(merchant_id, row, _offer_amount(row, offer_amount), actor, paypal, engine)
     if row.kind != "SEND_EVIDENCE":
         _finish(merchant_id, action_id, "DONE", {"outcome": "acknowledged"}, engine)
         return {"id": str(action_id), "status": "DONE", "kind": row.kind}
@@ -408,3 +434,63 @@ def approve(merchant_id: UUID, action_id: UUID, payload_hash: str, actor: str, p
         raise ActionError(exc.status, exc.code, str(exc)) from None
     _finish(merchant_id, action_id, "DONE", {"outcome": "sent", "files": sent.get("files")}, engine)
     return {"id": str(action_id), "status": "DONE", "kind": row.kind, "sent": sent}
+
+
+# ---------------------------------------------------------------- OFFER_REFUND: the one offer the merchant typed
+OFFER_NOTE = "The seller offers a refund of {amount} {currency} to resolve this case. You keep the item."
+
+
+def _offer_amount(row: Any, typed: str | None) -> Decimal:
+    """The merchant's amount: 0.01 up to the disputed amount the card showed, in cents."""
+    cap, currency = Decimal(row.payload["max_amount"]), row.payload["currency"]
+    refuse = ActionError(422, "BAD_OFFER_AMOUNT", f"Enter an amount between 0.01 and {cap} {currency}.")
+    try:
+        amount = Decimal((typed or "").strip().replace(",", "."))
+    except InvalidOperation:
+        raise refuse from None
+    if not amount.is_finite() or amount <= 0 or amount > cap or amount != amount.quantize(Decimal("0.01")):
+        raise refuse
+    return amount.quantize(Decimal("0.01"))
+
+
+def _send_offer(merchant_id: UUID, row: Any, amount: Decimal, actor: str, paypal: Any,
+                engine: Engine | None) -> dict[str, Any]:
+    """Re-read the live dispute (PayPal may have moved on since the card), then send one make-offer. A timeout
+    after sending is recorded as unconfirmed, never retried: the next sync shows whether the offer arrived."""
+    import httpx
+
+    from app import repositories as repo
+    currency = row.payload["currency"]
+    with tenant_session(merchant_id, engine) as s:
+        provider_id = s.execute(text("SELECT provider_dispute_id FROM disputes WHERE id = :d"),
+                                {"d": row.dispute_id}).scalar()
+
+    def fail(status: int, code: str, message: str, outcome: str = "failed") -> ActionError:
+        _finish(merchant_id, row.id, "DONE" if outcome == "unconfirmed" else "FAILED",
+                {"outcome": outcome, "code": code, "message": message}, engine)
+        return ActionError(status, code, message)
+
+    try:
+        live = paypal.get(provider_id)
+    except Exception:
+        raise fail(502, "PAYPAL_UNREACHABLE", "PayPal could not be reached. Nothing was sent.") from None
+    offers = ((live.get("allowed_response_options") or {}).get("make_offer") or {}).get("offer_types") or []
+    if ("make_offer" not in {link.get("rel") for link in live.get("links", [])} or "REFUND" not in offers
+            or live.get("dispute_life_cycle_stage") != "INQUIRY"):
+        raise fail(409, "OFFER_NOT_AVAILABLE", "PayPal no longer takes a refund offer on this case. Nothing was sent.")
+    payload = {"note": OFFER_NOTE.format(amount=amount, currency=currency), "offer_type": "REFUND",
+               "offer_amount": {"currency_code": currency, "value": str(amount)}}
+    try:
+        paypal.make_offer(provider_id, payload)
+    except httpx.HTTPStatusError as exc:
+        raise fail(502, "PAYPAL_REJECTED", f"PayPal refused the offer ({exc.response.status_code}).") from None
+    except Exception:
+        raise fail(502, "OFFER_UNCONFIRMED", "PayPal did not answer in time; SAL will check whether the offer arrived.",
+                   "unconfirmed") from None
+    with tenant_session(merchant_id, engine) as s:
+        repo.write_audit(s, merchant_id, actor, "paypal.make_offer", target=str(row.dispute_id),
+                         summary={"action_id": str(row.id), "offer_type": "REFUND", "amount": str(amount),
+                                  "currency": currency})
+    _finish(merchant_id, row.id, "DONE", {"outcome": "offer_sent", "amount": str(amount), "currency": currency},
+            engine)
+    return {"id": str(row.id), "status": "DONE", "kind": row.kind, "offer": {"amount": str(amount), "currency": currency}}

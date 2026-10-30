@@ -89,7 +89,7 @@ export type EvidenceDoc = {
 };
 
 export type ActionKind = "SEND_EVIDENCE" | "ADD_DOCUMENT" | "REPLY_BEFORE_DEADLINE" | "EXPLAIN_HELD_FUNDS"
-  | "EXPLAIN_DISPUTE";
+  | "EXPLAIN_DISPUTE" | "OFFER_REFUND";
 
 /** A suggestion SAL's agent made (ADR-006). The merchant approves the exact card it read, by payload_hash. */
 export type AgentAction = {
@@ -174,8 +174,8 @@ export const api = {
     upload(`/api/disputes/${encodeURIComponent(disputeId)}/evidence`, form),
   listActions: async (disputeId?: string) =>
     (await call<{ items: AgentAction[] }>(`/api/actions${disputeId ? `?dispute_id=${encodeURIComponent(disputeId)}` : ""}`))?.items ?? [],
-  approveAction: (id: string, payloadHash: string) =>
-    action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash }),
+  approveAction: (id: string, payloadHash: string, offerAmount?: string) =>
+    action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash, offer_amount: offerAmount ?? null }),
   dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
   listPacking: async () => (await call<{ items: PackingRecord[] }>("/api/packing"))?.items ?? [],

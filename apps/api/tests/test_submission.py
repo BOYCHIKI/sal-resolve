@@ -52,6 +52,12 @@ class FakePayPal:
             raise self.fail
         return {}
 
+    def make_offer(self, dispute_id, payload):
+        self.sent.append((dispute_id, payload))
+        if self.fail:
+            raise self.fail
+        return {}
+
 
 @pytest.fixture
 def merchant(migrated_db) -> UUID:

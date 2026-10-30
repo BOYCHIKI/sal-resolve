@@ -12,6 +12,7 @@ const LOOK: Record<ActionKind, { eyebrow: string; pill: string; primary: string 
   ADD_DOCUMENT: { eyebrow: "Missing document", pill: "bg-amber-bg text-amber-ink", primary: "I added it" },
   EXPLAIN_HELD_FUNDS: { eyebrow: "Money on hold", pill: "bg-grey-bg text-grey-ink", primary: "" },
   EXPLAIN_DISPUTE: { eyebrow: "From SAL", pill: "bg-amber-bg text-amber-ink", primary: "Got it" },
+  OFFER_REFUND: { eyebrow: "Settle it", pill: "bg-blue-bg text-blue-ink", primary: "Send offer to PayPal" },
 };
 
 const MESSAGES: Record<string, string> = {
@@ -20,7 +21,10 @@ const MESSAGES: Record<string, string> = {
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new suggestion.",
   EVIDENCE_CHANGED: "Documents changed since SAL wrote this. SAL is preparing a new suggestion.",
   SUBMIT_UNCONFIRMED: "PayPal didn’t answer in time. SAL will check whether it arrived. Don’t send it again yet.",
-  PAYPAL_REJECTED: "PayPal didn’t accept the documents right now. You can try again from the case page.",
+  PAYPAL_REJECTED: "PayPal didn’t accept it right now. You can try again from the case page.",
+  OFFER_NOT_AVAILABLE: "PayPal no longer takes a refund offer on this case. Nothing was sent.",
+  OFFER_UNCONFIRMED: "PayPal didn’t answer in time. SAL will check whether the offer arrived. Don’t send it again yet.",
+  PAYPAL_UNREACHABLE: "PayPal can’t be reached right now. Nothing was sent.",
   API_UNREACHABLE: "SAL can’t reach its server right now. Please try again in a moment.",
 };
 
@@ -39,15 +43,20 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
   const [error, setError] = useState<string | null>(null);
   const look = LOOK[action.kind];
   const due = dueLabel(action.due_at);
-  const sends = action.kind === "SEND_EVIDENCE";
+  const offer = action.kind === "OFFER_REFUND";
+  const sends = action.kind === "SEND_EVIDENCE" || offer;
+  const max = String(action.payload.max_amount ?? "");
+  const currency = String(action.payload.currency ?? "");
+  const [amount, setAmount] = useState("");
   // Money on hold is information, not a task: it stays until PayPal releases the money, and there is nothing to press.
   const info = action.kind === "EXPLAIN_HELD_FUNDS";
 
   async function decide(decision: "approve" | "dismiss") {
     setBusy(true);
     setError(null);
-    const r = await decideAction(action.id, decision, action.payload_hash, action.dispute_id);
-    if (!r.ok) setError(MESSAGES[r.code] ?? "Something went wrong. Please try again.");
+    const r = await decideAction(action.id, decision, action.payload_hash, action.dispute_id,
+      offer && decision === "approve" ? amount : undefined);
+    if (!r.ok) setError(r.code === "BAD_OFFER_AMOUNT" ? r.message : MESSAGES[r.code] ?? "Something went wrong. Please try again.");
     setBusy(false);
     router.refresh();
   }
@@ -61,14 +70,26 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
         </div>
         <h3 className="text-[18px] font-semibold">{action.title}</h3>
         <p className="muted text-[15px] leading-relaxed">{action.rationale}</p>
-        {sends && <p className="muted text-sm">Sends only this exact reply, and only when you press the button.</p>}
+        {offer && (
+          <label className="mt-1 flex flex-wrap items-center gap-2 text-[15px]">
+            Refund amount
+            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={busy}
+              placeholder={`up to ${max}`} maxLength={12}
+              className="w-32 rounded-xl border border-(--lp-line) bg-(--lp-well) px-3 py-2 tabular-nums" />
+            <span className="muted">{currency}</span>
+          </label>
+        )}
+        {sends && <p className="muted text-sm">
+          {offer ? "Sends only this offer, with the amount you typed, and only when you press the button."
+            : "Sends only this exact reply, and only when you press the button."}</p>}
         {error && <p role="alert" className="text-[15px] text-red-ink">{error}</p>}
       </div>
       {!info && <div className="flex flex-none items-center gap-2">
         {caseLink && action.dispute_id && !sends && (
           <Link href={`/disputes/${action.dispute_id}`} className="lp-btn">Open the case</Link>
         )}
-        <button className={sends ? "lp-btn" : "lp-btn-ghost"} disabled={busy} onClick={() => decide("approve")}>
+        <button className={sends ? "lp-btn" : "lp-btn-ghost"} disabled={busy || (offer && !amount.trim())}
+          onClick={() => decide("approve")}>
           {busy ? "Working…" : look.primary}
         </button>
         <button className="muted px-2 py-2 text-sm hover:underline" disabled={busy} onClick={() => decide("dismiss")}>

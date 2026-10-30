@@ -103,6 +103,12 @@ class PayPalDisputes:
         r.raise_for_status()
         return r.json() if r.content else {}
 
+    def make_offer(self, dispute_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Offer the buyer a refund (INQUIRY stage only). `payload`: note, offer_type, offer_amount."""
+        r = self._http.post(f"/v1/customer/disputes/{dispute_id}/make-offer", json=payload, headers=self._auth())
+        r.raise_for_status()
+        return r.json() if r.content else {}
+
     def verify_webhook(self, headers: dict[str, str], event: dict[str, Any], webhook_id: str) -> bool:
         body = {
             "auth_algo": headers.get("paypal-auth-algo"),

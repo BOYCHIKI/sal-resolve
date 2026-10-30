@@ -57,9 +57,9 @@ export async function uploadEvidence(disputeId: string, form: FormData): Promise
 }
 
 export async function decideAction(id: string, decision: "approve" | "dismiss", payloadHash: string,
-  disputeId: string | null): Promise<ActionResult> {
+  disputeId: string | null, offerAmount?: string): Promise<ActionResult> {
   try {
-    const result = decision === "approve" ? await api.approveAction(id, payloadHash) : await api.dismissAction(id);
+    const result = decision === "approve" ? await api.approveAction(id, payloadHash, offerAmount) : await api.dismissAction(id);
     revalidatePath("/disputes");
     if (disputeId) revalidatePath(`/disputes/${disputeId}`);
     return result;

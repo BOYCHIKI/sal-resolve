@@ -40,8 +40,9 @@ The merchant approves or dismisses each card. Approval executes it through the A
 | `REPLY_BEFORE_DEADLINE` | An open dispute whose `deadline_at` is less than 72 h away and has no approved send yet | Opens the case | No |
 | `EXPLAIN_HELD_FUNDS` | Transaction Search shows a hold code (T1110/T1111 dispute hold, T2107/T2108 payment hold, T2103/T2104 reserve) with no release yet | Nothing is sent. The card explains the hold in plain words and links to the dispute when it is a dispute hold | No |
 | `EXPLAIN_DISPUTE` (migration 0010) | The dispute is not "item not received" (e.g. "not as described") | Nothing is sent. SAL explains it does not argue this kind of case and names the realistic choices in PayPal (partial refund, refund, return) | No |
+| `OFFER_REFUND` (migration 0012) | A sandbox "not as described" case in PayPal's INQUIRY stage whose `allowed_response_options.make_offer.offer_types` include `REFUND` | SAL re-reads the live dispute, then sends one make-offer of type `REFUND` with the amount the merchant typed (0.01 up to the disputed amount) and a fixed note. A timeout is recorded as unconfirmed and never resent | Yes (make-offer) |
 
-Only `SEND_EVIDENCE` writes to PayPal. The others are guidance, which keeps the write surface the same as today.
+Two kinds write to PayPal: `SEND_EVIDENCE` and, since 0012, `OFFER_REFUND`. The others are guidance. A refund offer is a seller's own decision, so SAL never picks the amount: the card carries only the ceiling, and the amount comes with the approval. Offers with a return (`REFUND_WITH_RETURN`) need the seller's address and stay in PayPal.
 
 **Seller-entered tracking numbers (migration 0010).** The seller can type a resi and courier on the case page
 (`POST /api/disputes/{id}/tracking`). It is stored as a small `seller_shipment` document with origin
@@ -52,7 +53,7 @@ but it never shows the parcel moved or arrived. It is not attached to the PayPal
 ### Out of scope (stated in the README as roadmap)
 
 - Adding tracking to a transaction: Tracking API returns 403 in our sandbox.
-- Messaging the buyer, accepting a claim, refunds and offers. These are PayPal writes that would each need their own approval design.
+- Messaging the buyer and accepting a claim. These are PayPal writes that would each need their own approval design. (Refund offers were added later as `OFFER_REFUND`.)
 - Account limitations: there is no API for ordinary merchants.
 - An MCP server exposing SAL to other agents (part C) and PayPal Agent Toolkit read tools (part B). These come after A if time allows.
 

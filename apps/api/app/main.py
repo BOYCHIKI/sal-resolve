@@ -318,6 +318,7 @@ def submit_draft(draft_id: UUID, merchant_id: UUID = Depends(current_merchant),
 # ---------------------------------------------------------------- agent suggestions (ADR-006)
 class ActionApproveBody(BaseModel):
     payload_hash: str
+    offer_amount: str | None = Field(default=None, max_length=20)   # OFFER_REFUND only: the amount the seller typed
 
 
 ACTION_STATUSES = {"PROPOSED", "APPROVED", "DONE", "FAILED", "DISMISSED", "SUPERSEDED"}
@@ -339,9 +340,11 @@ def list_actions(status: str = Query("PROPOSED"), dispute_id: UUID | None = Quer
 @app.post("/api/actions/{action_id}/approve")
 def approve_action(action_id: UUID, body: ActionApproveBody, merchant_id: UUID = Depends(current_merchant),
                    paypal: submission.EvidenceSink = Depends(paypal_sink)) -> dict:
-    """The merchant approves the exact suggestion they read (payload_hash). Only SEND_EVIDENCE writes to PayPal."""
+    """The merchant approves the exact suggestion they read (payload_hash). Only SEND_EVIDENCE and OFFER_REFUND
+    write to PayPal."""
     try:
-        return actions.approve(merchant_id, action_id, body.payload_hash, DEMO_ACTOR, paypal)
+        return actions.approve(merchant_id, action_id, body.payload_hash, DEMO_ACTOR, paypal,
+                               offer_amount=body.offer_amount)
     except actions.ActionError as exc:
         raise _action_error(exc) from None
 

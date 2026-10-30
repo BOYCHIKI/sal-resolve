@@ -270,3 +270,28 @@ def test_a_case_paypal_is_not_taking_documents_on_explains_instead_of_asking_for
     cards = actions.propose_for_dispute(d, MISSING, DRAFT, NOW)
     assert [(c.kind, c.title) for c in cards] == [("EXPLAIN_DISPUTE", "PayPal is reviewing this case")]
     assert "chargeback" in cards[0].rationale
+
+
+# --------------------------------------------------------------- refund offers (not as described)
+SNAD = "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED"
+OFFERABLE = dict(reason=SNAD, lifecycle_stage="INQUIRY", allowed_actions=("make_offer", "accept_claim"),
+                 offer_types=("REFUND",))
+
+
+def test_a_not_as_described_inquiry_gets_a_refund_offer_card_next_to_the_explanation():
+    cards = actions.propose_for_dispute(dispute(**OFFERABLE), None, None, NOW)
+    assert [c.kind for c in cards] == ["EXPLAIN_DISPUTE", "OFFER_REFUND"]
+    assert cards[1].payload == {"offer_type": "REFUND", "max_amount": "45.00", "currency": "USD"}
+    assert "only after you approve" in cards[1].rationale
+
+
+@pytest.mark.parametrize("over", [
+    dict(lifecycle_stage="CHARGEBACK"),                 # PayPal takes offers only in the inquiry stage
+    dict(offer_types=("REFUND_WITH_RETURN",)),          # needs the seller's return address: left to PayPal
+    dict(allowed_actions=("accept_claim",)),
+    dict(origin="SYNTHETIC_FIXTURE"),
+    dict(reason="ITEM_NOT_RECEIVED"),                   # "not received" is argued with evidence, not refunded
+])
+def test_no_refund_offer_card_when_paypal_would_not_take_it(over):
+    cards = actions.propose_for_dispute(dispute(**{**OFFERABLE, **over}), None, None, NOW)
+    assert "OFFER_REFUND" not in [c.kind for c in cards]
