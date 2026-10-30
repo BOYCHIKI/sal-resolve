@@ -33,10 +33,10 @@ def fact(field: str, value: str, d: dict, needle: str, status: str = "supported"
 
 def case(case_id: str, split: str, scenario: str, amount: str, currency: str, item: str, evidence: list[dict],
          facts: list[dict], missing: list[str], conflicts: list[str], review: bool, note: str,
-         readiness: str | None = None) -> dict:
+         readiness: str | None = None, reason: str = "ITEM_NOT_RECEIVED") -> dict:
     out = {
         "case_id": case_id, "split": split, "scenario": scenario, "synthetic": True, "note": note,
-        "dispute": {"id": case_id, "origin": "SYNTHETIC_FIXTURE", "reason": "ITEM_NOT_RECEIVED",
+        "dispute": {"id": case_id, "origin": "SYNTHETIC_FIXTURE", "reason": reason,
                     "amount": {"value": amount, "currency": currency}, "item": item},
         "evidence": evidence,
         "ground_truth": {"supported_facts": facts, "missing_evidence": missing,
@@ -343,6 +343,50 @@ def dev() -> list[dict]:
          fact("delivery_date", "2026-08-24", pod, "Diterima 24", "conflicted")],
         [], ["delivered_before_ship"], True,
         "Received on 24 Aug, two days before the 26 Aug ship date: one of these documents is wrong."))
+
+    # ---- unauthorized payments, argued with the same evidence: delivery to the PayPal address is the defence.
+    inv = doc("D17-E01", "order_invoice", "Toko Tenun Garut - Invoice TTG-1009", "Tanggal: 9 Okt 2026",
+              "Selendang tenun x1", "Total: USD 70.00")
+    pay = doc("D17-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 6AS30458PO2219967", "Amount: 70.00 USD", "Ship-to city: Bandung",
+              "Ship-to postal code: 40115")
+    trk = doc("D17-E03", "carrier_tracking", "J&T Express - Lacak Paket", "No. Resi: JP7712009901",
+              "Tanggal Kirim: 10 Okt 2026", "Status: DELIVERED", "Diterima oleh: R. HAKIM - 12 Okt 2026")
+    pod = doc("D17-E04", "delivery_proof", "Bukti Penerimaan J&T", "Resi JP7712009901", "Diterima 12 Okt 2026",
+              "Kota: Bandung", "Kode pos: 40115")
+    out.append(case("D17", "sea_dev", "complete", "70.00", "USD", "Woven Scarf", [inv, pay, trk, pod],
+        [fact("order_id", "TTG-1009", inv, "Invoice"), fact("order_date", "2026-10-09", inv, "Tanggal"),
+         fact("order_amount", "70.00", inv, "Total"), fact("currency", "USD", inv, "Total"),
+         fact("transaction_id", "6AS30458PO2219967", pay, "Transaction"),
+         fact("payment_amount", "70.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("ship_to_city", "BANDUNG", pay, "Ship-to city"), fact("ship_to_postal_code", "40115", pay, "postal"),
+         fact("tracking_id", "JP7712009901", trk, "No. Resi"), fact("ship_date", "2026-10-10", trk, "Tanggal Kirim"),
+         fact("carrier_status", "DELIVERED", trk, "Status"), fact("carrier_event_date", "2026-10-12", trk, "Diterima oleh"),
+         fact("delivery_date", "2026-10-12", pod, "Diterima 12"), fact("delivery_city", "BANDUNG", pod, "Kota"),
+         fact("delivery_postal_code", "40115", pod, "Kode pos")],
+        [], [], False, "The buyer says they never made the payment; delivered to the PayPal ship-to address.",
+        reason="UNAUTHORISED"))
+
+    inv = doc("D18-E01", "order_invoice", "Lola's Handwoven - Official Receipt", "OR No. 2026-1209",
+              "Date: October 9, 2026", "TOTAL: USD 55.00")
+    pay = doc("D18-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 5GH81902LK3378120", "Amount: 55.00 USD")
+    trk = doc("D18-E03", "carrier_tracking", "LBC Express Track & Trace", "Tracking No.: 172200093551",
+              "Oct 10, 2026 - Accepted at LBC Laoag Branch", "Oct 13, 2026 - Delivered to consignee",
+              "Status: Delivered")
+    pod = doc("D18-E04", "delivery_proof", "LBC Proof of Delivery 172200093551", "Delivered: October 13, 2026",
+              "City: Quezon City", "ZIP: 1100")
+    out.append(case("D18", "sea_dev", "edge", "55.00", "USD", "Table Runner", [inv, pay, trk, pod],
+        [fact("order_id", "2026-1209", inv, "OR No"), fact("order_date", "2026-10-09", inv, "Date"),
+         fact("order_amount", "55.00", inv, "TOTAL"), fact("currency", "USD", inv, "TOTAL"),
+         fact("transaction_id", "5GH81902LK3378120", pay, "Transaction"),
+         fact("payment_amount", "55.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("tracking_id", "172200093551", trk, "Tracking No"), fact("ship_date", "2026-10-10", trk, "Accepted"),
+         fact("carrier_status", "DELIVERED", trk, "Status"), fact("carrier_event_date", "2026-10-13", trk, "Delivered to"),
+         fact("delivery_date", "2026-10-13", pod, "Delivered:"), fact("delivery_city", "QUEZON CITY", pod, "City"),
+         fact("delivery_postal_code", "1100", pod, "ZIP")],
+        [], [], True, "Unauthorized, delivered with an address, but PayPal's record has no ship-to to compare: "
+        "not provable yet.", readiness="NEEDS_DOCUMENTS", reason="UNAUTHORISED"))
     return out
 
 

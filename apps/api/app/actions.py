@@ -17,6 +17,7 @@ from uuid import UUID
 
 from sqlalchemy import Engine, text
 
+from app.agent.assess import SUPPORTED_REASONS as ARGUED_REASONS
 from app.db import tenant_session
 
 DEADLINE_WINDOW = timedelta(hours=72)
@@ -116,7 +117,7 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
             f"PayPal needs your reply by {d.deadline_at:%d %b %Y, %H:%M} UTC. Without it, the case can be "
             "decided without your evidence.",
             payload={"deadline_at": d.deadline_at.isoformat()}, due_at=d.deadline_at))
-    if d.reason != "ITEM_NOT_RECEIVED":  # SAL argues only "not received"; for the rest it explains, never sends
+    if d.reason not in ARGUED_REASONS:  # SAL argues with shipping evidence only; for the rest it explains
         cards.append(_explain_dispute(d, subject))
         if _can_offer_refund(d):
             cap = f"{Decimal(d.amount):.2f}"   # the column keeps 4 decimals; offers are in cents
@@ -164,8 +165,10 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
     return cards
 
 
+# PayPal's Seller Protection still covers some chargebacks (unauthorized ones with proof of delivery) and not
+# others ("not received" chargebacks since 16 Jan 2024 in the US), and the terms differ by country.
 CHARGEBACK_NOTE = ("This case is now a chargeback: the buyer's bank decides, not PayPal, and PayPal Seller "
-                   "Protection does not apply.")
+                   "Protection may not cover it, depending on the reason and your country.")
 
 
 def _chargeback_cards(d: DisputeState, analysis: AnalysisState, draft: DraftState | None, subject: str,

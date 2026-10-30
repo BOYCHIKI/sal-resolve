@@ -16,7 +16,7 @@ from typing import Any
 from app.agent.models import RULE_VERSION, AnalysisResult, CaseInput
 from app.agent.roles import Drafter, Extractor, Planner
 from app.agent.tools import TOOL_SPECS, CaseToolbox
-from app.agent.assess import assess, claimable
+from app.agent.assess import SUPPORTED_REASONS, assess, claimable
 from app.agent.validation import apply_inr_rules, ground, verify_claims
 
 MAX_GATHER_STEPS = 8
@@ -47,7 +47,7 @@ def analyze(case: CaseInput, planner: Planner, extractor: Extractor, drafter: Dr
     read = [d for d in case.documents if d.evidence_id in set(box.read_ids)]
 
     facts = ground(extractor.extract(read), read)
-    inr = case.reason == "ITEM_NOT_RECEIVED"
+    inr = case.reason in SUPPORTED_REASONS  # the shipping rules: courier documents, dates, address, timeline
     findings = apply_inr_rules(facts, case.documents, case.amount, case.currency, inr=inr)
     assessment = assess(facts, findings, case.documents, case.amount, case.currency, case.reason,
                         case.requested_evidence)

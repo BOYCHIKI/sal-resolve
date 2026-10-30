@@ -225,7 +225,7 @@ def test_a_card_the_merchant_answered_is_not_proposed_again(merchant, app_engine
 
 @pytest.mark.parametrize("reason, words", [
     ("MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "partial refund"),
-    ("UNAUTHORISED", "answer it there"),
+    ("CREDIT_NOT_PROCESSED", "answer it there"),   # unauthorized is argued now (tests/test_unauthorized.py)
 ])
 def test_a_dispute_sal_does_not_argue_gets_an_explanation_never_a_send(reason, words):
     cards = actions.propose_for_dispute(dispute(reason=reason), READY, DRAFT, NOW)
@@ -260,7 +260,7 @@ def test_a_chargeback_with_matching_proof_of_delivery_gets_a_send_card_that_says
     cards = actions.propose_for_dispute(dispute(**BANK), READY_WITH_POD, DRAFT, NOW)
     assert kinds(cards) == ["SEND_EVIDENCE"]
     assert cards[0].title == "Send your chargeback evidence to PayPal"
-    assert "Seller Protection does not apply" in cards[0].rationale
+    assert "Seller Protection may not cover it" in cards[0].rationale
     assert cards[0].payload["stage"] == "CHARGEBACK"
 
 

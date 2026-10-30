@@ -12,7 +12,9 @@ from app.agent.validation import same_city
 
 PROPOSITIONS = ("payment_matches", "shipped", "delivered", "delivery_date_consistent", "delivered_to_paypal_address",
                 "buyer_messages_clean", "paypal_request_covered")
-SUPPORTED_REASONS = {"ITEM_NOT_RECEIVED"}
+# Disputes SAL argues with shipping evidence. An unauthorized payment is defended the same way: PayPal's Seller
+# Protection covers it when the parcel provably went to the address on the transaction.
+SUPPORTED_REASONS = {"ITEM_NOT_RECEIVED", "UNAUTHORISED"}
 # What PayPal's own evidence requests need, in terms of propositions (ADR-001: PayPal's list is authoritative).
 REQUEST_NEEDS = {"PROOF_OF_FULFILLMENT": ("shipped", "delivered"), "PROOF_OF_SHIPMENT": ("shipped",),
                  "PROOF_OF_DELIVERY": ("delivered",)}
@@ -141,9 +143,11 @@ def _delivery_dates_agree(case: _Case) -> Proposition:
     return Proposition("delivery_date_consistent", "not_applicable", "Only one delivery date to compare")
 
 
-def _delivered_to_paypal_address(case: _Case) -> Proposition:
+def _delivered_to_paypal_address(case: _Case, required: bool = False) -> Proposition:
     """5. Delivered to the address on the PayPal payment: PayPal's proof of delivery must show it (Seller
-    Protection). Only PayPal's own record says where the parcel should go; a seller's upload cannot."""
+    Protection). Only PayPal's own record says where the parcel should go; a seller's upload cannot.
+    `required` (unauthorized payments): the whole defence is that the parcel went to that address, so a missing
+    address is a gap rather than a check that does not apply."""
     pid = "delivered_to_paypal_address"
     if conflict := case.conflicted(pid, "contradicted"):
         return conflict
@@ -154,6 +158,9 @@ def _delivered_to_paypal_address(case: _Case) -> Proposition:
 
     ship_code, ship_city = from_paypal("ship_to_postal_code"), from_paypal("ship_to_city")
     if ship_code is None and ship_city is None:
+        if required:
+            return Proposition(pid, "missing", "PayPal's record of this payment shows no shipping address yet; for an "
+                               "unauthorized payment PayPal needs proof the parcel went to that address")
         return Proposition(pid, "not_applicable", "PayPal's record shows no shipping address to compare")
     code, city = case.first("delivery_postal_code"), case.first("delivery_city")
     if ship_code and code:  # a different code is a conflict the rules already raised
@@ -200,10 +207,12 @@ def assess(facts: list[Fact], findings: list[Finding], documents: list[Document]
            requested: tuple[str, ...] = ()) -> Assessment:
     if reason not in SUPPORTED_REASONS:  # never judge e.g. "not as described" by shipping rules
         return Assessment((), "NEEDS_CHECK",
-                          "SAL's evidence check covers 'item not received' disputes only. Review this case in PayPal.")
+                          "SAL's evidence check covers 'item not received' and 'unauthorized payment' disputes. "
+                          "Review this case in PayPal.")
     case = _Case(facts, findings, documents)
     props = [_payment_matches(case, dispute_amount, dispute_currency), _shipped(case), _delivered(case),
-             _delivery_dates_agree(case), _delivered_to_paypal_address(case), _buyer_messages_clean(case)]
+             _delivery_dates_agree(case), _delivered_to_paypal_address(case, required=reason == "UNAUTHORISED"),
+             _buyer_messages_clean(case)]
     props.append(_paypal_request_covered(requested, props))
     return Assessment(tuple(props), *_readiness(props))
 

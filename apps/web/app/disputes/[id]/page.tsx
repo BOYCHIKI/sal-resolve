@@ -88,7 +88,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                 {stage && <span className={`rounded-full px-3 py-1 ${BOX[stage.tone]}`}>{stage.label}</span>}
               </span>
               {dispute.channel === "EXTERNAL" && (
-                <p className="text-[15px] font-semibold text-red-ink">The buyer’s bank decides, and PayPal Seller Protection does not apply.</p>
+                <p className="text-[15px] font-semibold text-red-ink">The buyer’s bank decides. PayPal Seller Protection may not cover it, depending on the reason and your country.</p>
               )}
               <h1 className="display text-[30px] sm:text-[44px]">{headline}</h1>
               <p className="text-lg text-ink-soft">{detail}</p>
@@ -243,7 +243,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <section aria-label="Documents" data-reveal className="lp-card flex flex-col gap-2.5 p-6">
               <h2 className="text-xl">Documents ({evidence.length})</h2>
               {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
-              {canAddDocuments && dispute.reason === "ITEM_NOT_RECEIVED" && <AddTracking disputeId={dispute.id} />}
+              {canAddDocuments && ["ITEM_NOT_RECEIVED", "UNAUTHORISED"].includes(dispute.reason) &&
+                <AddTracking disputeId={dispute.id} />}
               {canAddDocuments && <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />}
               {evidence.map((doc) => (
                 <details key={doc.evidence_id} id={doc.evidence_id} className="scroll-mt-24 rounded-2xl bg-(--lp-card-2) open:bg-(--lp-well)">

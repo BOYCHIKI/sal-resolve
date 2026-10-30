@@ -198,8 +198,8 @@ export function explain(f: Finding, facts: Fact[], currency: string): { title: s
 
 export function summarySentence(d: Dispute, a: Analysis | null): { headline: string; detail: string } {
   const item = d.summary?.item ?? "order";
-  const headline = d.reason === "ITEM_NOT_RECEIVED"
-    ? `The customer says their ${item} never arrived.`
+  const headline = d.reason === "ITEM_NOT_RECEIVED" ? `The customer says their ${item} never arrived.`
+    : d.reason === "UNAUTHORISED" ? `The customer says they didn’t make the payment for this ${item}.`
     : `The customer disputes their ${item} payment.`;
   const paidOn = a ? factValue(a.facts, "order_date") : undefined;
   const paid = `They paid ${d.amount.value} ${d.amount.currency}${paidOn ? ` on ${date(paidOn)}` : ""} and asked PayPal for a refund.`;
@@ -231,10 +231,10 @@ export const CASE_TYPES: CaseType[] = [
     sal: "SAL explains your options, adds your packing photos and can send a refund offer of an amount you choose." },
   { key: "bank_chargeback", title: "Bank chargeback", tone: "red",
     buyer: "The buyer asked their bank or card company for the money back.",
-    sal: "The bank decides and Seller Protection doesn’t apply, so SAL asks for proof of delivery before you send." },
+    sal: "The bank decides and Seller Protection may not cover it, so SAL asks for proof of delivery before you send." },
   { key: "unauthorized", title: "Unauthorized payment", tone: "red",
     buyer: "The buyer says they didn’t make this payment.",
-    sal: "SAL flags and explains it; you answer it in PayPal. SAL only builds replies for parcels that didn’t arrive." },
+    sal: "PayPal protects you if the parcel went to the address on the payment. SAL checks exactly that and drafts the reply you approve." },
   { key: "refund_missing", title: "Refund not received", tone: "grey",
     buyer: "The buyer says you promised a refund that never came.",
     sal: "SAL flags it so it isn’t missed; check your refunds and answer it in PayPal." },

@@ -22,7 +22,7 @@ are `fact P` (nothing wrong accepted), `ready acc` (READY only when the evidence
 |---|---|---|
 | development (v1.0.0) | 24 | Uniform templates; the regex baseline must stay perfect here |
 | real_format (v1.1.0) | 6 | Dates in words, symbols, e-mails, OCR-like scans, ambiguous dates, an injected instruction |
-| sea_dev (v1.2.0) | 16 | JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, DHL; Indonesian dates and amounts; WhatsApp chats; traps. D13–D16 (rule version 3): delivery address vs PayPal's ship-to, and a proof dated before the ship date |
+| sea_dev (v1.2.0) | 18 | JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, DHL; Indonesian dates and amounts; WhatsApp chats; traps. D13–D16 (rule version 3): delivery address vs PayPal's ship-to, and a proof dated before the ship date. D17–D18: unauthorized payments |
 | sea_holdout (v1.2.0) | 8 | Same families, different documents; scored only with `--final` |
 
 All cases are synthetic, with invented names and numbers. `data/golden/make_sea_format.py` writes v1.2.0; edit there,
@@ -73,6 +73,14 @@ All four new cases get the right readiness, with the deterministic reader alone 
 complete case flagged for review in one run because a model-written sentence failed claim verification (the safe
 side); a rerun of the complete cases flagged none. The holdout was not touched, so it is still unscored for rule
 version 3.
+
+### Unauthorized payments (2026-10-30)
+
+An unauthorized-payment dispute is argued with the same evidence: PayPal's Seller Protection covers it when the
+parcel provably went to the address on the transaction, so for this reason the address is required (missing when
+PayPal's record has none) instead of skipped. D17 (delivered to the ship-to postal code) is READY and D18 (PayPal's
+record has no ship-to) is NEEDS_DOCUMENTS, with the deterministic reader and with gpt-5-nano (all facts found, no
+unsupported claims). Sandbox cannot create unauthorized disputes yet, so this is tested on synthetic cases only.
 
 ## What these numbers do not prove
 
