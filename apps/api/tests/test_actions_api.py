@@ -137,3 +137,17 @@ def test_another_merchant_cannot_see_or_decide_a_card(client, merchant, app_engi
     r = client.post(f"/api/actions/{card['id']}/approve", json={"payload_hash": card["payload_hash"]})
     assert r.status_code == 404
     assert client.post(f"/api/actions/{card['id']}/dismiss").status_code == 404
+
+
+def test_a_kept_card_takes_new_wording_but_keeps_its_id_and_hash(client, merchant, app_engine, worker_engine):
+    from dataclasses import replace
+
+    from app import actions
+    dispute_id = ready_case(merchant, app_engine, worker_engine)
+    before = cards(client, dispute_id=str(dispute_id))[0]
+    p = actions.Proposal(before["kind"], f"dispute:{dispute_id}", before["title"], before["rationale"],
+                         before["payload"])
+    result = actions.save(merchant, p.subject_key, dispute_id, [replace(p, rationale="Clearer words.")], worker_engine)
+    after = cards(client, dispute_id=str(dispute_id))[0]
+    assert result["kept"] == 1 and after["id"] == before["id"] and after["payload_hash"] == before["payload_hash"]
+    assert after["rationale"] == "Clearer words."

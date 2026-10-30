@@ -30,7 +30,8 @@ PROOF_DOCUMENT = {
     "delivered": "proof of delivery",
 }
 PROVEN_WORDS = {"payment_matches": "payment", "shipped": "shipping", "delivered": "delivery",
-                "delivery_date_consistent": "the delivery date", "buyer_messages_clean": "clean buyer messages"}
+                "delivery_date_consistent": "the delivery date", "buyer_messages_clean": "clean buyer messages",
+                "paypal_request_covered": "what PayPal asked for"}
 
 # Transaction Search hold codes and the code that releases each (PayPal event code reference).
 HOLDS = {"T1110": "dispute", "T2107": "payment", "T2103": "reserve", "T2105": "review"}
@@ -261,6 +262,9 @@ def save(merchant_id: UUID, subject_key: str, dispute_id: UUID | None, proposals
         for row in open_rows:
             new = wanted.get(row.kind)
             if new is not None and new.payload_hash == row.payload_hash:
+                # Same decision, so the card (and an approval bound to its hash) stays; only the wording may improve.
+                s.execute(text("UPDATE agent_actions SET title = :t, rationale = :r WHERE id = :id"),
+                          {"t": new.title, "r": new.rationale, "id": row.id})
                 wanted.pop(row.kind)
                 kept += 1
                 continue
