@@ -151,3 +151,17 @@ def test_a_kept_card_takes_new_wording_but_keeps_its_id_and_hash(client, merchan
     after = cards(client, dispute_id=str(dispute_id))[0]
     assert result["kept"] == 1 and after["id"] == before["id"] and after["payload_hash"] == before["payload_hash"]
     assert after["rationale"] == "Clearer words."
+
+def test_a_sent_case_stays_quiet_after_a_sync_re_analyses_it(client, merchant, app_engine, worker_engine):
+    from datetime import datetime, timezone
+
+    from app import actions
+    dispute_id = ready_case(merchant, app_engine, worker_engine)
+    card = cards(client, dispute_id=str(dispute_id))[0]
+    app.dependency_overrides[paypal_sink] = lambda: FakePayPal()
+    assert client.post(f"/api/actions/{card['id']}/approve", json={"payload_hash": card["payload_hash"]}).status_code == 200
+    with tenant_session(merchant, app_engine) as s:   # PayPal moved on (no evidence wanted) and the sync re-analysed
+        s.execute(text("UPDATE disputes SET allowed_actions = '{accept_claim}' WHERE id = :d"), {"d": dispute_id})
+    run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
+    actions.refresh_dispute(merchant, dispute_id, datetime.now(timezone.utc), worker_engine)
+    assert cards(client, dispute_id=str(dispute_id)) == []

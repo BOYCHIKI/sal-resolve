@@ -197,6 +197,11 @@ export function summarySentence(d: Dispute, a: Analysis | null): { headline: str
     : `The customer disputes their ${item} payment.`;
   const paidOn = a ? factValue(a.facts, "order_date") : undefined;
   const paid = `They paid ${d.amount.value} ${d.amount.currency}${paidOn ? ` on ${date(paidOn)}` : ""} and asked PayPal for a refund.`;
+  if (d.internal_state === "SUBMITTED") {
+    const waiting = d.provider_status === "WAITING_FOR_BUYER_RESPONSE" ? "PayPal is waiting for the buyer to answer."
+      : d.provider_status === "RESOLVED" ? "PayPal has closed the case." : "PayPal is reviewing it.";
+    return { headline, detail: `${paid} You sent your evidence to PayPal. ${waiting} SAL keeps checking for you.` };
+  }
   if (!a) return { headline, detail: `${paid} SAL is still reading your documents.` };
   const missing = a.findings.filter((f) => f.kind === "missing").length;
   const conflicts = a.findings.filter((f) => f.kind === "conflict").length;

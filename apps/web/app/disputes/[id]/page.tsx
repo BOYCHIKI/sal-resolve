@@ -119,9 +119,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                   {due.text}. If PayPal gets no reply by then, it closes the case in the buyer’s favour.
                 </p>
               )}
-              <p className={`rounded-[18px] px-5 py-3.5 text-[17px] ${BOX[r.tone]}`}>
-                <span className="font-semibold">Next: </span>{a.next_action}
-              </p>
+              {!sent && (
+                <p className={`rounded-[18px] px-5 py-3.5 text-[17px] ${BOX[r.tone]}`}>
+                  <span className="font-semibold">Next: </span>{a.next_action}
+                </p>
+              )}
               <ul className="flex flex-col gap-2.5">
                 {a.propositions.map((p) => {
                   const look = propositionLook(p.status);

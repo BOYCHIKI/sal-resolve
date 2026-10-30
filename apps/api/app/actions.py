@@ -302,8 +302,12 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
             return {"skipped": "dispute not found"}
         a = s.execute(text("""SELECT id, assessment, snapshot_hash FROM analyses WHERE dispute_id = :d
                               ORDER BY created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
+        # A sync after the send re-analyses and adds a fresh DRAFT revision; while PayPal is not asking for
+        # evidence again, the sent revision is the one that counts, so the case stays "sent" with no new card.
         dr = s.execute(text("""SELECT id, revision, status FROM drafts WHERE dispute_id = :d
-                               ORDER BY revision DESC LIMIT 1"""), {"d": dispute_id}).first()
+                               ORDER BY (status IN ('SUBMITTING', 'SUBMITTED') AND NOT :asks) DESC, revision DESC
+                               LIMIT 1"""),
+                       {"d": dispute_id, "asks": "provide_evidence" in (d.allowed_actions or ())}).first()
         photos = s.execute(text("""SELECT count(*) FROM evidence WHERE dispute_id = :d AND doc_type = 'packing_proof'
                                    AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar()
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
