@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 DISPUTE_COLUMNS = """
     id, merchant_id, origin, provider_dispute_id, case_ref, reason, amount, currency,
     provider_status, lifecycle_stage, internal_state, deadline_at, allowed_actions,
-    provider_updated_at, version, updated_at
+    provider_updated_at, version, updated_at,
+    provider_payload->>'dispute_channel' AS channel
 """
 
 
@@ -40,6 +41,7 @@ class DisputeRow:
     provider_updated_at: datetime | None
     version: int
     updated_at: datetime
+    channel: str | None = None   # PayPal dispute_channel: INTERNAL (filed with PayPal) or EXTERNAL (bank chargeback)
 
 
 def list_disputes(session: Session, merchant_id: UUID, *, limit: int = 50,

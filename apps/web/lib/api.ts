@@ -16,6 +16,7 @@ export type Dispute = {
   amount: Money;
   provider_status: string;
   lifecycle_stage: string | null;
+  channel?: string | null;   // INTERNAL: filed with PayPal; EXTERNAL: a bank chargeback
   internal_state: string;
   deadline_at: string | null;
   allowed_actions: string[];

@@ -4,7 +4,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Label } from "@/components/landing/Label";
 import { SyncButton } from "@/components/SyncButton";
 import { api, type AgentAction, type Dispute } from "@/lib/api";
-import { dueText, nextStep, orderNumber, origin, reason, type Tone } from "@/lib/plain";
+import { caseTypeOf, dueText, nextStep, orderNumber, origin, reason, stageOf, type Tone } from "@/lib/plain";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +20,18 @@ type Row = { d: Dispute; step: ReturnType<typeof nextStep>; due: ReturnType<type
 
 function CaseRow({ d, step, due }: Row) {
   const order = orderNumber(d.summary?.order_ref);
+  const type = caseTypeOf(d);
+  const stage = stageOf(d);
   return (
     <Link href={`/disputes/${d.id}`} className="lp-card group flex flex-wrap items-center gap-5 px-6 py-[18px] transition-colors">
       <div className="flex min-w-0 flex-[999_1_280px] flex-col gap-1">
         <span className="text-[17px] font-semibold">{d.summary?.item ?? "Order"}</span>
         <span className="muted text-[15px]">
           {reason(d.reason)}{order ? ` · Order ${order}` : ""} · {origin(d.origin)}
-          {d.lifecycle_stage === "CHARGEBACK" && <span className="font-semibold text-red-ink"> · Chargeback: the bank decides</span>}
+        </span>
+        <span className="flex flex-wrap gap-1.5 text-xs font-medium">
+          <span className={`rounded-full px-2.5 py-1 ${PILL[type.tone]}`}>{type.title}</span>
+          {stage && <span className={`rounded-full px-2.5 py-1 ${PILL[stage.tone]}`}>{stage.label}</span>}
         </span>
       </div>
       <div className="flex flex-[1_1_120px] flex-col text-right">

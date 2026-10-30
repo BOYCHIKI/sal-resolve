@@ -233,7 +233,16 @@ def test_a_dispute_sal_does_not_argue_gets_an_explanation_never_a_send(reason, w
     assert words in cards[0].rationale and cards[0].payload == {"reason": reason}
 
 
-# --------------------------------------------------------------- chargeback stage
+# --------------------------------------------------------------- bank chargeback (channel EXTERNAL)
+BANK = dict(lifecycle_stage="CHARGEBACK", channel="EXTERNAL")
+
+
+def test_a_claim_paypal_decides_is_not_called_a_bank_chargeback():
+    # PayPal's CHARGEBACK stage on the INTERNAL channel is an escalated claim: PayPal decides, the usual send applies.
+    cards = actions.propose_for_dispute(dispute(lifecycle_stage="CHARGEBACK", channel="INTERNAL"), READY, DRAFT, NOW)
+    assert [c.title for c in cards] == ["Send your evidence to PayPal"]
+    assert "bank" not in cards[0].rationale
+
 READY_WITH_POD = AnalysisState(readiness="READY", snapshot_hash="d" * 64, propositions=[
     *READY.propositions[:3],
     prop("delivery_date_consistent", "proven", "Courier and proof agree on 2026-10-19", [{"evidence_id": "E4", "line": 3}]),
@@ -241,14 +250,14 @@ READY_WITH_POD = AnalysisState(readiness="READY", snapshot_hash="d" * 64, propos
 
 
 def test_a_chargeback_ready_only_on_courier_status_asks_for_the_proof_of_delivery_first():
-    cards = actions.propose_for_dispute(dispute(lifecycle_stage="CHARGEBACK"), READY, DRAFT, NOW)
+    cards = actions.propose_for_dispute(dispute(**BANK), READY, DRAFT, NOW)
     assert kinds(cards) == ["ADD_DOCUMENT"]
     assert cards[0].title == "Add proof of delivery for the chargeback"
     assert "bank decides" in cards[0].rationale and cards[0].payload["stage"] == "CHARGEBACK"
 
 
 def test_a_chargeback_with_matching_proof_of_delivery_gets_a_send_card_that_says_the_bank_decides():
-    cards = actions.propose_for_dispute(dispute(lifecycle_stage="CHARGEBACK"), READY_WITH_POD, DRAFT, NOW)
+    cards = actions.propose_for_dispute(dispute(**BANK), READY_WITH_POD, DRAFT, NOW)
     assert kinds(cards) == ["SEND_EVIDENCE"]
     assert cards[0].title == "Send your chargeback evidence to PayPal"
     assert "Seller Protection does not apply" in cards[0].rationale
@@ -256,7 +265,7 @@ def test_a_chargeback_with_matching_proof_of_delivery_gets_a_send_card_that_says
 
 
 def test_a_chargeback_missing_documents_names_the_document_and_the_stage():
-    cards = actions.propose_for_dispute(dispute(lifecycle_stage="CHARGEBACK"), MISSING, DRAFT, NOW)
+    cards = actions.propose_for_dispute(dispute(**BANK), MISSING, DRAFT, NOW)
     assert [c.title for c in cards] == ["Add proof of delivery for the chargeback"]
     assert "IN_TRANSIT" in cards[0].rationale
 
@@ -266,7 +275,7 @@ def test_an_inquiry_keeps_the_ordinary_cards():
 
 
 def test_a_case_paypal_is_not_taking_documents_on_explains_instead_of_asking_for_an_upload():
-    d = dispute(lifecycle_stage="CHARGEBACK", provider_status="UNDER_REVIEW", allowed_actions=("accept_claim",))
+    d = dispute(**BANK, provider_status="UNDER_REVIEW", allowed_actions=("accept_claim",))
     cards = actions.propose_for_dispute(d, MISSING, DRAFT, NOW)
     assert [(c.kind, c.title) for c in cards] == [("EXPLAIN_DISPUTE", "PayPal is reviewing this case")]
     assert "chargeback" in cards[0].rationale

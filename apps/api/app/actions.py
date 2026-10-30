@@ -59,6 +59,12 @@ class DisputeState:
     lifecycle_stage: str | None = None   # PayPal's stage: INQUIRY, CHARGEBACK, ...
     packing_photos: int = 0              # photos from a packing record attached to the case (ADR-007)
     offer_types: tuple[str, ...] = ()    # PayPal's allowed_response_options.make_offer.offer_types
+    channel: str | None = None           # EXTERNAL: the buyer went to their bank (a real chargeback)
+
+    @property
+    def bank_chargeback(self) -> bool:
+        # PayPal's CHARGEBACK *stage* is a claim PayPal itself decides; only the EXTERNAL channel is the bank.
+        return self.channel == "EXTERNAL"
 
 
 @dataclass(frozen=True)
@@ -124,7 +130,7 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
         return cards
     if d.origin == "PAYPAL_SANDBOX" and "provide_evidence" not in d.allowed_actions:
         # PayPal is not taking documents now (e.g. under review), so asking for an upload would be a dead end.
-        stage = "chargeback" if d.lifecycle_stage == "CHARGEBACK" else "case"
+        stage = "chargeback" if d.bank_chargeback else "claim" if d.lifecycle_stage == "CHARGEBACK" else "case"
         cards.append(Proposal(
             "EXPLAIN_DISPUTE", subject, "PayPal is reviewing this case",
             f"PayPal is not accepting documents on this {stage} right now. SAL keeps checking and adds a suggestion "
@@ -134,7 +140,7 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
         return cards
 
     by_id = {p["id"]: p for p in analysis.propositions}
-    if d.lifecycle_stage == "CHARGEBACK":
+    if d.bank_chargeback:
         return cards + _chargeback_cards(d, analysis, draft, subject, by_id)
     if analysis.readiness in ("NEEDS_DOCUMENTS", "WEAK"):
         missing = [p["id"] for p in analysis.propositions
@@ -296,7 +302,8 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
     with tenant_session(merchant_id, engine) as s:
         d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency,
                                      reason, lifecycle_stage,
-                                     provider_payload #> '{allowed_response_options,make_offer,offer_types}' AS offers
+                                     provider_payload #> '{allowed_response_options,make_offer,offer_types}' AS offers,
+                                     provider_payload ->> 'dispute_channel' AS channel
                               FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
         if d is None:
             return {"skipped": "dispute not found"}
@@ -311,7 +318,8 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
         photos = s.execute(text("""SELECT count(*) FROM evidence WHERE dispute_id = :d AND doc_type = 'packing_proof'
                                    AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar()
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
-                         str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos, tuple(d.offers or ()))
+                         str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos, tuple(d.offers or ()),
+                         d.channel)
     analysis = (AnalysisState(a.assessment["readiness"], a.snapshot_hash, a.assessment.get("propositions", []))
                 if a is not None and a.assessment else None)
     draft = DraftState(dr.id, dr.revision, dr.status) if dr is not None else None

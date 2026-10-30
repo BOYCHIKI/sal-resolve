@@ -109,7 +109,7 @@ def _serialize(row: repo.DisputeRow) -> dict:
         "case_ref": row.case_ref, "reason": row.reason,
         "amount": {"value": money_str(row.amount, row.currency), "currency": row.currency},
         "provider_status": row.provider_status, "lifecycle_stage": row.lifecycle_stage,
-        "internal_state": row.internal_state,
+        "internal_state": row.internal_state, "channel": row.channel,
         "deadline_at": row.deadline_at.isoformat() if row.deadline_at else None,
         "allowed_actions": row.allowed_actions, "version": row.version,
     }

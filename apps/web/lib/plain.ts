@@ -6,6 +6,11 @@ const REASONS: Record<string, string> = {
   ITEM_NOT_RECEIVED: "Says it never arrived",
   MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED: "Says it wasn’t as described",
   UNAUTHORISED: "Says they didn’t make this payment",
+  CREDIT_NOT_PROCESSED: "Says a promised refund never came",
+  DUPLICATE_TRANSACTION: "Says they were charged twice",
+  INCORRECT_AMOUNT: "Says they were charged the wrong amount",
+  PAYMENT_BY_OTHER_MEANS: "Says they already paid another way",
+  CANCELED_RECURRING_BILLING: "Says they cancelled this subscription",
 };
 
 export function reason(code: string): string {
@@ -212,31 +217,58 @@ export function summarySentence(d: Dispute, a: Analysis | null): { headline: str
   return { headline, detail: `${paid} Your documents back this up. Read the reply and approve it.` };
 }
 
-// ---------------------------------------------------------------- demo: one group per job SAL does
-export type DemoJob = { key: string; title: string; what: string; tone: Tone };
+// ---------------------------------------------------------------- case types (PayPal's 10 dispute reasons)
+// Sellers can't know which kind of case comes next, so every type is listed with what SAL does for it.
+export type CaseType = { key: string; title: string; buyer: string; sal: string; tone: Tone };
 
-export const JOBS: DemoJob[] = [
-  { key: "ready", title: "Ready to send", tone: "green",
-    what: "The documents prove payment, shipping and delivery. SAL drafts the reply; you read it and press send." },
-  { key: "missing", title: "A document is missing", tone: "amber",
-    what: "SAL names the one document that would win the case, so you know exactly what to add." },
-  { key: "check", title: "Something doesn’t add up", tone: "red",
-    what: "Two documents disagree, like a different date or amount. SAL shows where, before PayPal notices." },
-  { key: "chargeback", title: "Chargeback", tone: "red",
-    what: "The buyer went to their bank. SAL explains what changes and asks for stronger proof." },
-  { key: "snad", title: "Not as described", tone: "blue",
-    what: "SAL doesn’t argue these. It explains your options and can send a refund offer you choose." },
-  { key: "sent", title: "Sent to PayPal", tone: "grey",
-    what: "After you approve, SAL sends once and keeps watching the case for you." },
+export const CASE_TYPES: CaseType[] = [
+  { key: "not_received", title: "Not received", tone: "amber",
+    buyer: "The buyer says the parcel never arrived.",
+    sal: "SAL checks your payment, tracking and delivery proof, names what’s missing and drafts the reply you approve." },
+  { key: "not_as_described", title: "Not as described", tone: "blue",
+    buyer: "The buyer says the item is wrong, damaged or different.",
+    sal: "SAL explains your options, adds your packing photos and can send a refund offer of an amount you choose." },
+  { key: "bank_chargeback", title: "Bank chargeback", tone: "red",
+    buyer: "The buyer asked their bank or card company for the money back.",
+    sal: "The bank decides and Seller Protection doesn’t apply, so SAL asks for proof of delivery before you send." },
+  { key: "unauthorized", title: "Unauthorized payment", tone: "red",
+    buyer: "The buyer says they didn’t make this payment.",
+    sal: "SAL flags and explains it; you answer it in PayPal. SAL only builds replies for parcels that didn’t arrive." },
+  { key: "refund_missing", title: "Refund not received", tone: "grey",
+    buyer: "The buyer says you promised a refund that never came.",
+    sal: "SAL flags it so it isn’t missed; check your refunds and answer it in PayPal." },
+  { key: "billing", title: "Billing problem", tone: "grey",
+    buyer: "Charged twice, the wrong amount, paid another way, or a cancelled subscription.",
+    sal: "SAL flags it so it isn’t missed; check the payment and answer it in PayPal." },
+  { key: "other", title: "Other", tone: "grey",
+    buyer: "A reason PayPal doesn’t list.",
+    sal: "SAL flags it so it isn’t missed; read the buyer’s message in PayPal." },
 ];
 
-/** Which of SAL's jobs a case shows off, most specific first. */
-export function jobOf(d: Dispute): string {
-  if (d.internal_state === "SUBMITTED") return "sent";
-  if (d.lifecycle_stage === "CHARGEBACK") return "chargeback";
-  if (d.reason !== "ITEM_NOT_RECEIVED") return "snad";
-  const r = d.summary?.readiness;
-  if (r === "READY") return "ready";
-  if (r === "NEEDS_CHECK") return "check";
-  return "missing";
+const TYPE_BY_REASON: Record<string, string> = {
+  ITEM_NOT_RECEIVED: "not_received",
+  MERCHANDISE_OR_SERVICE_NOT_RECEIVED: "not_received",
+  MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED: "not_as_described",
+  UNAUTHORISED: "unauthorized",
+  CREDIT_NOT_PROCESSED: "refund_missing",
+  DUPLICATE_TRANSACTION: "billing",
+  INCORRECT_AMOUNT: "billing",
+  PAYMENT_BY_OTHER_MEANS: "billing",
+  CANCELED_RECURRING_BILLING: "billing",
+  PROBLEM_WITH_REMITTANCE: "billing",
+};
+
+/** The case type a seller would name it by. A bank chargeback is its own type whatever the reason. */
+export function caseTypeOf(d: Dispute): CaseType {
+  const key = d.channel === "EXTERNAL" ? "bank_chargeback" : TYPE_BY_REASON[d.reason] ?? "other";
+  return CASE_TYPES.find((t) => t.key === key)!;
+}
+
+/** Where the case is in PayPal's process. PayPal's CHARGEBACK stage on its own channel is a claim PayPal decides. */
+export function stageOf(d: Dispute): { label: string; tone: Tone } | null {
+  if (d.channel === "EXTERNAL") return { label: "The bank decides", tone: "red" };
+  if (d.lifecycle_stage === "INQUIRY") return { label: "Talking with the buyer", tone: "blue" };
+  if (d.lifecycle_stage === "CHARGEBACK") return { label: "Claim: PayPal decides", tone: "amber" };
+  if (d.lifecycle_stage === "PRE_ARBITRATION" || d.lifecycle_stage === "ARBITRATION") return { label: "Appeal", tone: "amber" };
+  return null;
 }

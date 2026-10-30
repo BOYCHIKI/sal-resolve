@@ -5,8 +5,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { DraftActions } from "@/components/DraftActions";
 import { UploadEvidence } from "@/components/UploadEvidence";
 import { api } from "@/lib/api";
-import { docName, docRef, dueText, explain, origin, propositionLook, propositionTitle, readableFacts, readiness, summarySentence,
-  type Tone } from "@/lib/plain";
+import { caseTypeOf, docName, docRef, dueText, explain, origin, propositionLook, propositionTitle, readableFacts, readiness,
+  stageOf, summarySentence, type Tone } from "@/lib/plain";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +46,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   if (!dispute) notFound();
 
   const currency = dispute.amount.currency;
+  const type = caseTypeOf(dispute);
+  const stage = stageOf(dispute);
   const due = dueText(dispute.deadline_at);
   const { headline, detail } = summarySentence(dispute, analysis);
   const findings = analysis?.findings ?? [];
@@ -81,10 +83,12 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           <div className="flex flex-wrap justify-between gap-5">
             <div className="flex max-w-2xl flex-col gap-2.5">
               <span className="lp-label self-start">{origin(dispute.origin)}</span>
-              {dispute.lifecycle_stage === "CHARGEBACK" && (
-                <span className="self-start rounded-full bg-red-bg px-3 py-1 text-sm font-semibold text-red-ink">
-                  Chargeback · the buyer’s bank decides, Seller Protection does not apply
-                </span>
+              <span className="flex flex-wrap gap-2 text-sm font-semibold">
+                <span className={`rounded-full px-3 py-1 ${BOX[type.tone]}`}>{type.title}</span>
+                {stage && <span className={`rounded-full px-3 py-1 ${BOX[stage.tone]}`}>{stage.label}</span>}
+              </span>
+              {dispute.channel === "EXTERNAL" && (
+                <p className="text-[15px] font-semibold text-red-ink">The buyer’s bank decides, and PayPal Seller Protection does not apply.</p>
               )}
               <h1 className="display text-[30px] sm:text-[44px]">{headline}</h1>
               <p className="text-lg text-ink-soft">{detail}</p>
