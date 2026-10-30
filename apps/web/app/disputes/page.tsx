@@ -26,6 +26,7 @@ function CaseRow({ d, step, due }: Row) {
         <span className="text-[17px] font-semibold">{d.summary?.item ?? "Order"}</span>
         <span className="muted text-[15px]">
           {reason(d.reason)}{order ? ` · Order ${order}` : ""} · {origin(d.origin)}
+          {d.lifecycle_stage === "CHARGEBACK" && <span className="font-semibold text-red-ink"> · Chargeback: the bank decides</span>}
         </span>
       </div>
       <div className="flex flex-[1_1_120px] flex-col text-right">
@@ -83,7 +84,10 @@ export default async function DisputesPage() {
               <h1 className="display text-[42px] sm:text-6xl">What SAL found</h1>
               <p className="muted max-w-2xl text-[17px]">SAL checks your PayPal account and tells you what needs doing. Nothing is sent without your OK.</p>
             </div>
-            <SyncButton />
+            <div className="flex flex-wrap items-center gap-4">
+              <Link href="/packing" className="text-[15px] font-semibold underline underline-offset-4">Packing proof</Link>
+              <SyncButton />
+            </div>
           </div>
 
           {error && (

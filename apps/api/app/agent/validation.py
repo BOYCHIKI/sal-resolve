@@ -25,6 +25,8 @@ DOC_FIELDS: dict[str, tuple[str, ...]] = {
     "support_message": ("reported_payment_amount",),
     # A resi the seller typed in (evidence.add_tracking_number): it names the parcel, it proves nothing else.
     "seller_shipment": ("tracking_id",),
+    # Photos and a summary the seller recorded before shipping (packing.py, ADR-007): what was packed, never delivery.
+    "packing_proof": (),
 }
 MONEY_FIELDS = {"order_amount", "payment_amount", "reported_payment_amount"}
 CURRENCY_FIELDS = {"currency", "payment_currency"}

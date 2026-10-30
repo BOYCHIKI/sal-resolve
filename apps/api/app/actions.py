@@ -54,6 +54,8 @@ class DisputeState:
     amount: str
     currency: str
     reason: str = "ITEM_NOT_RECEIVED"
+    lifecycle_stage: str | None = None   # PayPal's stage: INQUIRY, CHARGEBACK, ...
+    packing_photos: int = 0              # photos from a packing record attached to the case (ADR-007)
 
 
 @dataclass(frozen=True)
@@ -108,8 +110,20 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
         return cards
     if analysis is None:
         return cards
+    if d.origin == "PAYPAL_SANDBOX" and "provide_evidence" not in d.allowed_actions:
+        # PayPal is not taking documents now (e.g. under review), so asking for an upload would be a dead end.
+        stage = "chargeback" if d.lifecycle_stage == "CHARGEBACK" else "case"
+        cards.append(Proposal(
+            "EXPLAIN_DISPUTE", subject, "PayPal is reviewing this case",
+            f"PayPal is not accepting documents on this {stage} right now. SAL keeps checking and adds a suggestion "
+            "as soon as PayPal asks for something.",
+            payload={"waiting": "provide_evidence", "status": d.provider_status, "stage": d.lifecycle_stage},
+            due_at=d.deadline_at))
+        return cards
 
     by_id = {p["id"]: p for p in analysis.propositions}
+    if d.lifecycle_stage == "CHARGEBACK":
+        return cards + _chargeback_cards(d, analysis, draft, subject, by_id)
     if analysis.readiness in ("NEEDS_DOCUMENTS", "WEAK"):
         missing = [p["id"] for p in analysis.propositions
                    if p["status"] == "missing" and p["id"] in PROOF_DOCUMENT]
@@ -124,10 +138,50 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
         cards.append(Proposal(
             "SEND_EVIDENCE", subject, "Send your evidence to PayPal",
             "Your documents prove " + ", ".join(PROVEN_WORDS.get(p["id"], p["id"]) for p in proven)
-            + ". SAL sends them only after you approve.",
+            + "." + _packing_note(d) + " SAL sends them only after you approve.",
             payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash},
             sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at))
     return cards
+
+
+CHARGEBACK_NOTE = ("This case is now a chargeback: the buyer's bank decides, not PayPal, and PayPal Seller "
+                   "Protection does not apply.")
+
+
+def _chargeback_cards(d: DisputeState, analysis: AnalysisState, draft: DraftState | None, subject: str,
+                      by_id: dict[str, dict[str, Any]]) -> list[Proposal]:
+    """A chargeback is argued with the same evidence, but a bank weighs it, so SAL asks for more before sending:
+    the courier's delivery date and a proof of delivery that agree (delivery_date_consistent proven), not only a
+    DELIVERED status."""
+    missing = [pid for pid, p in by_id.items() if p["status"] == "missing" and pid in PROOF_DOCUMENT]
+    if analysis.readiness in ("NEEDS_DOCUMENTS", "WEAK") and missing:
+        why = by_id[missing[0]]["reason"]
+        return [Proposal("ADD_DOCUMENT", subject, f"Add {PROOF_DOCUMENT[missing[0]]} for the chargeback",
+                         f"{CHARGEBACK_NOTE} {why}. Upload it and SAL checks the case again.",
+                         payload={"missing": missing, "stage": "CHARGEBACK"}, due_at=d.deadline_at)]
+    pod_checked = by_id.get("delivery_date_consistent", {}).get("status") == "proven"
+    if analysis.readiness == "READY" and not pod_checked:   # READY for PayPal, not yet for a bank
+        return [Proposal("ADD_DOCUMENT", subject, "Add proof of delivery for the chargeback",
+                         f"{CHARGEBACK_NOTE} A courier status alone is weaker in front of a bank: add the proof of "
+                         "delivery with its date, so SAL can check it against the courier's. Upload it and SAL checks "
+                         "the case again.",
+                         payload={"missing": ["delivered"], "stage": "CHARGEBACK"}, due_at=d.deadline_at)]
+    if (analysis.readiness == "READY" and draft is not None and draft.status in SENDABLE_DRAFT
+            and "provide_evidence" in d.allowed_actions and d.origin == "PAYPAL_SANDBOX"):
+        proven = [p for p in by_id.values() if p["status"] == "proven"]
+        return [Proposal(
+            "SEND_EVIDENCE", subject, "Send your chargeback evidence to PayPal",
+            f"{CHARGEBACK_NOTE} Your documents prove "
+            + ", ".join(PROVEN_WORDS.get(p["id"], p["id"]) for p in proven)
+            + "." + _packing_note(d) + " PayPal passes them to the bank; SAL sends them only after you approve.",
+            payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash,
+                     "stage": "CHARGEBACK"},
+            sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at)]
+    return []
+
+
+def _packing_note(d: DisputeState) -> str:
+    return f" Your {d.packing_photos} packing photo(s) go with them." if d.packing_photos else ""
 
 
 def _explain_dispute(d: DisputeState, subject: str) -> Proposal:
@@ -136,6 +190,10 @@ def _explain_dispute(d: DisputeState, subject: str) -> Proposal:
         why = ("SAL only builds replies for parcels that did not arrive, and PayPal Seller Protection does not cover "
                "'not as described' claims. Realistic choices in PayPal: offer a partial refund, a full refund, or "
                "a refund after the buyer returns the item. SAL will not argue this case for you.")
+        why += (f" Your packing record ({d.packing_photos} photo(s), recorded before shipping) is on the case: it "
+                "shows what you packed, which helps your answer in PayPal, but PayPal decides."
+                if d.packing_photos else
+                " Next time, record the parcel in SAL before shipping (Packing proof) so you have photos to show.")
     else:
         title = "SAL can't prepare a reply for this kind of dispute"
         why = ("SAL only builds replies for parcels that did not arrive. Read the buyer's claim in PayPal and answer "
@@ -216,15 +274,17 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
     """Recompute the open cards for one dispute from its current PayPal state, analysis and draft. Worker only."""
     with tenant_session(merchant_id, engine) as s:
         d = s.execute(text("""SELECT id, origin, provider_status, deadline_at, allowed_actions, amount, currency,
-                                     reason FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
+                                     reason, lifecycle_stage FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
         if d is None:
             return {"skipped": "dispute not found"}
         a = s.execute(text("""SELECT id, assessment, snapshot_hash FROM analyses WHERE dispute_id = :d
                               ORDER BY created_at DESC LIMIT 1"""), {"d": dispute_id}).first()
         dr = s.execute(text("""SELECT id, revision, status FROM drafts WHERE dispute_id = :d
                                ORDER BY revision DESC LIMIT 1"""), {"d": dispute_id}).first()
+        photos = s.execute(text("""SELECT count(*) FROM evidence WHERE dispute_id = :d AND doc_type = 'packing_proof'
+                                   AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar()
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
-                         str(d.amount), d.currency, d.reason)
+                         str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos)
     analysis = (AnalysisState(a.assessment["readiness"], a.snapshot_hash, a.assessment.get("propositions", []))
                 if a is not None and a.assessment else None)
     draft = DraftState(dr.id, dr.revision, dr.status) if dr is not None else None

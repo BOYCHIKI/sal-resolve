@@ -15,6 +15,29 @@ def render_text_pdf(lines: list[str]) -> bytes:
     for line in lines:
         ops.append(f"({_escape(line)}) Tj T*")
     ops.append("ET")
+    return _single_page(ops)
+
+
+def render_label_pdf(matrix: list[list[bool]], lines: list[str], module: float = 4.0) -> bytes:
+    """A printable label: the QR drawn as filled squares (vector, so it prints sharp at any size) above the text."""
+    quiet, n = 4, len(matrix)
+    side = (n + 2 * quiet) * module
+    left, top = 50.0, 790.0
+    ops = ["0 g"]
+    for r, row in enumerate(matrix):
+        for c, dark in enumerate(row):
+            if dark:
+                x = left + (c + quiet) * module
+                y = top - (r + quiet + 1) * module
+                ops.append(f"{x:.2f} {y:.2f} {module:.2f} {module:.2f} re f")
+    ops += ["BT", "/F1 12 Tf", "16 TL", f"{left:.2f} {top - side - 16:.2f} Td"]
+    for line in lines:
+        ops.append(f"({_escape(line)}) Tj T*")
+    ops.append("ET")
+    return _single_page(ops)
+
+
+def _single_page(ops: list[str]) -> bytes:
     stream = "\n".join(ops).encode("latin-1")
 
     objects = [

@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app import logs
 from app import repositories as repo
 from app import actions
 from app import evidence as evidence_store
+from app import packing
 from app import submission
 from app.config import get_settings, require_valid
 from app.db import app_engine, tenant_session
@@ -48,6 +49,7 @@ app = FastAPI(title="SAL Resolve API", version="0.1.0", lifespan=lifespan,
 OPEN_PATHS = {"/api/health", "/webhooks/paypal"}
 MAX_BODY_BYTES = 256 * 1024              # JSON bodies
 MAX_UPLOAD_BYTES = 11 * 1024 * 1024      # one evidence file (< 10 MB) plus multipart overhead
+MAX_PACKING_BYTES = 51 * 1024 * 1024     # one packing video (< 50 MB) plus multipart overhead
 
 
 @app.middleware("http")
@@ -56,7 +58,8 @@ async def guard(request: Request, call_next):
     prod), answer only the SAL web server. The browser never talks to this API directly."""
     path = request.url.path
     declared = request.headers.get("content-length")
-    limit = MAX_UPLOAD_BYTES if path.endswith("/evidence") else MAX_BODY_BYTES
+    limit = (MAX_PACKING_BYTES if path.startswith("/api/packing/") and path.endswith("/files")
+             else MAX_UPLOAD_BYTES if path.endswith("/evidence") else MAX_BODY_BYTES)
     if declared is not None and (not declared.isdigit() or int(declared) > limit):
         return JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE", "retryable": False}}, status_code=413)
     token = get_settings().internal_token
@@ -380,3 +383,49 @@ async def upload_evidence(dispute_id: UUID, file: UploadFile = File(...), doc_ty
         raise HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": False}) from None
     return {"evidence_id": str(stored.evidence_id), "mime": stored.mime, "text_lines": stored.lines,
             "analysis_queued": stored.job_queued}
+
+
+# ---------------------------------------------------------------- packing proof vault (ADR-007)
+class PackingBody(BaseModel):
+    order_ref: str | None = Field(default=None, max_length=80)
+    transaction_id: str | None = Field(default=None, max_length=40)
+    tracking_number: str | None = Field(default=None, max_length=60)
+
+
+def _evidence_error(exc: evidence_store.EvidenceError) -> HTTPException:
+    return HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": False})
+
+
+@app.post("/api/packing", status_code=201)
+def create_packing(body: PackingBody, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """Record a parcel before shipping; returns the random code that the QR label carries."""
+    try:
+        return packing.create(merchant_id, body.order_ref, body.transaction_id, body.tracking_number, DEMO_ACTOR)
+    except evidence_store.EvidenceError as exc:
+        raise _evidence_error(exc) from None
+
+
+@app.get("/api/packing")
+def list_packing(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    return {"items": packing.list_records(merchant_id)}
+
+
+@app.post("/api/packing/{packing_id}/files", status_code=201)
+async def add_packing_file(packing_id: UUID, file: UploadFile = File(...),
+                           merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """A photo (< 10 MB) or a short video (< 50 MB) of the parcel being packed, with the label in view."""
+    data = await file.read(packing.MAX_VIDEO_BYTES + 1)
+    try:
+        return await run_in_threadpool(packing.add_file, merchant_id, packing_id, data, DEMO_ACTOR,
+                                       get_settings().storage_dir)
+    except evidence_store.EvidenceError as exc:
+        raise _evidence_error(exc) from None
+
+
+@app.get("/api/packing/{packing_id}/label.pdf")
+def packing_label(packing_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> Response:
+    pdf = packing.label_pdf(merchant_id, packing_id)
+    if pdf is None:
+        raise HTTPException(404, detail={"code": "PACKING_NOT_FOUND", "retryable": False})
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'attachment; filename="sal-packing-label.pdf"'})

@@ -107,6 +107,18 @@ export type AgentAction = {
 
 export type Job = { id: string; kind: string; state: string; attempts: number; error: string | null };
 
+/** Photos/video of a parcel recorded before shipping (ADR-007). SAL matches it to a dispute later. */
+export type PackingRecord = {
+  id: string;
+  code: string;
+  order_ref: string | null;
+  transaction_id: string | null;
+  tracking_number: string | null;
+  created_at: string;
+  expires_at: string;
+  files: { id: string; mime: string; sha256: string; size_bytes: number }[];
+};
+
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
   const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { ...INTERNAL, ...init?.headers } });
   if (res.status === 404 || res.status === 422) return null; // unknown or malformed id
@@ -166,4 +178,14 @@ export const api = {
     action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash }),
   dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
+  listPacking: async () => (await call<{ items: PackingRecord[] }>("/api/packing"))?.items ?? [],
+  createPacking: (orderRef: string, transactionId: string, trackingNumber: string) =>
+    action("/api/packing", {
+      order_ref: orderRef || null, transaction_id: transactionId || null, tracking_number: trackingNumber || null,
+    }),
+  uploadPacking: (packingId: string, form: FormData) =>
+    upload(`/api/packing/${encodeURIComponent(packingId)}/files`, form),
+  /** The printable QR label, streamed back to the browser by app/packing/[id]/label/route.ts. */
+  packingLabel: (packingId: string) =>
+    fetch(`${API_URL}/api/packing/${encodeURIComponent(packingId)}/label.pdf`, { cache: "no-store", headers: INTERNAL }),
 };

@@ -26,9 +26,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Uploads go browser -> server action -> API, one file per call. The API allows 10 MB per file;
-  // the default 1 MB action limit would reject most PDFs.
-  experimental: { serverActions: { bodySizeLimit: "11mb" } },
+  // Uploads go browser -> server action -> API, one file per call. The API allows 10 MB per document
+  // and 50 MB per packing video (ADR-007); the default 1 MB action limit would reject most of them.
+  experimental: { serverActions: { bodySizeLimit: "51mb" } },
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

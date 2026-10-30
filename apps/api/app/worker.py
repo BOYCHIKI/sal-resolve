@@ -72,6 +72,8 @@ def _analyze(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     if job.target_id is None:
         raise PermanentError("analyze_dispute job without target dispute")
     from app.agent.runner import run_analysis
+    from app.packing import attach_to_dispute
+    attach_to_dispute(job.merchant_id, job.target_id, ctx.engine)   # a matching packing record is read too
     return run_analysis(job.merchant_id, job.target_id, job.id, ctx.roles_factory(), ctx.engine)
 
 
@@ -121,7 +123,23 @@ def _refresh_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     from app.actions import refresh_open_disputes
-    return refresh_open_disputes(job.merchant_id, datetime.now(timezone.utc), ctx.engine)
+    from app.config import get_settings
+    from app.packing import attach_to_dispute, purge_expired
+    # A packing record made after the dispute arrived is attached here, then the case is analysed again.
+    with tenant_session(job.merchant_id, ctx.engine) as s:
+        open_ids = s.execute(text("""SELECT id FROM disputes WHERE provider_status IS DISTINCT FROM 'RESOLVED'""")
+                             ).scalars().all()
+    attached = 0
+    for dispute_id in open_ids:
+        n = attach_to_dispute(job.merchant_id, dispute_id, ctx.engine)
+        if n:
+            attached += n
+            with tenant_session(job.merchant_id, ctx.engine) as s:
+                repo.enqueue_job(s, job.merchant_id, "analyze_dispute", f"analyze:{dispute_id}:packing:{job.id}",
+                                 dispute_id)
+    result = refresh_open_disputes(job.merchant_id, datetime.now(timezone.utc), ctx.engine)
+    return {**result, "packing_attached": attached,
+            "packing_purged": purge_expired(job.merchant_id, get_settings().storage_dir, ctx.engine)}
 
 
 HANDLERS: dict[str, Handler] = {

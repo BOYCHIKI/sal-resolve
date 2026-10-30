@@ -77,3 +77,27 @@ export async function addTracking(disputeId: string, trackingNumber: string, cou
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
+
+export async function createPacking(orderRef: string, transactionId: string, trackingNumber: string): Promise<ActionResult> {
+  try {
+    const result = await api.createPacking(orderRef.trim(), transactionId.trim(), trackingNumber.trim());
+    revalidatePath("/packing");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
+export async function uploadPacking(packingId: string, form: FormData): Promise<ActionResult> {
+  const file = form.get("file");
+  if (!(file instanceof File)) return { ok: false, code: "BAD_REQUEST", message: "Choose a photo or video." };
+  const outgoing = new FormData();
+  outgoing.append("file", file, file.name);
+  try {
+    const result = await api.uploadPacking(packingId, outgoing);
+    revalidatePath("/packing");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}

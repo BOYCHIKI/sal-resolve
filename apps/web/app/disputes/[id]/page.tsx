@@ -81,6 +81,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           <div className="flex flex-wrap justify-between gap-5">
             <div className="flex max-w-2xl flex-col gap-2.5">
               <span className="lp-label self-start">{origin(dispute.origin)}</span>
+              {dispute.lifecycle_stage === "CHARGEBACK" && (
+                <span className="self-start rounded-full bg-red-bg px-3 py-1 text-sm font-semibold text-red-ink">
+                  Chargeback · the buyer’s bank decides, Seller Protection does not apply
+                </span>
+              )}
               <h1 className="display text-[30px] sm:text-[44px]">{headline}</h1>
               <p className="text-lg text-ink-soft">{detail}</p>
             </div>

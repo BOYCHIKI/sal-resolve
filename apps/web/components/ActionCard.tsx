@@ -11,7 +11,7 @@ const LOOK: Record<ActionKind, { eyebrow: string; pill: string; primary: string 
   REPLY_BEFORE_DEADLINE: { eyebrow: "Deadline", pill: "bg-red-bg text-red-ink", primary: "Done" },
   ADD_DOCUMENT: { eyebrow: "Missing document", pill: "bg-amber-bg text-amber-ink", primary: "I added it" },
   EXPLAIN_HELD_FUNDS: { eyebrow: "Money on hold", pill: "bg-grey-bg text-grey-ink", primary: "" },
-  EXPLAIN_DISPUTE: { eyebrow: "Not a delivery case", pill: "bg-amber-bg text-amber-ink", primary: "Got it" },
+  EXPLAIN_DISPUTE: { eyebrow: "From SAL", pill: "bg-amber-bg text-amber-ink", primary: "Got it" },
 };
 
 const MESSAGES: Record<string, string> = {
