@@ -359,3 +359,12 @@ def test_a_seller_note_without_documents_is_not_our_send():
 def test_one_entry_of_a_type_the_documents_back(requested, sent):
     payload = submission._payload([{"text": "Delivered."}], [], requested)
     assert [e["evidence_type"] for e in payload["evidences"]] == [sent]
+
+def test_paypals_own_reason_for_refusing_a_send_is_kept():
+    refused = httpx.Response(400, request=httpx.Request("POST", "https://x"), json={
+        "name": "VALIDATION_ERROR", "message": "Invalid request",
+        "details": [{"issue": "MISSING_REQUIRED_PARAMETER", "field": "x"}], "payer": {"email_address": "a@b.co"}})
+    error, unknown = submission._send(FakePayPal(fail=httpx.HTTPStatusError("400", request=refused.request,
+                                                                            response=refused)), "PP-1", {}, [])
+    assert "VALIDATION_ERROR" in error and "MISSING_REQUIRED_PARAMETER" in error and not unknown
+    assert "a@b.co" not in error

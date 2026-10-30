@@ -28,6 +28,7 @@ from app.db import tenant_session
 from app.config import get_settings
 from app.evidence import read_file
 from app.evidence_pdf import render_text_pdf
+from app.paypal import redact
 
 RECONCILE_AFTER_SECONDS = 120
 CLOCK_SKEW = timedelta(minutes=5)
@@ -211,9 +212,21 @@ def _send(paypal: EvidenceSink, provider_dispute_id: str, payload: dict[str, Any
         except Exception:
             unknown = True  # timeout or lost connection: the request may have reached PayPal
             raise
+    except httpx.HTTPStatusError as exc:
+        return _paypal_error(exc)[:500], unknown
     except Exception as exc:  # noqa: BLE001 — the outcome must be recorded either way
         return f"{type(exc).__name__}: {exc}"[:500], unknown
     return None, False
+
+
+def _paypal_error(exc: httpx.HTTPStatusError) -> str:
+    """PayPal's own reason (name, message, each issue), redacted. A bare "400 Bad Request" explains nothing."""
+    try:
+        body = redact(exc.response.json())
+    except ValueError:
+        return f"PayPal {exc.response.status_code}"
+    issues = [d.get("issue") or d.get("description") for d in body.get("details") or []]
+    return f"PayPal {exc.response.status_code} {body.get('name')}: {body.get('message')} {issues or ''}".strip()
 
 
 def _settle(s: Session, merchant_id: UUID, draft_id: UUID, dispute_id: UUID, provider_dispute_id: str,
