@@ -45,6 +45,13 @@ def render_record(details: dict[str, Any]) -> list[str]:
     for item in ((details.get("cart_info") or {}).get("item_details") or [])[:5]:
         if item.get("item_name"):
             lines.append(f"Item: {item['item_name']}")
+    # Where PayPal says the parcel should go: city and postal code only, enough to check the proof of delivery
+    # against it. The buyer's name and street stay out of SAL.
+    address = (details.get("shipping_info") or {}).get("address") or {}
+    if address.get("city"):
+        lines.append(f"Ship-to city: {address['city']}")
+    if address.get("postal_code"):
+        lines.append(f"Ship-to postal code: {address['postal_code']}")
     return lines
 
 

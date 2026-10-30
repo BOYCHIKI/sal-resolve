@@ -28,10 +28,12 @@ PROOF_DOCUMENT = {
     "payment_matches": "the PayPal payment record",
     "shipped": "courier tracking",
     "delivered": "proof of delivery",
+    "delivered_to_paypal_address": "a proof of delivery that shows the delivery address",
 }
 PROVEN_WORDS = {"payment_matches": "payment", "shipped": "shipping", "delivered": "delivery",
                 "delivery_date_consistent": "the delivery date", "buyer_messages_clean": "clean buyer messages",
-                "paypal_request_covered": "what PayPal asked for"}
+                "paypal_request_covered": "what PayPal asked for",
+                "delivered_to_paypal_address": "the delivery address"}
 
 # Transaction Search hold codes and the code that releases each (PayPal event code reference).
 HOLDS = {"T1110": "dispute", "T2107": "payment", "T2103": "reserve", "T2105": "review"}

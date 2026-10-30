@@ -19,9 +19,13 @@ ID_PATTERNS = {
 # payment, and a courier page never proves the order total, whatever the line happens to say.
 DOC_FIELDS: dict[str, tuple[str, ...]] = {
     "order_invoice": ("order_id", "transaction_id", "order_amount", "currency", "order_date"),
-    "payment_record": ("transaction_id", "payment_amount", "payment_currency", "order_id"),
-    "carrier_tracking": ("tracking_id", "tracking_order_id", "ship_date", "carrier_status", "carrier_event_date"),
-    "delivery_proof": ("delivery_tracking_id", "delivery_status", "delivery_date"),
+    # ship_to_*: the buyer's address on PayPal's record, the one PayPal's proof-of-delivery rule compares against.
+    "payment_record": ("transaction_id", "payment_amount", "payment_currency", "order_id", "ship_to_city",
+                       "ship_to_postal_code"),
+    "carrier_tracking": ("tracking_id", "tracking_order_id", "ship_date", "carrier_status", "carrier_event_date",
+                         "delivery_city", "delivery_postal_code"),
+    "delivery_proof": ("delivery_tracking_id", "delivery_status", "delivery_date", "delivery_city",
+                       "delivery_postal_code"),
     "support_message": ("reported_payment_amount",),
     # A resi the seller typed in (evidence.add_tracking_number): it names the parcel, it proves nothing else.
     "seller_shipment": ("tracking_id",),
@@ -31,6 +35,32 @@ DOC_FIELDS: dict[str, tuple[str, ...]] = {
 MONEY_FIELDS = {"order_amount", "payment_amount", "reported_payment_amount"}
 CURRENCY_FIELDS = {"currency", "payment_currency"}
 DATE_FIELDS = {"order_date", "ship_date", "carrier_event_date", "delivery_date"}
+POSTAL_FIELDS = {"ship_to_postal_code", "delivery_postal_code"}
+CITY_FIELDS = {"ship_to_city", "delivery_city"}
+# Postal codes worldwide: 94107, 94107-1234, SW1A 1AA, K1A 0B1, 10110, 1000. At least one digit.
+_POSTAL = re.compile(r"(?=[A-Z0-9 -]*\d)[A-Z0-9][A-Z0-9 -]{1,8}[A-Z0-9]")
+_CITY = re.compile(r"[^\W\d_][^\W\d_ .'-]*(?:[ .'-]+[^\W\d_]+)*\.?")
+# Words couriers and PayPal put in front of the same city ("Kota Bandung", "Kab. Bogor", "City of Manila").
+_CITY_PREFIX = re.compile(r"^(KOTA|KABUPATEN|KAB|CITY OF)\b\.?\s*")
+
+
+def postal_key(value: str) -> str:
+    return re.sub(r"[\s-]", "", value.upper())
+
+
+def same_postal(a: str, b: str) -> bool:
+    """94107 and 94107-1234 are the same US delivery area; otherwise the codes must be equal."""
+    ka, kb = postal_key(a), postal_key(b)
+    if ka == kb:
+        return True
+    short, long_ = sorted((ka, kb), key=len)
+    return short.isdigit() and long_.isdigit() and len(short) == 5 and len(long_) == 9 and long_.startswith(short)
+
+
+def same_city(a: str, b: str) -> bool:
+    """Lenient on purpose ("Kota Bandung" is Bandung): a city is only compared when no postal code is shown."""
+    ka, kb = (re.sub(r"[^A-Z]", "", _CITY_PREFIX.sub("", v.upper())) for v in (a, b))
+    return bool(ka and kb) and (ka in kb or kb in ka)
 
 INJECTION_RE = re.compile(
     r"(system\s*override|ignore (all |the )?(previous|prior|above|invoice)|disregard|you must|"
@@ -134,6 +164,8 @@ def value_in_line(field: str, value: str, text: str) -> bool:
         return _status_phrase(text) == value
     if field in CURRENCY_FIELDS:  # "Rp" is how Indonesian documents write the rupiah
         return value == "IDR" and re.search(r"\bRp\b", text) is not None
+    if field in POSTAL_FIELDS or field in CITY_FIELDS:  # written in any case: "san francisco", "sw1a 1aa"
+        return _appears(value, text.upper())
     return False
 
 
@@ -163,6 +195,12 @@ def _normalize(field: str, value: str) -> str | None:
             return date.fromisoformat(v).isoformat()
         except ValueError:
             return None
+    if field in POSTAL_FIELDS:
+        v = re.sub(r"\s+", " ", v.upper())
+        return v if _POSTAL.fullmatch(v) else None
+    if field in CITY_FIELDS:
+        v = re.sub(r"\s+", " ", v.upper()).strip(" ,")
+        return v if len(v) <= 40 and _CITY.fullmatch(v) else None
     return v or None
 
 
@@ -248,6 +286,35 @@ def _rule_tracking_numbers_agree(first) -> list[Finding]:
     return [Finding("conflict", "tracking_id", (tracked.source, proved.source), why)]
 
 
+def _rule_delivered_to_the_paypal_address(first) -> list[Finding]:
+    """PayPal's proof of delivery must show the address on the transaction (Seller Protection, item not received).
+    A different postal code means a different place. Cities are compared later and only softly (assess)."""
+    ship_to, delivered_to = first("ship_to_postal_code"), first("delivery_postal_code")
+    if not (ship_to and delivered_to) or same_postal(ship_to.value, delivered_to.value):
+        return []
+    why = "The parcel was delivered to a different postal code than the address on the PayPal payment"
+    _mark_conflicted((ship_to, delivered_to), why)
+    return [Finding("conflict", "delivery_postal_code", (ship_to.source, delivered_to.source), why)]
+
+
+def _rule_timeline_in_order(first) -> list[Finding]:
+    """Ordered, then shipped, then delivered. A step dated before the one it follows means a wrong or edited
+    document, so the case goes to a person instead of to PayPal."""
+    findings = []
+    ordered, shipped = first("order_date"), first("ship_date")
+    delivered = next((f for f in (first("delivery_date"), first("carrier_event_date"))
+                      if f is not None and f.status == "supported"), None)
+    if ordered and shipped and shipped.value < ordered.value:
+        why = f"The courier shows it shipped on {shipped.value}, before the order date {ordered.value}"
+        _mark_conflicted((ordered, shipped), why)
+        findings.append(Finding("conflict", "ship_before_order", (ordered.source, shipped.source), why))
+    if shipped and delivered and shipped.status == "supported" and delivered.value < shipped.value:
+        why = f"Delivered on {delivered.value}, before it was shipped on {shipped.value}"
+        _mark_conflicted((shipped, delivered), why)
+        findings.append(Finding("conflict", "delivered_before_ship", (shipped.source, delivered.source), why))
+    return findings
+
+
 def _rule_buyer_amount_matches_payment(first) -> list[Finding]:
     paid, reported = first("payment_amount"), first("reported_payment_amount")
     if not (paid and reported and Decimal(paid.value) != Decimal(reported.value)):
@@ -296,6 +363,8 @@ def apply_inr_rules(facts: list[Fact], documents: list[Document], dispute_amount
         findings += _rule_courier_documents_present({d.type for d in documents})
         findings += _rule_delivery_dates_agree(first)
         findings += _rule_tracking_numbers_agree(first)
+        findings += _rule_delivered_to_the_paypal_address(first)
+        findings += _rule_timeline_in_order(first)
     findings += _rule_buyer_amount_matches_payment(first)
     findings += _rule_amounts_match_dispute(first, dispute_amount, dispute_currency)
     findings += _rule_no_hidden_instructions(documents)

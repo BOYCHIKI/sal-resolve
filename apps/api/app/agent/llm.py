@@ -60,6 +60,8 @@ Field meaning: order_amount and payment_amount are the final total paid (includi
 item or subtotal; extract them even when only a currency symbol is shown. ship_date is only a date the
 parcel was shipped or dispatched; carrier_event_date is the carrier's latest event (often the delivery);
 delivery_date is the date on the proof of delivery. Never put one kind of date in another field.
+ship_to_city and ship_to_postal_code are the buyer's shipping address on the PayPal record; delivery_city and
+delivery_postal_code are where the courier says it delivered. Copy them as written; never take one from the other.
 Skip a field if it is not clearly written. Do not infer, combine lines or guess."""
 
 DRAFT_SYSTEM = """You write short factual statements for a merchant's PayPal dispute response.

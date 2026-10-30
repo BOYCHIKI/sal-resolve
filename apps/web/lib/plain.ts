@@ -104,6 +104,7 @@ const PROPOSITION_TITLES: Record<string, string> = {
   shipped: "The parcel was shipped",
   delivered: "The parcel was delivered",
   delivery_date_consistent: "The delivery dates agree",
+  delivered_to_paypal_address: "It went to the address on the PayPal payment",
   buyer_messages_clean: "The buyer's messages are clean",
   paypal_request_covered: "What PayPal asked for is covered",
 };

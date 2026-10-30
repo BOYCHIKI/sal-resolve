@@ -8,9 +8,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.agent.models import Assessment, Document, Fact, Finding, Proposition, SourceRef
+from app.agent.validation import same_city
 
-PROPOSITIONS = ("payment_matches", "shipped", "delivered", "delivery_date_consistent", "buyer_messages_clean",
-                "paypal_request_covered")
+PROPOSITIONS = ("payment_matches", "shipped", "delivered", "delivery_date_consistent", "delivered_to_paypal_address",
+                "buyer_messages_clean", "paypal_request_covered")
 SUPPORTED_REASONS = {"ITEM_NOT_RECEIVED"}
 # What PayPal's own evidence requests need, in terms of propositions (ADR-001: PayPal's list is authoritative).
 REQUEST_NEEDS = {"PROOF_OF_FULFILLMENT": ("shipped", "delivered"), "PROOF_OF_SHIPMENT": ("shipped",),
@@ -26,6 +27,9 @@ FIELD_PROPOSITION = {
     "carrier_status": "delivered", "carrier_event_date": "delivered", "delivery_tracking_id": "delivered",
     "delivery_status": "delivered",
     "delivery_date": "delivery_date_consistent",
+    "ship_to_postal_code": "delivered_to_paypal_address", "delivery_postal_code": "delivered_to_paypal_address",
+    "ship_to_city": "delivered_to_paypal_address", "delivery_city": "delivered_to_paypal_address",
+    "ship_before_order": "shipped", "delivered_before_ship": "delivered",
     "untrusted_instruction": "buyer_messages_clean", "reported_payment_amount": "buyer_messages_clean",
 }
 # Payment can only be proven by PayPal's own record (or a seeded practice record standing in for it).
@@ -137,8 +141,36 @@ def _delivery_dates_agree(case: _Case) -> Proposition:
     return Proposition("delivery_date_consistent", "not_applicable", "Only one delivery date to compare")
 
 
+def _delivered_to_paypal_address(case: _Case) -> Proposition:
+    """5. Delivered to the address on the PayPal payment: PayPal's proof of delivery must show it (Seller
+    Protection). Only PayPal's own record says where the parcel should go; a seller's upload cannot."""
+    pid = "delivered_to_paypal_address"
+    if conflict := case.conflicted(pid, "contradicted"):
+        return conflict
+
+    def from_paypal(field: str) -> Fact | None:
+        return next((f for f in case.supported.get(field, [])
+                     if (doc := case.docs.get(f.source.evidence_id)) and doc.origin in TRUSTED_PAYMENT_ORIGINS), None)
+
+    ship_code, ship_city = from_paypal("ship_to_postal_code"), from_paypal("ship_to_city")
+    if ship_code is None and ship_city is None:
+        return Proposition(pid, "not_applicable", "PayPal's record shows no shipping address to compare")
+    code, city = case.first("delivery_postal_code"), case.first("delivery_city")
+    if ship_code and code:  # a different code is a conflict the rules already raised
+        return Proposition(pid, "proven", f"Delivered to postal code {code.value}, the address on the PayPal payment",
+                           _refs(ship_code, code))
+    if ship_city and city:
+        if same_city(ship_city.value, city.value):
+            return Proposition(pid, "proven", f"Delivered in {city.value}, the city on the PayPal payment",
+                               _refs(ship_city, city))
+        return Proposition(pid, "flagged", f"The proof of delivery says {city.value}; the PayPal address is in "
+                           f"{ship_city.value}. Check it is the same place", _refs(ship_city, city))
+    return Proposition(pid, "missing", "The proof of delivery shows no delivery address; PayPal needs the city or "
+                       "postal code on it")
+
+
 def _buyer_messages_clean(case: _Case) -> Proposition:
-    """5. Buyer messages hold no hidden instructions and no contradicting figures."""
+    """6. Buyer messages hold no hidden instructions and no contradicting figures."""
     if conflict := case.conflicted("buyer_messages_clean", "flagged"):
         return conflict
     if "support_message" in case.present:
@@ -147,7 +179,7 @@ def _buyer_messages_clean(case: _Case) -> Proposition:
 
 
 def _paypal_request_covered(requested: tuple[str, ...], props: list[Proposition]) -> Proposition:
-    """6. PayPal's own request for evidence is covered by the propositions above."""
+    """7. PayPal's own request for evidence is covered by the propositions above."""
     needs = [(r, REQUEST_NEEDS.get(r)) for r in requested]
     if not needs:
         return Proposition("paypal_request_covered", "not_applicable", "PayPal has not asked for specific evidence")
@@ -171,7 +203,7 @@ def assess(facts: list[Fact], findings: list[Finding], documents: list[Document]
                           "SAL's evidence check covers 'item not received' disputes only. Review this case in PayPal.")
     case = _Case(facts, findings, documents)
     props = [_payment_matches(case, dispute_amount, dispute_currency), _shipped(case), _delivered(case),
-             _delivery_dates_agree(case), _buyer_messages_clean(case)]
+             _delivery_dates_agree(case), _delivered_to_paypal_address(case), _buyer_messages_clean(case)]
     props.append(_paypal_request_covered(requested, props))
     return Assessment(tuple(props), *_readiness(props))
 

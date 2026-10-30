@@ -61,6 +61,8 @@ _PATTERNS: dict[str, list[tuple[str, str, str]]] = {
         ("transaction_id", r"^Transaction ID: ([A-Z0-9]{17})$", "{0}"),
         ("payment_amount", r"^Amount: (\d+\.\d{2}) ([A-Z]{3})$", "{0}"),
         ("payment_currency", r"^Amount: (\d+\.\d{2}) ([A-Z]{3})$", "{1}"),
+        ("ship_to_city", r"^Ship-to city: (.{2,40})$", "{0}"),
+        ("ship_to_postal_code", r"^Ship-to postal code: ([A-Za-z0-9 -]{3,12})$", "{0}"),
     ],
     "carrier_tracking": [
         ("tracking_id", r"^SYNTHETIC TRACKING \| (TRK-[A-Z0-9-]+)$", "{0}"),
@@ -68,11 +70,15 @@ _PATTERNS: dict[str, list[tuple[str, str, str]]] = {
         ("ship_date", r"^Ship date: (\d{4}-\d{2}-\d{2})$", "{0}"),
         ("carrier_status", r"^Carrier status: ([A-Z_]+)$", "{0}"),
         ("carrier_event_date", r"^Latest event: (\d{4}-\d{2}-\d{2})$", "{0}"),
+        ("delivery_city", r"^Delivered to city: (.{2,40})$", "{0}"),
+        ("delivery_postal_code", r"^Delivered to postal code: ([A-Za-z0-9 -]{3,12})$", "{0}"),
     ],
     "delivery_proof": [
         ("delivery_tracking_id", r"^SYNTHETIC DELIVERY CONFIRMATION \| (TRK-[A-Z0-9-]+)$", "{0}"),
         ("delivery_status", r"^Delivery status: ([A-Z_]+)$", "{0}"),
         ("delivery_date", r"^Delivery date: (\d{4}-\d{2}-\d{2})$", "{0}"),
+        ("delivery_city", r"^Delivered to city: (.{2,40})$", "{0}"),
+        ("delivery_postal_code", r"^Delivered to postal code: ([A-Za-z0-9 -]{3,12})$", "{0}"),
     ],
     "support_message": [
         ("reported_payment_amount", r"^Buyer-reported amount: (\d+\.\d{2}) ([A-Z]{3})$", "{0}"),
@@ -133,6 +139,10 @@ _ORDER_DATE = re.compile(r"\b(tanggal|tgl|date|ordered|issued)\b", re.I)
 _SHIP_DATE = re.compile(r"\b(ship date|shipped|tanggal kirim|tgl kirim|posting|picked up|accepted)\b", re.I)
 _DELIVERY_DATE = re.compile(r"\b(delivered|diterima)\b", re.I)
 _STATUS_LINE = re.compile(r"^\s*status\s*:\s*(?P<v>.+)$", re.I)
+# Where the courier delivered, as couriers label it ("ZIP: 94107", "Kode pos: 40115", "Kota: Bandung").
+_POSTAL_LABEL = re.compile(r"\b(?:postal\s*code|post\s*code|postcode|zip(?:\s*code)?|kode\s*pos)\s*[:#]?\s*"
+                           r"(?P<v>[A-Za-z0-9][A-Za-z0-9 -]{1,8}[A-Za-z0-9])\s*$", re.I)
+_CITY_LABEL = re.compile(r"^\s*(?:city|kota|kabupaten|town)\s*:\s*(?P<v>[^\d,:]{2,40}?)\s*$", re.I)
 _CODE = re.compile(r"\b(" + "|".join(CURRENCY_CODES) + r")\b")
 
 
@@ -186,6 +196,11 @@ class LabelExtractor:
             if tracking:
                 got.append(("tracking_id" if doc_type == "carrier_tracking" else "delivery_tracking_id",
                             tracking.group("id")))
+            postal, city = _POSTAL_LABEL.search(text), _CITY_LABEL.match(text)
+            if postal:
+                got.append(("delivery_postal_code", postal.group("v")))
+            if city:
+                got.append(("delivery_city", city.group("v")))
             if doc_type == "carrier_tracking":
                 status = _STATUS_LINE.match(text)
                 if status and _status_phrase(status.group("v")):
