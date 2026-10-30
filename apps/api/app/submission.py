@@ -91,10 +91,20 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
     return {"draft_id": str(draft_id), "status": "APPROVED", "revision": row.revision}
 
 
+# PayPal may ask for several types at once, but only one entry can be sent, so it must be one the documents back.
+# These describe something the seller did, not what the courier documents show, so SAL never sends under them.
+NOT_SHIPPING_EVIDENCE = {"PROOF_OF_REFUND", "PROOF_OF_RETURN"}
+
+
+def _evidence_type(requested: list[str]) -> str:
+    usable = [t for t in requested if t not in NOT_SHIPPING_EVIDENCE]
+    return "PROOF_OF_FULFILLMENT" if "PROOF_OF_FULFILLMENT" in usable or not usable else usable[0]
+
+
 def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requested: list[str],
              tracking_lines: list[str] = ()) -> dict[str, Any]:
     entry: dict[str, Any] = {
-        "evidence_type": requested[0] if requested else "PROOF_OF_FULFILLMENT",
+        "evidence_type": _evidence_type(requested),
         "notes": " ".join(c["text"] for c in claims)[:2000],
     }
     tracking = [f["value"] for f in facts if f["field"] == "tracking_id" and f["status"] == "supported"]

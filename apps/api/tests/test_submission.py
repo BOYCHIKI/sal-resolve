@@ -347,3 +347,15 @@ def test_a_seller_note_without_documents_is_not_our_send():
     assert submission.decide(show, started) == (False, "NEEDS_MANUAL_CHECK")
     show["evidences"][0]["documents"] = [{"name": "proof.pdf"}]
     assert submission.decide(show, started) == (True, None)
+
+
+@pytest.mark.parametrize("requested, sent", [
+    ([], "PROOF_OF_FULFILLMENT"),
+    (["PROOF_OF_REFUND", "PROOF_OF_FULFILLMENT", "PROOF_OF_DELIVERY_SIGNATURE"], "PROOF_OF_FULFILLMENT"),
+    (["PROOF_OF_DELIVERY_SIGNATURE", "PROOF_OF_FULFILLMENT"], "PROOF_OF_FULFILLMENT"),
+    (["PROOF_OF_DELIVERY_SIGNATURE"], "PROOF_OF_DELIVERY_SIGNATURE"),
+    (["PROOF_OF_REFUND"], "PROOF_OF_FULFILLMENT"),      # courier documents never go out labelled as a refund
+])
+def test_one_entry_of_a_type_the_documents_back(requested, sent):
+    payload = submission._payload([{"text": "Delivered."}], [], requested)
+    assert [e["evidence_type"] for e in payload["evidences"]] == [sent]

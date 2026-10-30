@@ -186,8 +186,10 @@ def _buyer_messages_clean(case: _Case) -> Proposition:
 
 
 def _paypal_request_covered(requested: tuple[str, ...], props: list[Proposition]) -> Proposition:
-    """7. PayPal's own request for evidence is covered by the propositions above."""
-    needs = [(r, REQUEST_NEEDS.get(r)) for r in requested]
+    """7. PayPal's own request for evidence is covered by the propositions above. PayPal can ask for proof of
+    refund on a case with no refund; it only applies if the seller refunded, so it never blocks a reply."""
+    needs = [(r, REQUEST_NEEDS.get(r)) for r in requested if r != "PROOF_OF_REFUND"]
+    requested = tuple(r for r, _ in needs)
     if not needs:
         return Proposition("paypal_request_covered", "not_applicable", "PayPal has not asked for specific evidence")
     by_id = {p.id: p for p in props}

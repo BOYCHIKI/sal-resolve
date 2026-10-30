@@ -58,3 +58,12 @@ def test_paypals_own_evidence_request_is_part_of_readiness():
     odd = assess(facts, [], (PAYPAL, TRACK), "135.00", "USD", requested=("OTHER",))
     assert odd.status("paypal_request_covered") == "flagged" and odd.readiness == "NEEDS_CHECK"
     assert assess(facts, [], (PAYPAL, TRACK), "135.00", "USD").status("paypal_request_covered") == "not_applicable"
+
+
+def test_a_request_for_proof_of_refund_alone_is_not_a_gap():
+    facts = paid() + delivered()
+    both = assess(facts, [], (PAYPAL, TRACK), "135.00", "USD", requested=("PROOF_OF_REFUND", "PROOF_OF_FULFILLMENT"))
+    assert both.status("paypal_request_covered") == "proven" and both.readiness == "READY"
+    assert "refund" not in next(p for p in both.propositions if p.id == "paypal_request_covered").reason
+    alone = assess(facts, [], (PAYPAL, TRACK), "135.00", "USD", requested=("PROOF_OF_REFUND",))
+    assert alone.status("paypal_request_covered") == "not_applicable"
