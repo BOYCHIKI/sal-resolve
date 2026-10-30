@@ -368,3 +368,57 @@ def test_paypals_own_reason_for_refusing_a_send_is_kept():
                                                                             response=refused)), "PP-1", {}, [])
     assert "VALIDATION_ERROR" in error and "MISSING_REQUIRED_PARAMETER" in error and not unknown
     assert "a@b.co" not in error
+
+class RefusesTheFirstType(FakePayPal):
+    """PayPal refusing an evidence type it may even have asked for (sandbox, 2026-10-30)."""
+
+    def __init__(self, issue="EVIDENCE_TYPE_IS_NOT_ALLOWED", status=400):
+        super().__init__()
+        self.issue, self.status = issue, status
+
+    def provide_evidence(self, dispute_id, payload, files):
+        self.sent.append((dispute_id, payload, files))
+        if len(self.sent) == 1:
+            response = httpx.Response(self.status, request=httpx.Request("POST", "https://x"), json={
+                "name": "INVALID_REQUEST", "message": "Invalid", "details": [{"issue": self.issue}]})
+            raise httpx.HTTPStatusError("refused", request=response.request, response=response)
+        return {}
+
+
+def send_approved(client, a, fake):
+    app.dependency_overrides[paypal_sink] = lambda: fake
+    approve(client, a)
+    return client.post(f"/api/drafts/{a['draft']['id']}/submit")
+
+
+def test_a_refused_type_goes_once_more_as_other_with_the_same_notes_and_files(client, merchant, app_engine, worker_engine):
+    _, a = analyzed(app_engine, worker_engine, merchant)
+    fake = RefusesTheFirstType()
+    assert send_approved(client, a, fake).status_code == 200 and len(fake.sent) == 2
+    (_, first, first_files), (_, second, second_files) = fake.sent
+    assert second["evidences"][0]["evidence_type"] == "OTHER" and "evidence_info" not in second["evidences"][0]
+    assert second["evidences"][0]["notes"] == first["evidences"][0]["notes"] and second_files == first_files
+    with tenant_session(merchant, app_engine) as s:
+        audit = s.execute(text("SELECT summary FROM audit_logs WHERE action = 'draft.submitted'")).scalar()
+    assert audit["evidence_type"] == "OTHER"
+
+
+def test_any_other_refusal_is_not_retried(client, merchant, app_engine, worker_engine):
+    _, a = analyzed(app_engine, worker_engine, merchant)
+    fake = RefusesTheFirstType(issue="MISSING_REQUIRED_PARAMETER")
+    assert send_approved(client, a, fake).status_code == 502 and len(fake.sent) == 1
+
+
+def test_a_server_error_is_never_retried_because_it_may_have_arrived(client, merchant, app_engine, worker_engine):
+    _, a = analyzed(app_engine, worker_engine, merchant)
+    fake = RefusesTheFirstType(status=500)
+    assert send_approved(client, a, fake).status_code == 504 and len(fake.sent) == 1
+
+
+def test_digital_goods_go_as_other_without_a_courier():
+    digital = {"disputed_transactions": [{"items": [{"item_type": "DIGITAL_DOWNLOAD"}]}]}
+    assert submission._is_digital(digital) and not submission._is_digital({}) and not submission._is_digital(
+        {"disputed_transactions": [{"items": [{"item_type": "PRODUCT"}]}]})
+    facts = [{"field": "tracking_id", "value": "TRK-1", "status": "supported"}]
+    entry = submission._payload([{"text": "Sent."}], facts, ["PROOF_OF_FULFILLMENT"], [], digital=True)["evidences"][0]
+    assert entry["evidence_type"] == "OTHER" and "evidence_info" not in entry

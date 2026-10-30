@@ -95,6 +95,7 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
 # PayPal may ask for several types at once, but only one entry can be sent, so it must be one the documents back.
 # These describe something the seller did, not what the courier documents show, so SAL never sends under them.
 NOT_SHIPPING_EVIDENCE = {"PROOF_OF_REFUND", "PROOF_OF_RETURN"}
+TYPE_REFUSED = "EVIDENCE_TYPE_IS_NOT_ALLOWED"
 
 
 def _evidence_type(requested: list[str]) -> str:
@@ -102,14 +103,21 @@ def _evidence_type(requested: list[str]) -> str:
     return "PROOF_OF_FULFILLMENT" if "PROOF_OF_FULFILLMENT" in usable or not usable else usable[0]
 
 
+def _is_digital(provider_payload: dict[str, Any] | None) -> bool:
+    txns = (provider_payload or {}).get("disputed_transactions") or [{}]
+    items = (txns[0] or {}).get("items") or []
+    return bool(items) and all(i.get("item_type") == "DIGITAL_DOWNLOAD" for i in items)
+
+
 def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requested: list[str],
-             tracking_lines: list[str] = ()) -> dict[str, Any]:
+             tracking_lines: list[str] = (), digital: bool = False) -> dict[str, Any]:
     entry: dict[str, Any] = {
-        "evidence_type": _evidence_type(requested),
+        # Digital goods have no carrier, so their proof is notes and documents under OTHER (PayPal dev guidance).
+        "evidence_type": "OTHER" if digital else _evidence_type(requested),
         "notes": " ".join(c["text"] for c in claims)[:2000],
     }
     tracking = [f["value"] for f in facts if f["field"] == "tracking_id" and f["status"] == "supported"]
-    if tracking:
+    if tracking and not digital:
         # The real courier code lets PayPal follow the parcel; "OTHER" only when the document names none we know.
         entry["evidence_info"] = {"tracking_info": [
             carriers.tracking_info(tracking[0], carriers.carrier_for(list(tracking_lines)))]}
@@ -166,13 +174,18 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
     tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof", "seller_shipment")
                       for line in (d.content_lines or [])]
-    payload = _payload(row.claims, row.facts, requested, tracking_lines)
+    payload = _payload(row.claims, row.facts, requested, tracking_lines, _is_digital(row.provider_payload))
     # A resi the seller typed travels as tracking_info above; it is their word, not a document to attach.
     files = [_file_for(d) for d in docs if d.doc_type != "seller_shipment"]
     files = [f for f in files if f is not None]
 
     # 2. Network, outside any transaction.
     error, unknown = _send(paypal, row.provider_dispute_id, payload, files)
+    if error and not unknown and TYPE_REFUSED in error and payload["evidences"][0]["evidence_type"] != "OTHER":
+        # PayPal can refuse a type it asked for (sandbox, 2026-10-30). A 400 means nothing arrived, so the same
+        # approved notes and documents go once more as OTHER. Never for a timeout or a 5xx: that may have arrived.
+        payload = {"evidences": [{"evidence_type": "OTHER", "notes": payload["evidences"][0]["notes"]}]}
+        error, unknown = _send(paypal, row.provider_dispute_id, payload, files)
 
     # 3. Record the outcome. An unknown outcome stays SUBMITTING for reconcile() to settle.
     with tenant_session(merchant_id, engine) as s:

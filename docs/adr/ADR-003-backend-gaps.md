@@ -72,7 +72,7 @@ reconcile_submission (worker, tenant-scoped, normal retries):
 
 - **Migration 0005:** `ALTER TABLE drafts ADD COLUMN submit_started_at timestamptz`.
 - **Scheduling:** the job queue already has `jobs.run_after`. `enqueue_job` needs an optional `run_after` argument. No sweeper and no new process.
-- **No automatic resend (R3).** The reconciler only finds out what happened. Retrying stays a human click. PayPal also rejects a second send once the state has moved (`422 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`, spike S6), so even a mistaken retry cannot double-submit.
+- **No automatic resend (R3).** The reconciler only finds out what happened. Retrying stays a human click. PayPal also rejects a second send once the state has moved (`422 ACTION_NOT_ALLOWED_IN_CURRENT_DISPUTE_STATE`, spike S6), so even a mistaken retry cannot double-submit. One narrow exception (2026-10-30): a `400 EVIDENCE_TYPE_IS_NOT_ALLOWED` means nothing arrived, so the same approved notes and documents go once more as `OTHER`, the fallback PayPal's dev team recommended. Timeouts and 5xx are never retried.
 - **Error classification:** an `httpx.HTTPStatusError` carrying a 4xx means PayPal definitely did not accept the request. Everything else, including timeouts, connection errors and 5xx, counts as unknown.
 - **UI (`lib/plain.ts`):**
   - `SUBMITTING` → "Sending to PayPal… checking"
