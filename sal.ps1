@@ -38,12 +38,51 @@ function Run($exe, [string[]]$argv, $dir = $Root) {
     finally { Pop-Location }
 }
 
+function UseLocalPostgres {
+    # A PostgreSQL installed on Windows (port 15432) instead of Docker: no Linux VM, far less memory and disk.
+    # Chosen when SAL_DB_MODE=local, or when Docker is missing or its engine is not running.
+    if ($env:SAL_DB_MODE -eq "local") { return $true }
+    if ($env:SAL_DB_MODE -eq "docker") { return $false }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $true }
+    try { & docker info *> $null } catch { return $true }   # the engine's stderr is fatal under ErrorAction Stop
+    return ($LASTEXITCODE -ne 0)
+}
+
+function PsqlPath {
+    # psql on PATH, else the standard PostgreSQL for Windows install folder (no PATH change needed).
+    $cmd = Get-Command psql -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $found = Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if ($found) { return $found.FullName }
+    Fail "psql not found. Install PostgreSQL 16 for Windows (port 15432, Command Line Tools), or start Docker Desktop."
+}
+
+function LocalPsql([string[]]$argv) {
+    # The postgres superuser password is the dev-only one from docker-compose.yml unless overridden.
+    $env:PGPASSWORD = if ($env:SAL_PG_SUPERUSER_PASSWORD) { $env:SAL_PG_SUPERUSER_PASSWORD } else { "postgres_dev_only" }
+    $env:PGOPTIONS = "-c client_min_messages=warning"   # NOTICEs on stderr would be fatal under ErrorAction Stop
+    $ErrorActionPreference = "Continue"                  # this function only; failures are read from $LASTEXITCODE
+    try { & (PsqlPath) -h 127.0.0.1 -p 15432 -U postgres -v ON_ERROR_STOP=1 @argv 2>$null }
+    finally { Remove-Item Env:PGPASSWORD, Env:PGOPTIONS }
+}
+
 function Database {
-    Need docker "Install Docker Desktop and start it."
-    Say "Starting PostgreSQL (Docker)"
-    Run docker @("compose", "up", "-d", "--wait")
-    # Test database for pytest (created on first start; this covers volumes made before it existed).
-    try { & docker compose exec -T db psql -q -U postgres -f /docker-entrypoint-initdb.d/01_test_db.sql *> $null } catch {}
+    if (UseLocalPostgres) {
+        Say "Using local PostgreSQL on port 15432 (no Docker)"
+        $out = LocalPsql @("-d", "postgres", "-tAc", "SELECT 1 FROM pg_roles WHERE rolname = 'sal_migrator'")
+        if ($LASTEXITCODE -ne 0) { Fail "Cannot reach PostgreSQL on 127.0.0.1:15432. Is the postgresql service running?" }
+        if (-not ($out -match "1")) {   # first run: roles and the sal database, same script Docker runs once
+            LocalPsql @("-q", "-d", "postgres", "-f", (Join-Path $Api "db\init\00_roles.sql"))
+            if ($LASTEXITCODE -ne 0) { Fail "Creating SAL roles failed" }
+        }
+        LocalPsql @("-q", "-d", "postgres", "-f", (Join-Path $Api "db\init\01_test_db.sql")) *> $null
+    } else {
+        Say "Starting PostgreSQL (Docker)"
+        Run docker @("compose", "up", "-d", "--wait")
+        # Test database for pytest (created on first start; this covers volumes made before it existed).
+        try { & docker compose exec -T db psql -q -U postgres -f /docker-entrypoint-initdb.d/01_test_db.sql *> $null } catch {}
+    }
     Say "Applying database migrations"
     Run $Py @("-m", "alembic", "upgrade", "head") $Api
 }

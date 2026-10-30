@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 400" width="980" height="400" role="img" aria-label="Three triggers feed the worker queue; the worker runs a read-only agent that reads the seller's documents and PayPal's transaction record and produces suggestion cards; the seller approves; only the Send evidence card writes to PayPal, at most once.">
+        <style>
+          .bg { fill: #ffffff; }
+          .fg { fill: #1d2420; }
+          .mut { fill: #5d6862; }
+          .acc { fill: #0f7a5a; }
+          .ln { stroke: #1d2420; fill: none; }
+          .ln-acc { stroke: #0f7a5a; fill: none; }
+          .gate { fill: #e2f3ec; stroke: #0f7a5a; }
+          @media (prefers-color-scheme: dark) {
+            .bg { fill: #0d1117; }
+            .fg { fill: #e6ebe8; }
+            .mut { fill: #a3ada8; }
+            .acc { fill: #3fbf8f; }
+            .ln { stroke: #e6ebe8; }
+            .ln-acc { stroke: #3fbf8f; }
+            .gate { fill: #11352a; stroke: #3fbf8f; }
+          }
+        </style>
+        <rect class="bg" width="980" height="400"/>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="fg" d="M0,0 L10,5 L0,10 z"/>
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="acc" d="M0,0 L10,5 L0,10 z"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" class="fg">
+          <!-- triggers -->
+          <text x="20" y="26" font-size="11" class="mut" letter-spacing="1">TRIGGERS</text>
+          <rect class="ln" x="20" y="40" width="160" height="50" rx="6"/>
+          <text x="100" y="62" text-anchor="middle" font-weight="600">Clock</text>
+          <text x="100" y="79" text-anchor="middle" class="mut" font-size="12">every 10 minutes</text>
+          <rect class="ln" x="20" y="120" width="160" height="50" rx="6"/>
+          <text x="100" y="142" text-anchor="middle" font-weight="600">New document / resi</text>
+          <text x="100" y="159" text-anchor="middle" class="mut" font-size="12">from the seller</text>
+          <rect class="ln" x="20" y="200" width="160" height="50" rx="6"/>
+          <text x="100" y="222" text-anchor="middle" font-weight="600">Change at PayPal</text>
+          <text x="100" y="239" text-anchor="middle" class="mut" font-size="12">disputes, held funds</text>
+
+          <!-- worker: tall so every trigger arrow is a straight, labelled line -->
+          <rect class="ln" x="270" y="40" width="130" height="210" rx="6" stroke-width="1.5"/>
+          <text x="335" y="140" text-anchor="middle" font-weight="600">Worker</text>
+          <text x="335" y="158" text-anchor="middle" class="mut" font-size="12">job queue</text>
+          <line class="ln" x1="180" y1="65" x2="266" y2="65" marker-end="url(#arrow)"/>
+          <line class="ln" x1="180" y1="145" x2="266" y2="145" marker-end="url(#arrow)"/>
+          <line class="ln" x1="180" y1="225" x2="266" y2="225" marker-end="url(#arrow)"/>
+          <text x="223" y="58" text-anchor="middle" font-size="11" class="mut">sync · scan</text>
+          <text x="223" y="138" text-anchor="middle" font-size="11" class="mut">new analysis</text>
+          <text x="223" y="218" text-anchor="middle" font-size="11" class="mut">new analysis</text>
+
+          <!-- agent (read only) -->
+          <rect class="ln" x="440" y="30" width="310" height="250" rx="8" stroke-dasharray="5 4"/>
+          <text x="456" y="52" font-size="11" class="mut" letter-spacing="1">AGENT · READ ONLY</text>
+          <rect class="ln" x="460" y="66" width="270" height="40" rx="5"/>
+          <text x="476" y="91">Read documents: labels + LLM</text>
+          <rect class="ln" x="460" y="118" width="270" height="40" rx="5"/>
+          <text x="476" y="143">Grounding: value is on that line</text>
+          <rect class="ln" x="460" y="170" width="270" height="40" rx="5"/>
+          <text x="476" y="195">Rules: resi, dates, currency</text>
+          <rect class="ln" x="460" y="222" width="270" height="40" rx="5"/>
+          <text x="476" y="247">Assess: ready / missing / check</text>
+          <line class="ln" x1="595" y1="106" x2="595" y2="116" marker-end="url(#arrow)"/>
+          <line class="ln" x1="595" y1="158" x2="595" y2="168" marker-end="url(#arrow)"/>
+          <line class="ln" x1="595" y1="210" x2="595" y2="220" marker-end="url(#arrow)"/>
+          <line class="ln" x1="400" y1="145" x2="436" y2="145" marker-end="url(#arrow)"/>
+          <text x="418" y="137" text-anchor="middle" font-size="11" class="mut">runs</text>
+
+          <!-- cards -->
+          <rect class="ln" x="800" y="110" width="160" height="60" rx="6" stroke-width="1.5"/>
+          <text x="880" y="136" text-anchor="middle" font-weight="600">Suggestion cards</text>
+          <text x="880" y="154" text-anchor="middle" class="mut" font-size="12">added · replaced · closed</text>
+          <line class="ln" x1="750" y1="242" x2="784" y2="242"/>
+          <polyline class="ln" points="784,242 784,140 796,140" marker-end="url(#arrow)"/>
+          <text x="790" y="196" font-size="11" class="mut" transform="rotate(-90 790 196)" text-anchor="middle">proposes</text>
+
+          <!-- seller -->
+          <rect class="ln" x="800" y="220" width="160" height="50" rx="6"/>
+          <text x="880" y="242" text-anchor="middle" font-weight="600">Seller</text>
+          <text x="880" y="259" text-anchor="middle" class="mut" font-size="12">web, phone later</text>
+          <line class="ln" x1="880" y1="170" x2="880" y2="216" marker-end="url(#arrow)"/>
+          <text x="888" y="198" font-size="11" class="mut">reads</text>
+
+          <!-- approval gate -->
+          <rect class="gate" x="800" y="320" width="160" height="48" rx="6" stroke-width="2"/>
+          <text x="880" y="341" text-anchor="middle" font-weight="600" class="acc">Approve</text>
+          <text x="880" y="357" text-anchor="middle" font-size="12" class="acc">the exact card (hash)</text>
+          <line class="ln-acc" x1="880" y1="270" x2="880" y2="316" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+          <text x="888" y="298" font-size="11" class="acc">approves</text>
+
+          <!-- paypal: read source for the agent, and the only write target -->
+          <rect class="ln" x="520" y="320" width="210" height="48" rx="6" stroke-width="1.5"/>
+          <text x="625" y="341" text-anchor="middle" font-weight="600">PayPal</text>
+          <text x="625" y="357" text-anchor="middle" font-size="12" class="mut">evidence sent, at most once</text>
+          <line class="ln" x1="560" y1="320" x2="560" y2="284" marker-end="url(#arrow)"/>
+          <text x="552" y="306" text-anchor="end" font-size="11" class="mut">transaction record</text>
+          <line class="ln-acc" x1="800" y1="344" x2="734" y2="344" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+          <text x="767" y="336" text-anchor="middle" font-size="11" class="acc">only</text>
+          <text x="767" y="384" text-anchor="middle" font-size="11" class="acc">"Send evidence"</text>
+        </g>
+      </svg>
