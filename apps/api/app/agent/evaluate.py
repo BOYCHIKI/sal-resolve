@@ -84,8 +84,11 @@ def _ratio(a: int, b: int) -> str:
 def expected_readiness(case: dict[str, Any]) -> str:
     """Readiness implied by the labels alone, independent of extraction:
     any labelled conflict -> NEEDS_CHECK; no courier documents at all -> WEAK; anything missing (including a
-    payment record) -> NEEDS_DOCUMENTS; otherwise READY."""
+    payment record) -> NEEDS_DOCUMENTS; otherwise READY. A case may state it outright when a document is present
+    but incomplete (a proof of delivery without the address PayPal needs)."""
     gt = case["ground_truth"]
+    if "readiness" in gt:
+        return gt["readiness"]
     if gt["conflicts"]:
         return "NEEDS_CHECK"
     missing = set(gt["missing_evidence"])

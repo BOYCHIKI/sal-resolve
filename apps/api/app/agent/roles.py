@@ -142,6 +142,7 @@ _STATUS_LINE = re.compile(r"^\s*status\s*:\s*(?P<v>.+)$", re.I)
 # Where the courier delivered, as couriers label it ("ZIP: 94107", "Kode pos: 40115", "Kota: Bandung").
 _POSTAL_LABEL = re.compile(r"\b(?:postal\s*code|post\s*code|postcode|zip(?:\s*code)?|kode\s*pos)\s*[:#]?\s*"
                            r"(?P<v>[A-Za-z0-9][A-Za-z0-9 -]{1,8}[A-Za-z0-9])\s*$", re.I)
+_SHIP_TO = re.compile(r"^\s*ship-to (?P<k>city|postal code)\s*:\s*(?P<v>.+?)\s*$", re.I)
 _CITY_LABEL = re.compile(r"^\s*(?:city|kota|kabupaten|town)\s*:\s*(?P<v>[^\d,:]{2,40}?)\s*$", re.I)
 _CODE = re.compile(r"\b(" + "|".join(CURRENCY_CODES) + r")\b")
 
@@ -185,7 +186,10 @@ class LabelExtractor:
             if _ORDER_DATE.search(text) and one_date:
                 got.append(("order_date", one_date))
         elif doc_type == "payment_record":
-            if _PAYMENT.search(text) and amount is not None and code:
+            ship_to = _SHIP_TO.match(text)
+            if ship_to:  # SAL's own rendering of PayPal's address: exact, so always read
+                got.append((f"ship_to_{ship_to.group('k').lower().replace(' ', '_')}", ship_to.group("v")))
+            elif _PAYMENT.search(text) and amount is not None and code:
                 got += [("payment_amount", f"{amount:.2f}"), ("payment_currency", code.group(1))]
         elif doc_type == "seller_shipment":
             tracking = _TRACKING_LABEL.search(text)

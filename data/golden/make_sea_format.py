@@ -32,8 +32,9 @@ def fact(field: str, value: str, d: dict, needle: str, status: str = "supported"
 
 
 def case(case_id: str, split: str, scenario: str, amount: str, currency: str, item: str, evidence: list[dict],
-         facts: list[dict], missing: list[str], conflicts: list[str], review: bool, note: str) -> dict:
-    return {
+         facts: list[dict], missing: list[str], conflicts: list[str], review: bool, note: str,
+         readiness: str | None = None) -> dict:
+    out = {
         "case_id": case_id, "split": split, "scenario": scenario, "synthetic": True, "note": note,
         "dispute": {"id": case_id, "origin": "SYNTHETIC_FIXTURE", "reason": "ITEM_NOT_RECEIVED",
                     "amount": {"value": amount, "currency": currency}, "item": item},
@@ -42,6 +43,9 @@ def case(case_id: str, split: str, scenario: str, amount: str, currency: str, it
                          "conflicts": [{"field": c} for c in conflicts], "permitted_claims": [],
                          "prohibited_claims": PROHIBITED, "review_required": review},
     }
+    if readiness:  # every document is there but one is incomplete, which labels alone cannot say
+        out["ground_truth"]["readiness"] = readiness
+    return out
 
 
 def dev() -> list[dict]:
@@ -250,6 +254,95 @@ def dev() -> list[dict]:
          fact("carrier_event_date", "2026-10-05", trk, "delivered")],
         ["delivery_proof"], [], True,
         "Delivered per the tracking history, but no separate proof of delivery. Currency is only a peso sign."))
+
+    # ---- rule version 3: the delivery address PayPal checks, and ordered -> shipped -> delivered.
+    # Payment records below are SAL's own rendering of PayPal's record (app/paypal_evidence.py), city and
+    # postal code included, as a real PayPal sandbox case gets them.
+    inv = doc("D13-E01", "order_invoice", "Toko Kayu Jati - Invoice TKJ-1015", "Tanggal: 15 Okt 2026",
+              "Talenan kayu jati x2", "Total: USD 64.00")
+    pay = doc("D13-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 8LM20456QZ1103382", "Amount: 64.00 USD", "Ship-to city: Portland",
+              "Ship-to postal code: 97205")
+    trk = doc("D13-E03", "carrier_tracking", "JNE - Lacak Kiriman", "No. Resi: 1102846637255501",
+              "Tanggal Kirim: 16 Okt 2026", "Status: DELIVERED", "Diterima oleh: L. NGUYEN - 24 Okt 2026 14:02")
+    pod = doc("D13-E04", "delivery_proof", "USPS Proof of Delivery", "Resi 1102846637255501",
+              "Delivered 24 Oct 2026, Front Door", "City: Portland", "ZIP: 97205-2810")
+    out.append(case("D13", "sea_dev", "complete", "64.00", "USD", "Teak Cutting Boards", [inv, pay, trk, pod],
+        [fact("order_id", "TKJ-1015", inv, "Invoice"), fact("order_date", "2026-10-15", inv, "Tanggal"),
+         fact("order_amount", "64.00", inv, "Total"), fact("currency", "USD", inv, "Total"),
+         fact("transaction_id", "8LM20456QZ1103382", pay, "Transaction"),
+         fact("payment_amount", "64.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("ship_to_city", "PORTLAND", pay, "Ship-to city"), fact("ship_to_postal_code", "97205", pay, "postal"),
+         fact("tracking_id", "1102846637255501", trk, "No. Resi"), fact("ship_date", "2026-10-16", trk, "Tanggal Kirim"),
+         fact("carrier_status", "DELIVERED", trk, "Status"), fact("carrier_event_date", "2026-10-24", trk, "Diterima oleh"),
+         fact("delivery_date", "2026-10-24", pod, "Delivered 24"), fact("delivery_city", "PORTLAND", pod, "City"),
+         fact("delivery_postal_code", "97205-2810", pod, "ZIP")],
+        [], [], False, "JNE hands over to USPS; the proof shows ZIP+4 of the PayPal ship-to ZIP: same address."))
+
+    inv = doc("D14-E01", "order_invoice", "Batik Keris Solo - Invoice BKS-0918", "Tanggal: 18 Sep 2026",
+              "Kain batik tulis x1", "Total: USD 92.00")
+    pay = doc("D14-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 2RT51209VB7781045", "Amount: 92.00 USD", "Ship-to city: Sydney",
+              "Ship-to postal code: 2000")
+    trk = doc("D14-E03", "carrier_tracking", "POS INDONESIA - Lacak Kiriman", "Nomor kiriman: EE512340555ID",
+              "20 September 2026 Posting loket - KPRK Solo", "29 September 2026 Selesai antar - Melbourne AU",
+              "Status: Selesai antar")
+    pod = doc("D14-E04", "delivery_proof", "Australia Post - Delivery confirmation EE512340555ID",
+              "Delivered on 29 September 2026", "Postcode: 3000")
+    out.append(case("D14", "sea_dev", "conflicting", "92.00", "USD", "Batik Cloth", [inv, pay, trk, pod],
+        [fact("order_id", "BKS-0918", inv, "Invoice"), fact("order_date", "2026-09-18", inv, "Tanggal"),
+         fact("order_amount", "92.00", inv, "Total"), fact("currency", "USD", inv, "Total"),
+         fact("transaction_id", "2RT51209VB7781045", pay, "Transaction"),
+         fact("payment_amount", "92.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("ship_to_city", "SYDNEY", pay, "Ship-to city"),
+         fact("ship_to_postal_code", "2000", pay, "postal", "conflicted"),
+         fact("tracking_id", "EE512340555ID", trk, "Nomor kiriman"), fact("ship_date", "2026-09-20", trk, "Posting"),
+         fact("carrier_status", "DELIVERED", trk, "Status:"), fact("carrier_event_date", "2026-09-29", trk, "29 September"),
+         fact("delivery_date", "2026-09-29", pod, "Delivered on"),
+         fact("delivery_postal_code", "3000", pod, "Postcode", "conflicted")],
+        [], ["delivery_postal_code"], True,
+        "Delivered, but in Melbourne (3000); PayPal's ship-to is Sydney (2000). Not the buyer's address."))
+
+    inv = doc("D15-E01", "order_invoice", "Anyaman Pandan Tasik - Invoice APT-1102", "Tanggal: 2 Okt 2026",
+              "Tas anyaman pandan x2", "Total: USD 48.00")
+    pay = doc("D15-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 9KP44012HN2219073", "Amount: 48.00 USD", "Ship-to city: Toronto",
+              "Ship-to postal code: M5V 2T6")
+    trk = doc("D15-E03", "carrier_tracking", "SiCepat Ekspres - Lacak Paket", "No. Resi: 004412887301",
+              "Tanggal Kirim: 3 Okt 2026", "Status: DELIVERED", "Diterima oleh: P. SINGH - 14 Okt 2026")
+    pod = doc("D15-E04", "delivery_proof", "Bukti Penerimaan SiCepat", "Resi 004412887301", "Diterima 14 Okt 2026",
+              "Penerima: P. SINGH")
+    out.append(case("D15", "sea_dev", "edge", "48.00", "USD", "Pandan Bags", [inv, pay, trk, pod],
+        [fact("order_id", "APT-1102", inv, "Invoice"), fact("order_date", "2026-10-02", inv, "Tanggal"),
+         fact("order_amount", "48.00", inv, "Total"), fact("currency", "USD", inv, "Total"),
+         fact("transaction_id", "9KP44012HN2219073", pay, "Transaction"),
+         fact("payment_amount", "48.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("ship_to_city", "TORONTO", pay, "Ship-to city"), fact("ship_to_postal_code", "M5V 2T6", pay, "postal"),
+         fact("tracking_id", "004412887301", trk, "No. Resi"), fact("ship_date", "2026-10-03", trk, "Tanggal Kirim"),
+         fact("carrier_status", "DELIVERED", trk, "Status"), fact("carrier_event_date", "2026-10-14", trk, "Diterima oleh"),
+         fact("delivery_date", "2026-10-14", pod, "Diterima 14")],
+        [], [], True,
+        "Delivered with a recipient name, but the proof shows no address; PayPal needs the address on it.",
+        readiness="NEEDS_DOCUMENTS"))
+
+    inv = doc("D16-E01", "order_invoice", "Kerajinan Perak Bali - Invoice KPB-0820", "Tanggal: 20 Agu 2026",
+              "Gelang perak x1", "Total: USD 130.00")
+    pay = doc("D16-E02", "payment_record", "PayPal transaction record (retrieved from PayPal)",
+              "Transaction ID: 3WE80211LO5560921", "Amount: 130.00 USD")
+    trk = doc("D16-E03", "carrier_tracking", "J&T Express - Lacak Paket", "No. Resi: JP7712004455",
+              "Tanggal Kirim: 26 Agu 2026", "Status: DELIVERED", "Diterima oleh: A. MÜLLER - 24 Agu 2026")
+    pod = doc("D16-E04", "delivery_proof", "Bukti Penerimaan J&T", "Resi JP7712004455", "Diterima 24 Agu 2026")
+    out.append(case("D16", "sea_dev", "conflicting", "130.00", "USD", "Silver Bracelet", [inv, pay, trk, pod],
+        [fact("order_id", "KPB-0820", inv, "Invoice"), fact("order_date", "2026-08-20", inv, "Tanggal"),
+         fact("order_amount", "130.00", inv, "Total"), fact("currency", "USD", inv, "Total"),
+         fact("transaction_id", "3WE80211LO5560921", pay, "Transaction"),
+         fact("payment_amount", "130.00", pay, "Amount"), fact("payment_currency", "USD", pay, "Amount"),
+         fact("tracking_id", "JP7712004455", trk, "No. Resi"),
+         fact("ship_date", "2026-08-26", trk, "Tanggal Kirim", "conflicted"),
+         fact("carrier_status", "DELIVERED", trk, "Status"), fact("carrier_event_date", "2026-08-24", trk, "Diterima oleh"),
+         fact("delivery_date", "2026-08-24", pod, "Diterima 24", "conflicted")],
+        [], ["delivered_before_ship"], True,
+        "Received on 24 Aug, two days before the 26 Aug ship date: one of these documents is wrong."))
     return out
 
 

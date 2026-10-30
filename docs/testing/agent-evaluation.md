@@ -22,7 +22,7 @@ are `fact P` (nothing wrong accepted), `ready acc` (READY only when the evidence
 |---|---|---|
 | development (v1.0.0) | 24 | Uniform templates; the regex baseline must stay perfect here |
 | real_format (v1.1.0) | 6 | Dates in words, symbols, e-mails, OCR-like scans, ambiguous dates, an injected instruction |
-| sea_dev (v1.2.0) | 12 | JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, DHL; Indonesian dates and amounts; WhatsApp chats; traps |
+| sea_dev (v1.2.0) | 16 | JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, DHL; Indonesian dates and amounts; WhatsApp chats; traps. D13–D16 (rule version 3): delivery address vs PayPal's ship-to, and a proof dated before the ship date |
 | sea_holdout (v1.2.0) | 8 | Same families, different documents; scored only with `--final` |
 
 All cases are synthetic, with invented names and numbers. `data/golden/make_sea_format.py` writes v1.2.0; edit there,
@@ -55,6 +55,24 @@ because one model-written sentence failed claim verification and was dropped.
 - `LabelExtractor`: a deterministic reader for labelled lines, so what is plainly written is read the same way on every
   run instead of depending on the model.
 - Documents reach the model as UTF-8 (`₱` was being sent as `₱`, so no quote ever matched).
+
+### Rule version 3 (2026-10-30): the address PayPal checks, and the order of events
+
+PayPal's proof of delivery for an item-not-received case must show the delivery address and match the address on
+the transaction. SAL now copies city and postal code (never name or street) from PayPal's record and compares them
+with where the courier delivered. A second rule requires ordered, then shipped, then delivered.
+
+sea_dev with four new cases (D13 ZIP+4 of the ship-to ZIP, D14 delivered to another postcode, D15 a proof with no
+address, D16 received before it was shipped), gpt-5-nano, 2026-10-30:
+
+| Split | fact P | fact R | missing R/P | conflict R/P | review acc | ready acc | unsupported |
+|---|---|---|---|---|---|---|---|
+| sea_dev (16) | 1.00 | 1.00 | 1.00 / 1.00 | 1.00 / 1.00 | 0.94 | 1.00 | 0 |
+
+All four new cases get the right readiness, with the deterministic reader alone as well. The review miss is a
+complete case flagged for review in one run because a model-written sentence failed claim verification (the safe
+side); a rerun of the complete cases flagged none. The holdout was not touched, so it is still unscored for rule
+version 3.
 
 ## What these numbers do not prove
 
