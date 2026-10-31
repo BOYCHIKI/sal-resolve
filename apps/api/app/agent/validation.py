@@ -75,6 +75,9 @@ PROHIBITED_RE = re.compile(
 
 
 STATUS_FIELDS = {"carrier_status", "delivery_status"}
+VALUE_FAILS_TYPE_CHECK = "value fails type check"
+# Normalized statuses, so words are joined by underscores: NOT_DELIVERED, RETURNED_TO_SENDER, DELIVERY_ATTEMPT_FAILED.
+_DELIVERY_FAILED = re.compile(r"NOT_|RETURN|FAIL|UNDELIVER|CANCEL|LOST|REFUSED|REJECTED|GAGAL|BELUM|RETUR")
 # Real documents use their own references (#100245, 1Z999AA10123456784, 2X920845424009805): letters, digits
 # and dashes with at least one digit. The golden TXN-/ORD-/TRK- ids are a subset.
 # Indonesian invoices often use slashes (INV/2026/10/0087, DBR/0921).
@@ -228,7 +231,7 @@ def ground(candidates: list[CandidateFact], documents: list[Document]) -> list[F
         elif c.quote.strip() not in text:
             facts.append(Fact(c.field, c.value, c.source, "rejected", "quote not found in source line"))
         elif value is None:
-            facts.append(Fact(c.field, c.value, c.source, "rejected", "value fails type check"))
+            facts.append(Fact(c.field, c.value, c.source, "rejected", VALUE_FAILS_TYPE_CHECK))
         elif not value_in_line(c.field, value, text):
             facts.append(Fact(c.field, value, c.source, "rejected", "value not present in source line"))
         elif (c.field, value) not in seen:
@@ -295,6 +298,20 @@ def _rule_delivered_to_the_paypal_address(first) -> list[Finding]:
     why = "The parcel was delivered to a different postal code than the address on the PayPal payment"
     _mark_conflicted((ship_to, delivered_to), why)
     return [Finding("conflict", "delivery_postal_code", (ship_to.source, delivered_to.source), why)]
+
+
+def _rule_no_failed_delivery(facts: list[Fact]) -> list[Finding]:
+    """A document saying the parcel did not arrive outvotes a dated proof: the two cannot both stand, so a person
+    decides. A negated status ("FAILED") never becomes a fact, so its rejected form counts here too. Only words that
+    mean failure count: "Completed" or an older "In transit" reading are not failures."""
+    failed = [f for f in facts if f.field in STATUS_FIELDS and (
+        (f.status == "rejected" and f.reason == VALUE_FAILS_TYPE_CHECK)
+        or (f.status == "supported" and _DELIVERY_FAILED.search(f.value)))]
+    if not failed:
+        return []
+    why = f"A document says the delivery did not succeed ({failed[0].value}); requires human review"
+    _mark_conflicted([f for f in failed if f.status == "supported"], why)
+    return [Finding("conflict", "delivery_status", tuple(f.source for f in failed), why)]
 
 
 def _rule_timeline_in_order(first) -> list[Finding]:
@@ -365,6 +382,7 @@ def apply_inr_rules(facts: list[Fact], documents: list[Document], dispute_amount
         findings += _rule_tracking_numbers_agree(first)
         findings += _rule_delivered_to_the_paypal_address(first)
         findings += _rule_timeline_in_order(first)
+        findings += _rule_no_failed_delivery(facts)
     findings += _rule_buyer_amount_matches_payment(first)
     findings += _rule_amounts_match_dispute(first, dispute_amount, dispute_currency)
     findings += _rule_no_hidden_instructions(documents)

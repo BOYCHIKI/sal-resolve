@@ -2,6 +2,8 @@
 delivered must happen in that order. Both are checked by rules, never by the model."""
 from __future__ import annotations
 
+import pytest
+
 from app.agent.models import CaseInput, Document, Line
 from app.agent.pipeline import analyze
 from app.agent.roles import LabelExtractor, ReadAllPlanner, RuleExtractor, TemplateDrafter, UnionExtractor
@@ -25,6 +27,11 @@ def tracking(ship: str = "2026-10-20", latest: str = "2026-10-24", *extra: str) 
 def proof(*extra: str, delivered: str = "2026-10-24") -> Document:
     lines = ["SYNTHETIC DELIVERY CONFIRMATION | TRK-SYN-1", "Delivery status: DELIVERED",
              f"Delivery date: {delivered}", *extra]
+    return Document("pod", "delivery_proof", tuple(Line(i, t) for i, t in enumerate(lines, 1)))
+
+
+def proof_with_status(status: str) -> Document:
+    lines = ["SYNTHETIC DELIVERY CONFIRMATION | TRK-SYN-1", f"Delivery status: {status}", "Delivery date: 2026-10-24"]
     return Document("pod", "delivery_proof", tuple(Line(i, t) for i, t in enumerate(lines, 1)))
 
 
@@ -112,3 +119,34 @@ def test_a_normal_timeline_raises_nothing():
     invoice = Document("inv", "order_invoice", (Line(1, "Invoice INV-77"), Line(2, "Order date: 2026-10-18")))
     r = run(paypal(), invoice, tracking(), proof())
     assert not [f for f in r.findings if f.field in ("ship_before_order", "delivered_before_ship")]
+
+
+# --------------------------------------------------------------- a failed delivery outvotes a dated proof
+@pytest.mark.parametrize("status", ["RETURNED", "NOT_DELIVERED", "FAILED"])
+def test_a_proof_saying_the_delivery_failed_never_proves_delivery(status):
+    r = run(paypal(), tracking(), proof_with_status(status))
+    assert r.assessment.status("delivered") == "contradicted" and r.assessment.readiness == "NEEDS_CHECK"
+    assert any(f.field == "delivery_status" for f in r.findings)
+
+
+def test_a_courier_page_saying_returned_stops_a_dated_proof():
+    page = Document("trk", "carrier_tracking", (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
+                                                Line(3, "Carrier status: RETURNED"), Line(4, "Latest event: 2026-10-24")))
+    r = run(paypal(), page, proof())
+    assert r.assessment.status("delivered") == "contradicted" and r.assessment.readiness == "NEEDS_CHECK"
+
+
+def test_a_parcel_still_moving_on_the_courier_page_is_not_a_failed_delivery():
+    page = Document("trk", "carrier_tracking", (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
+                                                Line(3, "Carrier status: IN_TRANSIT"), Line(4, "Latest event: 2026-10-24")))
+    r = run(paypal(), page, proof())
+    assert not [f for f in r.findings if f.field == "delivery_status"]
+
+@pytest.mark.parametrize("status", ["Completed", "Picked up", "In transit"])
+def test_an_ordinary_status_is_not_called_a_failed_delivery(status):
+    from app.agent.models import CandidateFact, Fact, SourceRef
+    from app.agent.validation import apply_inr_rules, ground
+    doc = Document("trk", "carrier_tracking", (Line(1, f"Status: {status}"),))
+    facts = ground([CandidateFact("carrier_status", status, SourceRef("trk", 1), f"Status: {status}")], [doc])
+    assert isinstance(facts[0], Fact) and facts[0].status == "supported"
+    assert not [f for f in apply_inr_rules(facts, [doc], "10.00", "USD") if f.field == "delivery_status"]
