@@ -12,7 +12,6 @@ reconcile(): run by the worker shortly after every send. Asks PayPal whether sel
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
@@ -46,22 +45,12 @@ class EvidenceSink(Protocol):
                          files: list[tuple[str, bytes, str]]) -> dict[str, Any]: ...
 
 
-def _hash_checksums(checksums) -> str:
-    return hashlib.sha256("\n".join(sorted(checksums)).encode()).hexdigest()
-
-
-def _evidence_hash(s: Session, dispute_id: UUID) -> str:
-    """The set of documents on the dispute, independent of upload order."""
-    checksums = s.execute(text("SELECT checksum FROM evidence WHERE dispute_id = :d"), {"d": dispute_id}).scalars().all()
-    return _hash_checksums(checksums)
-
-
 def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str, actor: str,
             engine: Engine | None = None) -> dict[str, Any]:
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text("""
             SELECT d.id, d.dispute_id, d.revision, d.status, d.payload_hash, a.snapshot_hash, a.dispute_version,
-                   p.version AS current_version,
+                   a.evidence_hash AS analysed_hash, p.version AS current_version,
                    (SELECT max(revision) FROM drafts x WHERE x.dispute_id = d.dispute_id) AS latest_revision
             FROM drafts d
             JOIN analyses a ON a.id = d.analysis_id
@@ -78,12 +67,17 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
             raise SubmissionError(409, "STALE_SNAPSHOT", "The analysis changed since you reviewed it")
         if row.dispute_version != row.current_version:
             raise SubmissionError(409, "DISPUTE_CHANGED", "The dispute changed after this analysis; wait for re-analysis")
+        # Bind the approval to the documents the analysis read, not to whatever is on the case now: a document
+        # added meanwhile was never checked. Every insert queues a re-analysis, which writes the next draft.
+        evidence_hash = repo.evidence_hash(s, row.dispute_id)
+        if row.analysed_hash is not None and row.analysed_hash != evidence_hash:
+            raise SubmissionError(409, "EVIDENCE_CHANGED", "Documents changed after this analysis; wait for re-analysis")
 
         s.execute(text("""INSERT INTO approvals (merchant_id, draft_id, revision, payload_hash, snapshot_hash, actor,
                                                  evidence_hash)
                           VALUES (:m, :d, :r, :ph, :sh, :actor, :eh)"""),
                   {"m": merchant_id, "d": draft_id, "r": row.revision, "ph": row.payload_hash,
-                   "sh": row.snapshot_hash, "actor": actor, "eh": _evidence_hash(s, row.dispute_id)})
+                   "sh": row.snapshot_hash, "actor": actor, "eh": evidence_hash})
         s.execute(text("UPDATE drafts SET status = 'APPROVED' WHERE id = :id"), {"id": draft_id})
         s.execute(text("UPDATE disputes SET internal_state = 'APPROVED', updated_at = now() WHERE id = :d"),
                   {"d": row.dispute_id})
@@ -158,7 +152,7 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                                         checksum, doc_type
                                  FROM evidence WHERE dispute_id = :d
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"d": row.dispute_id}).all()
-        if row.evidence_hash is not None and row.evidence_hash != _hash_checksums(d.checksum for d in docs):
+        if row.evidence_hash is not None and row.evidence_hash != repo.hash_checksums(d.checksum for d in docs):
             raise SubmissionError(409, "EVIDENCE_CHANGED",
                                   "Documents changed after approval; review and approve the new reply")
         claimed = s.execute(text("""UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL

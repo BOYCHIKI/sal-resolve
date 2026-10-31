@@ -5,6 +5,7 @@ the merchant-led indexes.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -135,6 +136,16 @@ def upsert_provider_dispute(session: Session, merchant_id: UUID, d: dict[str, An
         return DisputeRow(**existing._mapping), False
     result = DisputeRow(**row._mapping)
     return result, before is None or result.version != before
+
+
+def hash_checksums(checksums) -> str:
+    return hashlib.sha256("\n".join(sorted(checksums)).encode()).hexdigest()
+
+
+def evidence_hash(session: Session, dispute_id: UUID) -> str:
+    """The set of documents on the dispute, independent of upload order."""
+    return hash_checksums(session.execute(text("SELECT checksum FROM evidence WHERE dispute_id = :d"),
+                                          {"d": dispute_id}).scalars().all())
 
 
 def write_audit(session: Session, merchant_id: UUID, actor: str, action: str,

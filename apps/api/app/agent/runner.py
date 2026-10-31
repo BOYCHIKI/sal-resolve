@@ -54,7 +54,7 @@ def _requested(payload: dict[str, Any] | None) -> tuple[str, ...]:
                  if e.get("source") == "REQUESTED_FROM_SELLER" and e.get("evidence_type"))
 
 
-def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tuple[CaseInput, int] | None:
+def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tuple[CaseInput, int, str] | None:
     with tenant_session(merchant_id, engine) as s:
         d = s.execute(text("""SELECT id, case_ref, provider_dispute_id, reason, amount, currency, version,
                                      provider_payload FROM disputes WHERE id = :id"""), {"id": dispute_id}).first()
@@ -63,11 +63,12 @@ def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tup
         rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines, origin
                                  FROM evidence WHERE dispute_id = :id AND content_lines IS NOT NULL
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"id": dispute_id}).all()
+        evidence_hash = repo.evidence_hash(s, dispute_id)
     docs = tuple(Document(r.evidence_id, r.doc_type or "unknown",
                           tuple(Line(int(line["line"]), str(line["text"])) for line in r.content_lines), r.origin) for r in rows)
     case = CaseInput(d.case_ref or d.provider_dispute_id, d.reason, f"{d.amount:.2f}", d.currency,
                      _requested(d.provider_payload), docs)
-    return case, d.version
+    return case, d.version, evidence_hash
 
 
 def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles: Roles,
@@ -75,7 +76,7 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
     loaded = load_case(engine, merchant_id, dispute_id)
     if loaded is None:
         return {"skipped": "dispute not found"}
-    case, version = loaded
+    case, version, evidence_hash = loaded
 
     label = roles.label
     try:
@@ -97,6 +98,10 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
         if current != version:  # dispute moved on while we were analyzing
             repo.enqueue_job(s, merchant_id, "analyze_dispute", f"analyze:{dispute_id}:v{current}", dispute_id)
             return {"discarded": "stale", "analyzed_version": version, "current_version": current}
+        current_hash = repo.evidence_hash(s, dispute_id)
+        if current_hash != evidence_hash:  # a document arrived while we were analyzing, so this verdict never saw it
+            repo.enqueue_job(s, merchant_id, "analyze_dispute", f"analyze:{dispute_id}:docs:{current_hash}", dispute_id)
+            return {"discarded": "documents changed"}
 
         run_id = s.execute(text("""
             INSERT INTO agent_runs (merchant_id, dispute_id, job_id, roles, status, steps, ended_at,
@@ -112,11 +117,12 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
                        "args": json.dumps(call.args), "ok": call.ok, "summary": call.summary})
         analysis_id = s.execute(text("""
             INSERT INTO analyses (merchant_id, dispute_id, agent_run_id, dispute_version, rule_version, facts,
-                                  findings, review_required, snapshot_hash, assessment)
+                                  findings, review_required, snapshot_hash, assessment, evidence_hash)
             VALUES (:m, :d, :r, :v, :rv, CAST(:facts AS jsonb), CAST(:findings AS jsonb), :review, :hash,
-                    CAST(:assessment AS jsonb))
+                    CAST(:assessment AS jsonb), :evidence_hash)
             RETURNING id"""),
             {"m": merchant_id, "d": dispute_id, "r": run_id, "v": version, "rv": result.rule_version,
+             "evidence_hash": evidence_hash,
              "facts": json.dumps([asdict(f) for f in result.facts]),
              "findings": json.dumps([asdict(f) for f in result.findings]),
              "review": result.review_required, "hash": result.snapshot_hash,

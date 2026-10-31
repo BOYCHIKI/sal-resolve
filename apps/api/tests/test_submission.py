@@ -422,3 +422,27 @@ def test_digital_goods_go_as_other_without_a_courier():
     facts = [{"field": "tracking_id", "value": "TRK-1", "status": "supported"}]
     entry = submission._payload([{"text": "Sent."}], facts, ["PROOF_OF_FULFILLMENT"], [], digital=True)["evidences"][0]
     assert entry["evidence_type"] == "OTHER" and "evidence_info" not in entry
+
+# --------------------------------------------------------------- approval is bound to what the analysis read
+def test_a_document_added_after_the_analysis_blocks_approval(client, merchant, app_engine, worker_engine):
+    dispute_id, a = analyzed(app_engine, worker_engine, merchant)
+    add_document(app_engine, merchant, dispute_id)
+    r = approve(client, a)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "EVIDENCE_CHANGED"
+
+
+def test_an_analysis_that_read_an_older_document_set_is_discarded_and_redone(merchant, app_engine, worker_engine, monkeypatch):
+    from app.agent import runner
+    dispute_id, _ = analyzed(app_engine, worker_engine, merchant)
+    real = runner.analyze
+
+    def document_arrives_mid_run(*args, **kwargs):
+        add_document(app_engine, merchant, dispute_id, checksum="arrived-during-the-run")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "analyze", document_arrives_mid_run)
+    result = run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
+    assert result["discarded"] == "documents changed"
+    with tenant_session(merchant, app_engine) as s:
+        queued = s.execute(text("SELECT count(*) FROM jobs WHERE kind = 'analyze_dispute' AND state = 'QUEUED'")).scalar()
+    assert queued == 1
