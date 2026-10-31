@@ -142,7 +142,7 @@ def test_a_parcel_still_moving_on_the_courier_page_is_not_a_failed_delivery():
     r = run(paypal(), page, proof())
     assert not [f for f in r.findings if f.field == "delivery_status"]
 
-@pytest.mark.parametrize("status", ["Completed", "Picked up", "In transit"])
+@pytest.mark.parametrize("status", ["COMPLETED", "PICKED_UP", "IN_TRANSIT"])
 def test_an_ordinary_status_is_not_called_a_failed_delivery(status):
     from app.agent.models import CandidateFact, Fact, SourceRef
     from app.agent.validation import apply_inr_rules, ground
