@@ -52,6 +52,10 @@ Files pass through three stages in `app/deal_documents.py`:
 
 An invoice may name its PayPal transaction. When a dispute arrives on that transaction, the worker attaches a `deal_record` document. Only `CLEAR` deals are attached. As with packing proof, the record supports the case but grounds no fact.
 
+### D7: A correction request is prepared, not sent
+
+The seller presses **Request a correction** on a held deal. Code writes the message from the findings, one per invoice revision, and the deal's agents can read it from the agent API. SAL has no channel to the other side and sends nothing: the seller passes the message on. A new invoice retires the request.
+
 ## 3. Alternatives rejected
 
 - **SAL as a buying agent.** It would hold spending authority and money, and compete with the platforms themselves. SAL stays the checker between two agents.

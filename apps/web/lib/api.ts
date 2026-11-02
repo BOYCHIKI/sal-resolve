@@ -133,6 +133,7 @@ export type Deal = {
   purchase_order: { currency: string; max_total: string; approved_by: string };
   invoice: { invoice_ref: string; total: string } | null;
   findings: DealFinding[];
+  correction: { message: string; requested_at: string } | null;
   updated_at: string;
 };
 
@@ -214,6 +215,7 @@ export const api = {
   dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
   listDeals: async () => (await call<{ items: Deal[] }>("/api/deals"))?.items ?? [],
+  requestDealCorrection: (dealRef: string) => action(`/api/deals/${encodeURIComponent(dealRef)}/request-correction`),
   listDealDocuments: async () => (await call<{ items: DealDocument[] }>("/api/deal-documents"))?.items ?? [],
   uploadDealDocument: (form: FormData) => upload("/api/deal-documents", form),
   confirmDealDocument: (id: string, kind: DealDocument["kind"], body: unknown) =>

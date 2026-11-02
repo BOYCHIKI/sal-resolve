@@ -226,6 +226,70 @@ def test_a_hold_raises_a_card_and_clearing_it_removes_the_card(client, agents, w
     assert _cards(client) == []
 
 
+def _held(client, agents, worker_engine) -> None:
+    agents.buyer.post("/agent/v1/deals", json=order_body())
+    agents.seller.put("/agent/v1/deals/PO-7781/invoice", json=invoice_body(total="1250.00"))
+    worker.drain(ctx(worker_engine))
+
+
+def test_every_finding_has_correction_wording():
+    assert set(deals.CORRECTION_TEXT) == set(FindingCode)
+
+
+@pytest.mark.db
+def test_a_correction_request_lists_the_exact_differences(client, agents, worker_engine):
+    _held(client, agents, worker_engine)
+    assert client.post("/api/deals/PO-7781/request-correction").status_code == 200
+    message = client.get("/api/deals/PO-7781").json()["correction"]["message"]
+    assert "PO-7781" in message and "INV-0091" in message and "1200.00" in message and "1250.00" in message
+
+
+@pytest.mark.db
+def test_the_seller_agent_can_read_the_request(client, agents, worker_engine):
+    _held(client, agents, worker_engine)
+    assert agents.seller.get("/agent/v1/deals/PO-7781").json()["correction"] is None
+    client.post("/api/deals/PO-7781/request-correction")
+    assert agents.seller.get("/agent/v1/deals/PO-7781").json()["correction"]["message"]
+
+
+@pytest.mark.db
+def test_asking_twice_keeps_one_request(client, agents, worker_engine, merchant, app_engine):
+    _held(client, agents, worker_engine)
+    first = client.post("/api/deals/PO-7781/request-correction").json()["correction"]
+    second = client.post("/api/deals/PO-7781/request-correction").json()["correction"]
+    assert first == second
+    with tenant_session(merchant, app_engine) as s:
+        count = s.execute(text("SELECT count(*) FROM audit_logs WHERE action = 'deal.correction_requested'")).scalar()
+    assert count == 1
+
+
+@pytest.mark.db
+def test_a_new_invoice_retires_the_request(client, agents, worker_engine):
+    _held(client, agents, worker_engine)
+    client.post("/api/deals/PO-7781/request-correction")
+    agents.seller.put("/agent/v1/deals/PO-7781/invoice", json=invoice_body())
+    assert client.get("/api/deals/PO-7781").json()["correction"] is None
+    worker.drain(ctx(worker_engine))
+    assert client.get("/api/deals/PO-7781").json()["correction"] is None
+
+
+@pytest.mark.db
+def test_only_a_held_deal_can_be_corrected(client, agents, worker_engine):
+    agents.buyer.post("/agent/v1/deals", json=order_body())
+    agents.seller.put("/agent/v1/deals/PO-7781/invoice", json=invoice_body())
+    worker.drain(ctx(worker_engine))
+    r = client.post("/api/deals/PO-7781/request-correction")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "DEAL_NOT_ON_HOLD"
+    assert client.post("/api/deals/PO-NOPE/request-correction").status_code == 404
+
+
+@pytest.mark.db
+def test_a_request_never_touches_paypal(client, agents, worker_engine):
+    _held(client, agents, worker_engine)
+    client.post("/api/deals/PO-7781/request-correction")
+    worker.drain(ctx(worker_engine))   # NoPayPal raises if anything reaches for a client
+
+
 TXN = "4KX12345AB678901C"
 
 

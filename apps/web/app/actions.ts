@@ -101,6 +101,16 @@ export async function uploadPacking(packingId: string, form: FormData): Promise<
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
   }
 }
+export async function requestDealCorrection(dealRef: string): Promise<ActionResult> {
+  try {
+    const result = await api.requestDealCorrection(dealRef);
+    revalidatePath("/deals");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
 export async function uploadDealDocument(form: FormData): Promise<ActionResult> {
   const file = form.get("file");
   if (!(file instanceof File)) return { ok: false, code: "BAD_REQUEST", message: "Choose a PDF or photo." };

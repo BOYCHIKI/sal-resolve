@@ -491,6 +491,14 @@ def list_deals(merchant_id: UUID = Depends(current_merchant)) -> dict:
     return {"items": deals.list_deals(merchant_id)}
 
 
+@app.post("/api/deals/{deal_ref}/request-correction")
+def request_deal_correction(deal_ref: str, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return deals.request_correction(merchant_id, deal_ref, DEMO_ACTOR)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
 @app.get("/api/deals/{deal_ref}")
 def get_deal(deal_ref: str, merchant_id: UUID = Depends(current_merchant)) -> dict:
     try:

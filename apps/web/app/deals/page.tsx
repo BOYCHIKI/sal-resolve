@@ -3,6 +3,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { ConfirmDealDocument } from "@/components/ConfirmDealDocument";
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
 import { Label } from "@/components/landing/Label";
+import { RequestCorrection } from "@/components/RequestCorrection";
 import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCode, type DealStatus } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +63,7 @@ function DealRow({ deal }: { deal: Deal }) {
           {deal.findings.map((f) => <FindingRow key={`${f.code}:${f.field}`} finding={f} />)}
         </ul>
       )}
+      {deal.status === "HOLD" && <RequestCorrection deal={deal} />}
     </li>
   );
 }

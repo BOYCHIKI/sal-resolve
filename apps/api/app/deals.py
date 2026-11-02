@@ -60,6 +60,19 @@ class FindingCode(StrEnum):
     ADDRESS_DIFFERS = "ADDRESS_DIFFERS"
 
 
+CORRECTION_TEXT: dict[FindingCode, str] = {
+    FindingCode.CURRENCY_DIFFERS: "The currency differs",
+    FindingCode.ITEM_NOT_ORDERED: "An item on the invoice was not ordered",
+    FindingCode.ITEM_NOT_INVOICED: "An ordered item is not on the invoice",
+    FindingCode.QUANTITY_DIFFERS: "The quantity differs",
+    FindingCode.UNIT_PRICE_DIFFERS: "The unit price differs",
+    FindingCode.TOTAL_DOES_NOT_ADD_UP: "The invoice total does not add up",
+    FindingCode.OVER_APPROVED_LIMIT: "The invoice is over the approved limit",
+    FindingCode.APPROVAL_EXPIRED: "The approval had ended when the invoice was issued",
+    FindingCode.ADDRESS_DIFFERS: "The delivery address differs",
+}
+
+
 class DealError(Exception):
     def __init__(self, code: str, status: int) -> None:
         super().__init__(code)
@@ -343,19 +356,51 @@ def check_open_deals(merchant_id: UUID, engine: Engine) -> int:
     return len(ids)
 
 
+def correction_message(deal_ref: str, invoice_ref: str, findings: list[dict[str, Any]]) -> str:
+    """Written by code from the findings, so it states only what the check found."""
+    rows = [f"- {CORRECTION_TEXT[FindingCode(f['code'])]} ({f['field']}): ordered {f['ordered'] or 'nothing'}, "
+            f"invoiced {f['invoiced'] or 'nothing'}" for f in findings]
+    return "\n".join([f"Order {deal_ref} and invoice {invoice_ref} do not match:", *rows,
+                      "Please confirm which is right and send a corrected document. Delivery is on hold until they match."])
+
+
+def request_correction(merchant_id: UUID, deal_ref: str, actor: str, engine: Engine | None = None) -> dict[str, Any]:
+    """Record one request for the current invoice. Sends nothing: the seller passes it on and agents read it."""
+    with tenant_session(merchant_id, engine or app_engine()) as s:
+        row = s.execute(text(_DEAL_SELECT + " WHERE d.deal_ref = :ref FOR UPDATE OF d"),
+                        {"rule": RULE_VERSION, "ref": deal_ref}).first()
+        if row is None:
+            raise DealError("DEAL_NOT_FOUND", 404)
+        if row.status != DealStatus.HOLD:
+            raise DealError("DEAL_NOT_ON_HOLD", 409)
+        if row.correction_message is None:
+            s.execute(text("""INSERT INTO deal_corrections (merchant_id, deal_id, invoice_revision, message, requested_by)
+                              VALUES (:m, :d, :rev, :message, :actor)"""),
+                      {"m": merchant_id, "d": row.id, "rev": row.invoice_revision, "actor": actor,
+                       "message": correction_message(deal_ref, row.invoice["invoice_ref"], row.findings)})
+            repo.write_audit(s, merchant_id, actor, "deal.correction_requested", target=deal_ref,
+                             summary={"revision": row.invoice_revision})
+    return get_deal(merchant_id, deal_ref, engine)
+
+
 def _deal_view(row: Any, findings: list[dict[str, Any]]) -> dict[str, Any]:
+    correction = None
+    if row.correction_message is not None:
+        correction = {"message": row.correction_message, "requested_at": row.correction_requested_at.isoformat()}
     return {"deal_ref": row.deal_ref, "category": row.category, "status": row.status,
             "purchase_order": row.purchase_order, "invoice": row.invoice, "findings": findings,
-            "updated_at": row.updated_at.isoformat()}
+            "correction": correction, "updated_at": row.updated_at.isoformat()}
 
 
-# Findings of the current invoice only, so an old revision's result is never shown beside a new invoice.
+# Findings and request of the current invoice only, so an old revision's are never shown beside a new invoice.
 _DEAL_SELECT = """
-    SELECT d.deal_ref, d.category, d.status, d.purchase_order, d.invoice, d.updated_at,
-           coalesce(c.findings, '[]'::jsonb) AS findings
+    SELECT d.id, d.deal_ref, d.category, d.status, d.purchase_order, d.invoice, d.invoice_revision, d.updated_at,
+           coalesce(c.findings, '[]'::jsonb) AS findings,
+           r.message AS correction_message, r.requested_at AS correction_requested_at
     FROM deals d
     LEFT JOIN deal_checks c ON c.deal_id = d.id AND c.invoice_revision = d.invoice_revision
                                AND c.rule_version = :rule AND d.status IN ('HOLD', 'CLEAR')
+    LEFT JOIN deal_corrections r ON r.deal_id = d.id AND r.invoice_revision = d.invoice_revision
 """
 
 
