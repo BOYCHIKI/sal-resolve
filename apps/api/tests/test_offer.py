@@ -87,6 +87,31 @@ def test_nothing_is_sent_when_paypal_no_longer_takes_offers(client, merchant, ap
     assert r.status_code == 409 and r.json()["detail"]["code"] == "OFFER_NOT_AVAILABLE" and fake.sent == []
 
 
+def _refresh(merchant, dispute_id, worker_engine):
+    actions.refresh_dispute(merchant, UUID(dispute_id), NOW, worker_engine)
+
+
+def _open_offers(client, dispute_id) -> list[dict]:
+    items = client.get("/api/actions", params={"dispute_id": dispute_id}).json()["items"]
+    return [c for c in items if c["kind"] == "OFFER_REFUND"]
+
+
+def test_a_paypal_5xx_may_have_arrived_so_no_new_card_appears(client, merchant, app_engine, worker_engine):
+    card = offer_card(client, merchant, app_engine, worker_engine)
+    down = httpx.HTTPStatusError("503", request=httpx.Request("POST", "https://x"), response=httpx.Response(503))
+    r = approve(client, card, "10", FakePayPal(show=LIVE, fail=down))
+    assert r.json()["detail"]["code"] == "OFFER_UNCONFIRMED"
+    _refresh(merchant, card["dispute_id"], worker_engine)
+    assert _open_offers(client, card["dispute_id"]) == []
+
+
+def test_an_offer_in_flight_does_not_come_back_as_a_new_card(client, merchant, app_engine, worker_engine):
+    card = offer_card(client, merchant, app_engine, worker_engine)
+    actions._claim(merchant, UUID(card["id"]), card["payload_hash"], "APPROVED", "operator:test", app_engine)
+    _refresh(merchant, card["dispute_id"], worker_engine)     # the process died, or PayPal is still answering
+    assert _open_offers(client, card["dispute_id"]) == []
+
+
 def test_paypal_refusing_fails_the_card_and_a_timeout_is_never_resent(client, merchant, app_engine, worker_engine):
     card = offer_card(client, merchant, app_engine, worker_engine)
     refused = httpx.HTTPStatusError("422", request=httpx.Request("POST", "https://x"),

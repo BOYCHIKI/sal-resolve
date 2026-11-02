@@ -34,6 +34,7 @@ log = logging.getLogger("sal.worker")
 LEASE_SECONDS = 60
 HEARTBEAT_SECONDS = 20
 IDLE_SLEEP_SECONDS = 1.0
+READ_ATTEMPTS = 3
 
 
 class PermanentError(Exception):
@@ -45,11 +46,13 @@ Handler = Callable[[repo.ClaimedJob, "Context"], dict[str, Any]]
 
 class Context:
     def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource],
-                 roles_factory: Callable[[], Any] | None = None) -> None:
+                 roles_factory: Callable[[], Any] | None = None, reader_factory: Callable[[], Any] | None = None) -> None:
         from app.agent.runner import configured_roles
+        from app.deal_documents import LLMDocumentReader
         self.engine = engine
         self.paypal_factory = paypal_factory
         self.roles_factory = roles_factory or configured_roles
+        self.reader_factory = reader_factory or LLMDocumentReader
 
 
 def _sync_all(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
@@ -72,8 +75,10 @@ def _analyze(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     if job.target_id is None:
         raise PermanentError("analyze_dispute job without target dispute")
     from app.agent.runner import run_analysis
+    from app.deals import attach_to_dispute as attach_deal
     from app.packing import attach_to_dispute
     attach_to_dispute(job.merchant_id, job.target_id, ctx.engine)   # a matching packing record is read too
+    attach_deal(job.merchant_id, job.target_id, ctx.engine)         # and the matched order and invoice
     return run_analysis(job.merchant_id, job.target_id, job.id, ctx.roles_factory(), ctx.engine)
 
 
@@ -82,7 +87,7 @@ def _reconcile(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     if not draft_id:
         raise PermanentError("reconcile_submission job without draft_id")
     from app.submission import reconcile
-    return reconcile(job.merchant_id, UUID(draft_id), ctx.paypal_factory(), ctx.engine)
+    return reconcile(job.merchant_id, UUID(draft_id), ctx.paypal_factory(), ctx.engine, job.payload.get("started_at"))
 
 
 def _paypal_evidence(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
@@ -124,6 +129,7 @@ def _refresh_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
 
     from app.actions import refresh_open_disputes
     from app.config import get_settings
+    from app.deals import check_open_deals
     from app.packing import attach_to_dispute, purge_expired
     # A packing record made after the dispute arrived is attached here, then the case is analysed again.
     with tenant_session(job.merchant_id, ctx.engine) as s:
@@ -138,11 +144,34 @@ def _refresh_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
                 repo.enqueue_job(s, job.merchant_id, "analyze_dispute", f"analyze:{dispute_id}:packing:{job.id}",
                                  dispute_id)
     result = refresh_open_disputes(job.merchant_id, datetime.now(timezone.utc), ctx.engine)
-    return {**result, "packing_attached": attached,
+    return {**result, "packing_attached": attached, "deals_checked": check_open_deals(job.merchant_id, ctx.engine),
             "packing_purged": purge_expired(job.merchant_id, get_settings().storage_dir, ctx.engine)}
 
 
+def _check_deal(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    if job.target_id is None:
+        raise PermanentError("check_deal job without target deal")
+    from app.deals import run_check
+    return run_check(job.merchant_id, job.target_id, ctx.engine)
+
+
+def _read_deal_document(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    if job.target_id is None:
+        raise PermanentError("read_deal_document job without target document")
+    from app.config import get_settings
+    from app.deal_documents import give_up, read_document
+    try:
+        return read_document(job.merchant_id, job.target_id, ctx.reader_factory(), get_settings().storage_dir, ctx.engine)
+    except Exception:
+        if job.attempts < READ_ATTEMPTS:
+            raise
+        give_up(job.merchant_id, job.target_id, ctx.engine)   # the seller sees it, instead of a page stuck on "reading"
+        raise PermanentError(f"gave up reading after {job.attempts} attempts") from None
+
+
 HANDLERS: dict[str, Handler] = {
+    "check_deal": _check_deal,
+    "read_deal_document": _read_deal_document,
     "sync_disputes": _sync_all,
     "sync_dispute": _sync_one,
     "analyze_dispute": _analyze,

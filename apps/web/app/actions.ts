@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { api, type ActionResult } from "@/lib/api";
+import { api, type ActionResult, type DealDocument } from "@/lib/api";
 
 export async function startSync(): Promise<{ jobId: string } | { error: string }> {
   try {
@@ -96,6 +96,41 @@ export async function uploadPacking(packingId: string, form: FormData): Promise<
   try {
     const result = await api.uploadPacking(packingId, outgoing);
     revalidatePath("/packing");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+export async function uploadDealDocument(form: FormData): Promise<ActionResult> {
+  const file = form.get("file");
+  if (!(file instanceof File)) return { ok: false, code: "BAD_REQUEST", message: "Choose a PDF or photo." };
+  const outgoing = new FormData();
+  outgoing.append("file", file, file.name);
+  outgoing.append("kind", String(form.get("kind")));
+  outgoing.append("deal_ref", String(form.get("deal_ref") ?? ""));
+  try {
+    const result = await api.uploadDealDocument(outgoing);
+    revalidatePath("/deals");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
+export async function confirmDealDocument(id: string, kind: DealDocument["kind"], body: unknown): Promise<ActionResult> {
+  try {
+    const result = await api.confirmDealDocument(id, kind, body);
+    revalidatePath("/deals");
+    return result;
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
+export async function discardDealDocument(id: string): Promise<ActionResult> {
+  try {
+    const result = await api.discardDealDocument(id);
+    revalidatePath("/deals");
     return result;
   } catch {
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };

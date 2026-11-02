@@ -84,6 +84,7 @@ export const DOCS: Record<string, string> = {
   support_message: "Customer message",
   seller_shipment: "Tracking number you entered",
   packing_proof: "Packing photos",
+  deal_record: "Matched order and invoice",
   other: "Other document",
 };
 

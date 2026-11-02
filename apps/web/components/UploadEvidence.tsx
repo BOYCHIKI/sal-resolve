@@ -70,7 +70,7 @@ export function UploadEvidence({ disputeId, analysisId }: { disputeId: string; a
         What is it?
         <select className="rounded-xl border border-(--lp-line) bg-(--lp-well) px-3 py-2.5 text-[15px] text-ink"
           value={docType} onChange={(e) => setDocType(e.target.value)} disabled={busy}>
-          {Object.entries(DOCS).filter(([value]) => value !== "seller_shipment" && value !== "packing_proof")  // added elsewhere
+          {Object.entries(DOCS).filter(([value]) => value !== "seller_shipment" && value !== "packing_proof" && value !== "deal_record")  // added elsewhere
             .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>

@@ -282,8 +282,9 @@ def save(merchant_id: UUID, subject_key: str, dispute_id: UUID | None, proposals
             s.execute(text("UPDATE agent_actions SET status = 'SUPERSEDED', decided_at = now() WHERE id = :id"),
                       {"id": row.id})
             superseded += 1
+        # APPROVED is in flight, or the process died during it: PayPal may have the request, so never offer it again.
         decided = set(s.execute(text("""SELECT kind, payload_hash FROM agent_actions
-                                        WHERE subject_key = :k AND status IN ('DONE', 'DISMISSED')"""),
+                                        WHERE subject_key = :k AND status IN ('DONE', 'DISMISSED', 'APPROVED')"""),
                                 {"k": subject_key}).all())
         for p in wanted.values():
             if (p.kind, p.payload_hash) in decided:  # the merchant already answered this exact card
@@ -503,9 +504,10 @@ def _send_offer(merchant_id: UUID, row: Any, amount: Decimal, actor: str, paypal
                "offer_amount": {"currency_code": currency, "value": str(amount)}}
     try:
         paypal.make_offer(provider_id, payload)
-    except httpx.HTTPStatusError as exc:
-        raise fail(502, "PAYPAL_REJECTED", f"PayPal refused the offer ({exc.response.status_code}).") from None
-    except Exception:
+    except Exception as exc:
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        if status is not None and status < 500:  # a 4xx is PayPal saying no; a 5xx or timeout may have arrived
+            raise fail(502, "PAYPAL_REJECTED", f"PayPal refused the offer ({status}).") from None
         raise fail(502, "OFFER_UNCONFIRMED", "PayPal did not answer in time; SAL will check whether the offer arrived.",
                    "unconfirmed") from None
     with tenant_session(merchant_id, engine) as s:

@@ -20,7 +20,7 @@ from typing import Any
 
 from app.agent.models import AnalysisResult, CaseInput, Document, Line
 from app.agent.pipeline import analyze
-from app.agent.roles import ReadAllPlanner, RuleExtractor, TemplateDrafter
+from app.agent.roles import LabelExtractor, ReadAllPlanner, RuleExtractor, TemplateDrafter, UnionExtractor
 from app.agent.validation import PROHIBITED_RE, _appears
 from app.config import REPO_ROOT
 
@@ -129,7 +129,9 @@ def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
 
 
 def evaluate(split: str, planner=None, extractor=None, drafter=None, limit: int | None = None) -> dict[str, Score]:
-    planner, extractor, drafter = planner or ReadAllPlanner(), extractor or RuleExtractor(), drafter or TemplateDrafter()
+    planner = planner or ReadAllPlanner()
+    extractor = extractor or UnionExtractor(RuleExtractor(), LabelExtractor())
+    drafter = drafter or TemplateDrafter()
     by_scenario: dict[str, Score] = defaultdict(Score)
     cases = load_cases(split, SPLIT_DIRS.get(split, GOLDEN_DIR))
     if limit:  # one case per scenario first, so a small run still covers every scenario
@@ -191,7 +193,7 @@ def main() -> None:
         print(f"split={args.split} roles=rules+llm model={llm.model} {llm.options}")
     else:
         scores = evaluate(args.split, limit=args.limit)
-        print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor, TemplateDrafter)")
+        print(f"split={args.split} roles=baseline (ReadAllPlanner, RuleExtractor+LabelExtractor, TemplateDrafter)")
     print(report(scores))
     print(f"runtime: {time.perf_counter() - started:.2f}s")
 

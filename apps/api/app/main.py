@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -23,6 +23,9 @@ from functools import lru_cache
 from app import logs
 from app import repositories as repo
 from app import actions
+from app import agent_identity
+from app import deal_documents
+from app import deals
 from app import evidence as evidence_store
 from app import packing
 from app import submission
@@ -47,6 +50,7 @@ app = FastAPI(title="SAL Resolve API", version="0.1.0", lifespan=lifespan,
 # ---------------------------------------------------------------- request guard
 # Paths anyone may reach: platform health checks and PayPal's webhook (which carries its own signature).
 OPEN_PATHS = {"/api/health", "/webhooks/paypal"}
+AGENT_PATH = "/agent/v1/"                # reached directly by agents, who prove themselves with their own token
 MAX_BODY_BYTES = 256 * 1024              # JSON bodies
 MAX_UPLOAD_BYTES = 11 * 1024 * 1024      # one evidence file (< 10 MB) plus multipart overhead
 MAX_PACKING_BYTES = 51 * 1024 * 1024     # one packing video (< 50 MB) plus multipart overhead
@@ -59,11 +63,11 @@ async def guard(request: Request, call_next):
     path = request.url.path
     declared = request.headers.get("content-length")
     limit = (MAX_PACKING_BYTES if path.startswith("/api/packing/") and path.endswith("/files")
-             else MAX_UPLOAD_BYTES if path.endswith("/evidence") else MAX_BODY_BYTES)
+             else MAX_UPLOAD_BYTES if path.endswith("/evidence") or path == "/api/deal-documents" else MAX_BODY_BYTES)
     if declared is not None and (not declared.isdigit() or int(declared) > limit):
         return JSONResponse({"detail": {"code": "PAYLOAD_TOO_LARGE", "retryable": False}}, status_code=413)
     token = get_settings().internal_token
-    if token and path not in OPEN_PATHS:
+    if token and path not in OPEN_PATHS and not (path.startswith(AGENT_PATH) and ".." not in path):
         given = request.headers.get("x-sal-internal-token", "")
         if not hmac.compare_digest(given.encode(), token.encode()):
             return JSONResponse({"detail": {"code": "UNAUTHORIZED", "retryable": False}}, status_code=401)
@@ -398,6 +402,101 @@ class PackingBody(BaseModel):
 
 def _evidence_error(exc: evidence_store.EvidenceError) -> HTTPException:
     return HTTPException(exc.status, detail={"code": exc.code, "message": str(exc), "retryable": False})
+
+
+def _deal_error(exc: deals.DealError) -> HTTPException:
+    return HTTPException(exc.status, detail={"code": exc.code, "retryable": False})
+
+
+def current_agent(authorization: str = Header("")) -> agent_identity.AgentIdentity:
+    """The verified agent behind a bearer token. Its merchant comes from the credential, never from the request."""
+    scheme, _, token = authorization.partition(" ")
+    agent = agent_identity.authenticate(token) if scheme == "Bearer" else None
+    if agent is None:
+        raise HTTPException(401, detail={"code": "AGENT_UNAUTHORIZED", "retryable": False},
+                            headers={"WWW-Authenticate": "Bearer"})
+    return agent
+
+
+@app.post(f"{AGENT_PATH}deals", status_code=201)
+def agent_create_deal(order: deals.PurchaseOrder, agent: agent_identity.AgentIdentity = Depends(current_agent)) -> dict:
+    """An order from a buyer's agent. The worker checks it once an invoice arrives."""
+    try:
+        return deals.create_deal(agent, order)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.put(f"{AGENT_PATH}deals/{{deal_ref}}/invoice")
+def agent_put_invoice(deal_ref: str, invoice: deals.Invoice,
+                      agent: agent_identity.AgentIdentity = Depends(current_agent)) -> dict:
+    try:
+        return deals.submit_invoice(agent, deal_ref, invoice)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.get(f"{AGENT_PATH}deals/{{deal_ref}}")
+def agent_get_deal(deal_ref: str, agent: agent_identity.AgentIdentity = Depends(current_agent)) -> dict:
+    try:
+        return deals.get_deal_as(agent, deal_ref)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.post("/api/deal-documents", status_code=201)
+def upload_deal_document(file: UploadFile = File(...), kind: deal_documents.DocumentKind = Form(...),
+                         deal_ref: str = Form(""), merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """A PO or invoice as a PDF or photo. The worker reads it; nothing becomes a deal until the seller confirms."""
+    data = file.file.read(evidence_store.MAX_BYTES + 1)
+    try:
+        return deal_documents.store_document(merchant_id, kind, deal_ref or None, data, get_settings().storage_dir)
+    except evidence_store.EvidenceError as exc:
+        raise _evidence_error(exc) from exc
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.get("/api/deal-documents")
+def list_deal_documents(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    return {"items": deal_documents.list_documents(merchant_id)}
+
+
+@app.post("/api/deal-documents/{document_id}/confirm-order", status_code=201)
+def confirm_deal_order(document_id: UUID, order: deals.PurchaseOrder, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return deal_documents.confirm_order(merchant_id, document_id, order, DEMO_ACTOR)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.post("/api/deal-documents/{document_id}/confirm-invoice")
+def confirm_deal_invoice(document_id: UUID, invoice: deals.Invoice, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return deal_documents.confirm_invoice(merchant_id, document_id, invoice, DEMO_ACTOR)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.post("/api/deal-documents/{document_id}/discard")
+def discard_deal_document(document_id: UUID, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return deal_documents.discard(merchant_id, document_id)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+@app.get("/api/deals")
+def list_deals(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    return {"items": deals.list_deals(merchant_id)}
+
+
+@app.get("/api/deals/{deal_ref}")
+def get_deal(deal_ref: str, merchant_id: UUID = Depends(current_merchant)) -> dict:
+    try:
+        return deals.get_deal(merchant_id, deal_ref)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
 
 
 @app.post("/api/packing", status_code=201)

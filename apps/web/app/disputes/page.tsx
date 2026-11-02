@@ -90,6 +90,7 @@ export default async function DisputesPage() {
               <p className="muted max-w-2xl text-[17px]">SAL checks your PayPal account and tells you what needs doing. Nothing is sent without your OK.</p>
             </div>
             <div className="flex flex-wrap items-center gap-4">
+              <Link href="/deals" className="text-[15px] font-semibold underline underline-offset-4">Deal Check</Link>
               <Link href="/packing" className="text-[15px] font-semibold underline underline-offset-4">Packing proof</Link>
               <SyncButton />
             </div>

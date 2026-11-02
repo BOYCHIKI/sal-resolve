@@ -146,7 +146,7 @@ def label_pdf(merchant_id: UUID, packing_id: UUID, engine: Engine | None = None)
 
 
 # ---------------------------------------------------------------- worker: attach a record to a dispute
-def _dispute_refs(s, dispute_id: UUID) -> tuple[str | None, set[str], set[str]] | None:
+def dispute_refs(s, dispute_id: UUID) -> tuple[str | None, set[str], set[str]] | None:
     d = s.execute(text("SELECT case_ref, provider_payload FROM disputes WHERE id = :d"), {"d": dispute_id}).first()
     if d is None:
         return None
@@ -163,7 +163,7 @@ def _dispute_refs(s, dispute_id: UUID) -> tuple[str | None, set[str], set[str]] 
 def attach_to_dispute(merchant_id: UUID, dispute_id: UUID, engine: Engine | None = None) -> int:
     """Attach the newest matching packing record to the dispute (idempotent). Returns documents added. Worker only."""
     with tenant_session(merchant_id, engine) as s:
-        refs = _dispute_refs(s, dispute_id)
+        refs = dispute_refs(s, dispute_id)
         if refs is None:
             return 0
         txn, orders, resis = refs

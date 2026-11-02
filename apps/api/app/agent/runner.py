@@ -34,7 +34,8 @@ class Roles:
 
 
 def baseline_roles() -> Roles:
-    return Roles(ReadAllPlanner(), RuleExtractor(), TemplateDrafter(), "baseline:ReadAll/RuleExtractor/Template")
+    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), LabelExtractor()), TemplateDrafter(),
+                 "baseline:ReadAll/Rule+Label/Template")
 
 
 def configured_roles() -> Roles:

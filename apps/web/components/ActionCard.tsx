@@ -13,6 +13,7 @@ const LOOK: Record<ActionKind, { eyebrow: string; pill: string; primary: string 
   EXPLAIN_HELD_FUNDS: { eyebrow: "Money on hold", pill: "bg-grey-bg text-grey-ink", primary: "" },
   EXPLAIN_DISPUTE: { eyebrow: "From SAL", pill: "bg-amber-bg text-amber-ink", primary: "Got it" },
   OFFER_REFUND: { eyebrow: "Settle it", pill: "bg-blue-bg text-blue-ink", primary: "Send offer to PayPal" },
+  REVIEW_DEAL_HOLD: { eyebrow: "Before you deliver", pill: "bg-red-bg text-red-ink", primary: "I’ve seen it" },
 };
 
 const MESSAGES: Record<string, string> = {
@@ -20,6 +21,8 @@ const MESSAGES: Record<string, string> = {
   ACTION_NOT_OPEN: "This suggestion was already handled.",
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new suggestion.",
   EVIDENCE_CHANGED: "Documents changed since SAL wrote this. SAL is preparing a new suggestion.",
+  DRAFT_OUT_OF_DATE: "This case changed since SAL wrote this reply. SAL is preparing a new one.",
+  SEND_IN_PROGRESS: "An earlier reply is still being confirmed with PayPal. Try again in a few minutes.",
   SUBMIT_UNCONFIRMED: "PayPal didn’t answer in time. SAL will check whether it arrived. Don’t send it again yet.",
   PAYPAL_REJECTED: "PayPal didn’t accept it right now. You can try again from the case page.",
   OFFER_NOT_AVAILABLE: "PayPal no longer takes a refund offer on this case. Nothing was sent.",
@@ -88,6 +91,7 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
         {caseLink && action.dispute_id && !sends && (
           <Link href={`/disputes/${action.dispute_id}`} className="lp-btn">Open the case</Link>
         )}
+        {action.kind === "REVIEW_DEAL_HOLD" && <Link href="/deals" className="lp-btn">Open Deal Check</Link>}
         <button className={sends ? "lp-btn" : "lp-btn-ghost"} disabled={busy || (offer && !amount.trim())}
           onClick={() => decide("approve")}>
           {busy ? "Working…" : look.primary}

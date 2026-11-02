@@ -91,7 +91,7 @@ export type EvidenceDoc = {
 };
 
 export type ActionKind = "SEND_EVIDENCE" | "ADD_DOCUMENT" | "REPLY_BEFORE_DEADLINE" | "EXPLAIN_HELD_FUNDS"
-  | "EXPLAIN_DISPUTE" | "OFFER_REFUND";
+  | "EXPLAIN_DISPUTE" | "OFFER_REFUND" | "REVIEW_DEAL_HOLD";
 
 /** A suggestion SAL's agent made (ADR-006). The merchant approves the exact card it read, by payload_hash. */
 export type AgentAction = {
@@ -119,6 +119,39 @@ export type PackingRecord = {
   created_at: string;
   expires_at: string;
   files: { id: string; mime: string; sha256: string; size_bytes: number }[];
+};
+
+/** One deal: what was ordered and invoiced, as exact data, and the worker's verdict. Values match app/deals.py. */
+export type DealStatus = "WAITING_INVOICE" | "CHECKING" | "HOLD" | "CLEAR";
+export type DealFindingCode = "CURRENCY_DIFFERS" | "ITEM_NOT_ORDERED" | "ITEM_NOT_INVOICED" | "QUANTITY_DIFFERS"
+  | "UNIT_PRICE_DIFFERS" | "TOTAL_DOES_NOT_ADD_UP" | "OVER_APPROVED_LIMIT" | "APPROVAL_EXPIRED" | "ADDRESS_DIFFERS";
+export type DealFinding = { code: DealFindingCode; field: string; ordered: string | null; invoiced: string | null };
+export type Deal = {
+  deal_ref: string;
+  category: "GOODS" | "DIGITAL" | "SERVICE";
+  status: DealStatus;
+  purchase_order: { currency: string; max_total: string; approved_by: string };
+  invoice: { invoice_ref: string; total: string } | null;
+  findings: DealFinding[];
+  updated_at: string;
+};
+
+/** A PO or invoice file. A proposal value is either proven on its line or blank. Values match app/deal_documents.py. */
+export type ProvenValue = { value: string | null; line: number | null };
+export type ProposedItem = { item_code: ProvenValue; description: ProvenValue; quantity: ProvenValue; unit_price: ProvenValue };
+export type DocumentProposal = {
+  reference: ProvenValue; party: ProvenValue; issued_on: ProvenValue; currency: ProvenValue; total: ProvenValue;
+  shipping: ProvenValue; tax: ProvenValue; ship_country: ProvenValue; ship_city: ProvenValue;
+  ship_postal_code: ProvenValue; items: ProposedItem[];
+};
+export type DealDocument = {
+  id: string;
+  kind: "PURCHASE_ORDER" | "INVOICE";
+  deal_ref: string | null;
+  status: "READING" | "NEEDS_CONFIRMATION" | "UNREADABLE";
+  lines: { line: number; text: string }[] | null;
+  proposal: DocumentProposal | null;
+  created_at: string;
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -180,6 +213,12 @@ export const api = {
     action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash, offer_amount: offerAmount ?? null }),
   dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
+  listDeals: async () => (await call<{ items: Deal[] }>("/api/deals"))?.items ?? [],
+  listDealDocuments: async () => (await call<{ items: DealDocument[] }>("/api/deal-documents"))?.items ?? [],
+  uploadDealDocument: (form: FormData) => upload("/api/deal-documents", form),
+  confirmDealDocument: (id: string, kind: DealDocument["kind"], body: unknown) =>
+    action(`/api/deal-documents/${encodeURIComponent(id)}/confirm-${kind === "INVOICE" ? "invoice" : "order"}`, body),
+  discardDealDocument: (id: string) => action(`/api/deal-documents/${encodeURIComponent(id)}/discard`),
   listPacking: async () => (await call<{ items: PackingRecord[] }>("/api/packing"))?.items ?? [],
   createPacking: (orderRef: string, transactionId: string, trackingNumber: string) =>
     action("/api/packing", {

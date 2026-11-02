@@ -12,12 +12,13 @@ reconcile(): run by the worker shortly after every send. Asks PayPal whether sel
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from uuid import UUID
 
 import httpx
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import carriers
@@ -31,6 +32,7 @@ from app.paypal import redact
 
 RECONCILE_AFTER_SECONDS = 120
 CLOCK_SKEW = timedelta(minutes=5)
+SEND_GRACE = timedelta(minutes=15)   # longer than any upload; past this, a sender that never came back has died
 
 
 class SubmissionError(Exception):
@@ -137,15 +139,20 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
     # 1. Check, claim and gather everything to send, in one short transaction.
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text("""
-            SELECT d.dispute_id, d.claims, a.facts, p.origin, p.provider_dispute_id, p.provider_payload,
-                   ap.evidence_hash
+            SELECT d.dispute_id, d.claims, d.revision, a.facts, a.dispute_version, p.version, p.origin,
+                   p.provider_dispute_id, p.provider_payload, ap.evidence_hash,
+                   (SELECT max(revision) FROM drafts WHERE dispute_id = d.dispute_id) AS latest_revision
             FROM drafts d JOIN analyses a ON a.id = d.analysis_id JOIN disputes p ON p.id = d.dispute_id
             LEFT JOIN approvals ap ON ap.draft_id = d.id
-            WHERE d.id = :id"""), {"id": draft_id}).first()
+            WHERE d.id = :id
+            FOR UPDATE OF d, p"""), {"id": draft_id}).first()
         if row is None:
             raise SubmissionError(404, "DRAFT_NOT_FOUND", "Draft not found")
         if row.origin != "PAYPAL_SANDBOX":
             raise SubmissionError(422, "NOT_A_PAYPAL_DISPUTE", "Synthetic fixtures cannot be sent to PayPal")
+        # The reply was written for one state of the case. A newer state or a newer draft means it no longer answers.
+        if row.dispute_version != row.version or row.revision != row.latest_revision:
+            raise SubmissionError(409, "DRAFT_OUT_OF_DATE", "This case changed after the reply was written")
         # Read the documents first and hash exactly these rows: what is checked is what is sent, even if an
         # upload commits in the middle of this transaction.
         docs = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, content_lines, object_key, mime,
@@ -155,15 +162,21 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
         if row.evidence_hash is not None and row.evidence_hash != repo.hash_checksums(d.checksum for d in docs):
             raise SubmissionError(409, "EVIDENCE_CHANGED",
                                   "Documents changed after approval; review and approve the new reply")
-        claimed = s.execute(text("""UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL
-                                    WHERE id = :id AND status IN ('APPROVED', 'SUBMIT_FAILED')
-                                    RETURNING submit_started_at"""), {"id": draft_id}).first()
+        try:
+            claimed = s.execute(text("""UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL
+                                        WHERE id = :id AND status IN ('APPROVED', 'SUBMIT_FAILED')
+                                        RETURNING submit_started_at"""), {"id": draft_id}).first()
+        except IntegrityError:  # drafts_one_send_per_dispute: an earlier send of this case is still open
+            raise SubmissionError(409, "SEND_IN_PROGRESS",
+                                  "An earlier reply is still being confirmed with PayPal. Try again in a few minutes.") from None
         if claimed is None:
             raise SubmissionError(409, "NOT_SUBMITTABLE", "Draft must be approved and not already sent")
         # Safety net for a crash or timeout below: the worker settles this send from PayPal's own record.
+        started_at = claimed.submit_started_at
         repo.enqueue_job(s, merchant_id, "reconcile_submission",
-                         f"reconcile:{draft_id}:{claimed.submit_started_at.isoformat()}", row.dispute_id,
-                         payload={"draft_id": str(draft_id)}, delay_seconds=RECONCILE_AFTER_SECONDS)
+                         f"reconcile:{draft_id}:{started_at.isoformat()}", row.dispute_id,
+                         payload={"draft_id": str(draft_id), "started_at": started_at.isoformat()},
+                         delay_seconds=RECONCILE_AFTER_SECONDS)
     requested = [e["evidence_type"] for e in (row.provider_payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
     tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof", "seller_shipment")
@@ -189,7 +202,7 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
             repo.write_audit(s, merchant_id, actor, "draft.submit_unconfirmed", target=str(draft_id),
                              summary={"files": len(files), "error": error})
         else:
-            _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, actor,
+            _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, actor, started_at,
                     sent=error is None, note=None if error is None else "PAYPAL_REJECTED",
                     action="draft.submitted" if error is None else "draft.submit_failed",
                     summary={"files": len(files), "error": error,
@@ -237,11 +250,15 @@ def _paypal_error(exc: httpx.HTTPStatusError) -> str:
 
 
 def _settle(s: Session, merchant_id: UUID, draft_id: UUID, dispute_id: UUID, provider_dispute_id: str,
-            actor: str, sent: bool, note: str | None, action: str, summary: dict[str, Any]) -> bool:
-    """Record the final outcome of a send exactly once. False if the other path settled it first."""
+            actor: str, started_at: datetime, sent: bool, note: str | None, action: str,
+            summary: dict[str, Any]) -> bool:
+    """Record the final outcome of one send attempt exactly once. False if the other path settled it first or a
+    newer attempt has begun. PayPal accepting it is final, even after this attempt was given up on."""
     done = s.execute(text("""UPDATE drafts SET status = :st, submit_note = :n
-                             WHERE id = :id AND status = 'SUBMITTING' RETURNING id"""),
-                     {"st": "SUBMITTED" if sent else "SUBMIT_FAILED", "n": note, "id": draft_id}).first()
+                             WHERE id = :id AND submit_started_at = :started
+                               AND (status = 'SUBMITTING' OR (:sent AND status = 'SUBMIT_FAILED')) RETURNING id"""),
+                     {"st": "SUBMITTED" if sent else "SUBMIT_FAILED", "n": note, "id": draft_id,
+                      "started": started_at, "sent": sent}).first()
     if done is None:
         return False
     if sent:
@@ -277,14 +294,19 @@ def decide(live: dict[str, Any], started_at: datetime) -> tuple[bool, str | None
     return False, "NEEDS_MANUAL_CHECK"      # nothing arrived but PayPal moved on: a person must look
 
 
-def reconcile(merchant_id: UUID, draft_id: UUID, paypal: EvidenceSink, engine: Engine | None = None) -> dict[str, Any]:
-    """Settle a send left in SUBMITTING from what PayPal recorded. Reads from PayPal, never writes."""
+def reconcile(merchant_id: UUID, draft_id: UUID, paypal: EvidenceSink, engine: Engine | None = None,
+              started_at: str | None = None) -> dict[str, Any]:
+    """Settle a send left in SUBMITTING from what PayPal recorded. Reads from PayPal, never writes.
+    `started_at` names the attempt this check belongs to; jobs queued before it existed have none."""
     with tenant_session(merchant_id, engine) as s:
-        row = s.execute(text("""SELECT d.status, d.submit_started_at, d.dispute_id, p.provider_dispute_id
+        row = s.execute(text("""SELECT d.status, d.submit_started_at, d.submit_note, d.dispute_id, p.provider_dispute_id
                                 FROM drafts d JOIN disputes p ON p.id = d.dispute_id WHERE d.id = :id"""),
                         {"id": draft_id}).first()
     if row is None or row.status != "SUBMITTING":
         return {"skipped": f"draft is {row.status if row else 'missing'}"}
+    if started_at is not None and datetime.fromisoformat(started_at) != row.submit_started_at:
+        return {"skipped": "an older attempt"}
+    attempt = row.submit_started_at
 
     try:
         live = paypal.get(row.provider_dispute_id)  # network errors and 5xx: the job retries with backoff
@@ -293,13 +315,22 @@ def reconcile(merchant_id: UUID, draft_id: UUID, paypal: EvidenceSink, engine: E
             raise
         # PayPal will not show this dispute (gone, forbidden): retrying cannot settle it, a person must look.
         with tenant_session(merchant_id, engine) as s:
-            settled = _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, "worker",
+            settled = _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, "worker", attempt,
                               sent=False, note="NEEDS_MANUAL_CHECK", action="draft.submit_reconciled",
                               summary={"sent": False, "paypal_http": exc.response.status_code})
         return {"draft_id": str(draft_id), "sent": False, "note": "NEEDS_MANUAL_CHECK", "settled": settled}
-    sent, note = decide(live, row.submit_started_at)
+    sent, note = decide(live, attempt)
+    elapsed = datetime.now(timezone.utc) - attempt
+    if not sent and row.submit_note is None and elapsed < SEND_GRACE:
+        # The sender has not come back, so the upload may be running: "nothing arrived" means nothing yet.
+        with tenant_session(merchant_id, engine) as s:
+            repo.enqueue_job(s, merchant_id, "reconcile_submission",
+                             f"reconcile:{draft_id}:{attempt.isoformat()}:wait:{elapsed // timedelta(seconds=RECONCILE_AFTER_SECONDS)}",
+                             row.dispute_id, payload={"draft_id": str(draft_id), "started_at": attempt.isoformat()},
+                             delay_seconds=RECONCILE_AFTER_SECONDS)
+        return {"draft_id": str(draft_id), "waiting": "send may still be running"}
     with tenant_session(merchant_id, engine) as s:
-        settled = _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, "worker",
+        settled = _settle(s, merchant_id, draft_id, row.dispute_id, row.provider_dispute_id, "worker", attempt,
                           sent=sent, note=note, action="draft.submit_reconciled",
                           summary={"sent": sent, "note": note, "paypal_status": live.get("status")})
     return {"draft_id": str(draft_id), "sent": sent, "note": note, "settled": settled}

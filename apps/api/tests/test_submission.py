@@ -179,6 +179,90 @@ def test_two_simultaneous_sends_reach_paypal_once(merchant, app_engine, worker_e
     assert sends == 1
 
 
+def test_a_newer_draft_waits_while_another_send_of_the_case_is_open(client, merchant, app_engine, worker_engine):
+    dispute_id, first = analyzed(app_engine, worker_engine, merchant)
+    approve(client, first)
+    fake = FakePayPal(fail=httpx.ReadTimeout("slow"))
+    app.dependency_overrides[paypal_sink] = lambda: fake
+    assert client.post(f"/api/drafts/{first['draft']['id']}/submit").status_code == 504   # may have reached PayPal
+    run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)             # the case moves on
+    second = client.get(f"/api/disputes/{dispute_id}/analysis").json()
+    assert second["draft"]["id"] != first["draft"]["id"]
+    approve(client, second)
+    r = client.post(f"/api/drafts/{second['draft']['id']}/submit")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "SEND_IN_PROGRESS"
+    assert len(fake.sent) == 1
+
+
+def test_a_changed_case_blocks_a_send_until_it_is_analysed_again(client, merchant, app_engine, worker_engine):
+    dispute_id, a = analyzed(app_engine, worker_engine, merchant)
+    approve(client, a)
+    with tenant_session(merchant, app_engine) as s:
+        s.execute(text("UPDATE disputes SET version = version + 1 WHERE id = :d"), {"d": dispute_id})
+    fake = FakePayPal()
+    app.dependency_overrides[paypal_sink] = lambda: fake
+    r = client.post(f"/api/drafts/{a['draft']['id']}/submit")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "DRAFT_OUT_OF_DATE" and fake.sent == []
+
+
+def test_an_older_revision_is_never_sent(client, merchant, app_engine, worker_engine):
+    dispute_id, first = analyzed(app_engine, worker_engine, merchant)
+    approve(client, first)
+    with tenant_session(merchant, app_engine) as s:   # a failed send that an analysis running during it left behind
+        s.execute(text("""INSERT INTO drafts (merchant_id, dispute_id, revision, body, payload_hash, analysis_id, claims)
+                          SELECT merchant_id, dispute_id, revision + 1, body, payload_hash, analysis_id, claims
+                          FROM drafts WHERE id = :i"""), {"i": first["draft"]["id"]})
+    fake = FakePayPal()
+    app.dependency_overrides[paypal_sink] = lambda: fake
+    r = client.post(f"/api/drafts/{first['draft']['id']}/submit")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "DRAFT_OUT_OF_DATE" and fake.sent == []
+
+
+def _claimed(client, merchant, app_engine, worker_engine, note=None) -> UUID:
+    """A send that has started and not come back yet (no outcome recorded)."""
+    _, a = analyzed(app_engine, worker_engine, merchant)
+    approve(client, a)
+    with tenant_session(merchant, app_engine) as s:
+        s.execute(text("UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = :n WHERE id = :i"),
+                  {"n": note, "i": a["draft"]["id"]})
+    return UUID(a["draft"]["id"])
+
+
+def test_reconcile_waits_for_a_send_still_in_flight(client, merchant, app_engine, worker_engine):
+    draft_id = _claimed(client, merchant, app_engine, worker_engine)
+    out = submission.reconcile(merchant, draft_id, FakePayPal(), worker_engine)
+    assert out == {"draft_id": str(draft_id), "waiting": "send may still be running"}
+    assert draft_row(app_engine, merchant, draft_id).status == "SUBMITTING"
+    with tenant_session(merchant, app_engine) as s:
+        queued = s.execute(text("SELECT count(*) FROM jobs WHERE kind = 'reconcile_submission' AND merchant_id = :m"),
+                           {"m": merchant}).scalar()
+    assert queued == 1
+
+
+def test_reconcile_settles_a_send_that_already_came_back_unconfirmed(client, merchant, app_engine, worker_engine):
+    draft_id = _claimed(client, merchant, app_engine, worker_engine, note="UNCONFIRMED")
+    assert submission.reconcile(merchant, draft_id, FakePayPal(), worker_engine)["note"] == "NOT_RECEIVED"
+    assert draft_row(app_engine, merchant, draft_id).status == "SUBMIT_FAILED"
+
+
+def test_an_older_attempts_check_does_not_touch_a_newer_send(client, merchant, app_engine, worker_engine):
+    draft_id = stuck(app_engine, worker_engine, merchant, "2026-10-12T11:45:20Z")
+    out = submission.reconcile(merchant, draft_id, FakePayPal(), worker_engine, started_at="2026-10-12T10:00:00+00:00")
+    assert out == {"skipped": "an older attempt"}
+    assert draft_row(app_engine, merchant, draft_id).status == "SUBMITTING"
+
+
+def test_paypals_yes_outranks_an_earlier_failed_verdict(client, merchant, app_engine, worker_engine):
+    draft_id = _claimed(client, merchant, app_engine, worker_engine, note="UNCONFIRMED")
+    started = draft_row(app_engine, merchant, draft_id).submit_started_at
+    submission.reconcile(merchant, draft_id, FakePayPal(), worker_engine)
+    with tenant_session(merchant, worker_engine) as s:
+        dispute_id = s.execute(text("SELECT dispute_id FROM drafts WHERE id = :i"), {"i": draft_id}).scalar()
+        assert submission._settle(s, merchant, draft_id, dispute_id, "PP-X", "test", started, sent=True, note=None,
+                                  action="draft.submitted", summary={})
+    assert draft_row(app_engine, merchant, draft_id).status == "SUBMITTED"
+
+
 def test_synthetic_fixture_is_never_sent(client, merchant, app_engine, worker_engine):
     _, a = analyzed(app_engine, worker_engine, merchant, sandbox=False)
     fake = FakePayPal()
@@ -246,7 +330,7 @@ def test_reanalysis_cancels_an_unsent_approval(client, merchant, app_engine, wor
         old = s.execute(text("SELECT status FROM drafts WHERE id = :i"), {"i": a["draft"]["id"]}).scalar()
         state = s.execute(text("SELECT internal_state FROM disputes WHERE id = :d"), {"d": dispute_id}).scalar()
     assert (old, state) == ("SUPERSEDED", "NEEDS_REVIEW")
-    assert client.post(f"/api/drafts/{a['draft']['id']}/submit").json()["detail"]["code"] == "NOT_SUBMITTABLE"
+    assert client.post(f"/api/drafts/{a['draft']['id']}/submit").json()["detail"]["code"] == "DRAFT_OUT_OF_DATE"
 
 
 # --------------------------------------------------------------- unknown outcomes and reconciliation (D2)

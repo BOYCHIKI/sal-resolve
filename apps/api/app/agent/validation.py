@@ -31,6 +31,8 @@ DOC_FIELDS: dict[str, tuple[str, ...]] = {
     "seller_shipment": ("tracking_id",),
     # Photos and a summary the seller recorded before shipping (packing.py, ADR-007): what was packed, never delivery.
     "packing_proof": (),
+    # SAL's record that an order and its invoice matched. It supports the case, it proves no fact by itself.
+    "deal_record": (),
 }
 MONEY_FIELDS = {"order_amount", "payment_amount", "reported_payment_amount"}
 CURRENCY_FIELDS = {"currency", "payment_currency"}
