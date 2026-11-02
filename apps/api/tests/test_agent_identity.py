@@ -155,3 +155,14 @@ def test_with_an_internal_token_agents_pass_and_nothing_else_opens(buyer, monkey
     assert buyer.post(ORDER_URL, json=order_body()).status_code == 201
     assert buyer.get("/api/deals").status_code == 401
     assert buyer.get("/agent/v1/../../api/deals").status_code == 401
+
+
+@pytest.mark.db
+def test_repeated_bad_tokens_are_slowed_and_good_ones_are_not_counted(buyer):
+    stranger = TestClient(app, headers={"authorization": "Bearer nonsense"})
+    for _ in range(agent_identity.MAX_FAILURES):
+        assert stranger.get(DEAL_URL).status_code == 401
+    assert stranger.get(DEAL_URL).status_code == 429
+    assert buyer.get(DEAL_URL).status_code == 429   # same address, so the same limit
+    agent_identity.failed_attempts.clear()
+    assert buyer.post(ORDER_URL, json=order_body()).status_code == 201

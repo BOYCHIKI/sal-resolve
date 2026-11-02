@@ -175,17 +175,20 @@ def attach_to_dispute(merchant_id: UUID, dispute_id: UUID, engine: Engine | None
             ORDER BY created_at DESC LIMIT 1"""), {"t": txn, "o": list(orders), "r": list(resis)}).first()
         if p is None:
             return 0
-        files = s.execute(text("""SELECT object_key, mime, sha256, size_bytes FROM packing_files
+        files = s.execute(text("""SELECT object_key, mime, sha256, size_bytes, created_at FROM packing_files
                                   WHERE packing_id = :p ORDER BY created_at"""), {"p": p.id}).all()
         photos = [f for f in files if f.mime in IMAGES]
         videos = [f for f in files if f.mime not in IMAGES]
         ref = f"{SOURCE_PREFIX} {p.code[:8]}"
-        summary = [f"Packing record {p.code}, recorded by the seller on "
+        summary = [f"Packing record {p.code}, opened by the seller on "
                    f"{p.created_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC (server time)"]
         summary += [f"Order: {p.order_ref}"] if p.order_ref else []
         summary += [f"PayPal transaction: {p.transaction_id}"] if p.transaction_id else []
         summary += [f"Tracking: {p.tracking_number}"] if p.tracking_number else []
-        summary.append(f"{len(photos)} photo(s) and {len(videos)} video(s) recorded before shipping")
+        summary.append(f"{len(photos)} photo(s) and {len(videos)} video(s) on the record")
+        if files:  # only when SAL received them: it cannot know when they were taken
+            summary.append(f"Files received by SAL from {files[0].created_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} "
+                           f"to {files[-1].created_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC (server time)")
         summary += [f"SHA-256 {f.sha256} ({f.mime})" for f in files]
         if videos:
             summary.append("Videos are kept in SAL: PayPal accepts images and PDF only.")
@@ -211,11 +214,17 @@ def attach_to_dispute(merchant_id: UUID, dispute_id: UUID, engine: Engine | None
 
 
 def purge_expired(merchant_id: UUID, storage_dir: Path, engine: Engine | None = None) -> int:
-    """Delete packing records past their retention, files first. Worker only."""
+    """Delete packing records past their retention, files first. Worker only. A record whose photos are evidence on
+    a dispute that is still open stays until the dispute ends, since a send attaches those same files."""
     with tenant_session(merchant_id, engine) as s:
-        keys = s.execute(text("""SELECT f.object_key FROM packing_files f JOIN packing_proofs p ON p.id = f.packing_id
-                                 WHERE p.expires_at <= now()""")).scalars().all()
-        gone = s.execute(text("DELETE FROM packing_proofs WHERE expires_at <= now()")).rowcount
+        ids = s.execute(text("""
+            SELECT p.id FROM packing_proofs p WHERE p.expires_at <= now() AND NOT EXISTS (
+                SELECT 1 FROM packing_files f JOIN evidence e ON e.object_key = f.object_key
+                JOIN disputes d ON d.id = e.dispute_id
+                WHERE f.packing_id = p.id AND d.provider_status IS DISTINCT FROM 'RESOLVED')""")).scalars().all()
+        keys = s.execute(text("SELECT object_key FROM packing_files WHERE packing_id = ANY(:ids)"),
+                         {"ids": ids}).scalars().all()
+        gone = s.execute(text("DELETE FROM packing_proofs WHERE id = ANY(:ids)"), {"ids": ids}).rowcount
     for key in keys:
         path = (storage_dir / key).resolve()
         if storage_dir.resolve() in path.parents and path.is_file():

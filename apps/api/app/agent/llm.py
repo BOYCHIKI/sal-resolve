@@ -94,9 +94,9 @@ class _Claims(BaseModel):
 
 
 # Re-analysis (a new upload, a PayPal update) used to send every document to the model again. Extraction of
-# an unchanged document is now reused: the key covers the model, its options, the prompt, the field list,
-# the evidence id and every line, so any change to any of them is a miss. Evidence ids are unique rows, so a
-# cached result can never be served for another merchant's document. In-process and bounded: a worker
+# an unchanged document is now reused: the key covers the merchant, the model, its options, the prompt, the
+# field list, the evidence id and every line, so any change to any of them is a miss. Typed resi documents have
+# the same id for every merchant, which is why the merchant is in the key. In-process and bounded: a worker
 # restart only costs one fresh extraction per document.
 EXTRACTION_CACHE_SIZE = 512
 _extraction_cache: OrderedDict[str, list[CandidateFact]] = OrderedDict()
@@ -142,6 +142,7 @@ class LLMRoles:
         )
         self.usage = {"input_tokens": 0, "output_tokens": 0}  # OpenAI usage for this run (stored on agent_runs)
         self.cache = {"hits": 0, "misses": 0}  # documents reused vs. sent to the model in this run
+        self.cache_scope = ""                  # the merchant: one merchant's reading never serves another
         # Only parameters the operator set: reasoning models reject temperature, others reject reasoning_effort.
         self.options: dict[str, Any] = {"max_completion_tokens": MAX_OUTPUT_TOKENS}
         if cfg.llm_temperature is not None:
@@ -167,8 +168,8 @@ class LLMRoles:
                 "lines": [{"line": line.line, "text": line.text} for line in d.lines[:MAX_LINES_PER_DOCUMENT]]}
 
     def _cache_key(self, payload: dict[str, Any]) -> str:
-        material = json.dumps({"model": self.model, "options": self.options, "system": EXTRACT_SYSTEM,
-                               "doc": payload}, sort_keys=True)
+        material = json.dumps({"scope": self.cache_scope, "model": self.model, "options": self.options,
+                               "system": EXTRACT_SYSTEM, "doc": payload}, sort_keys=True)
         return hashlib.sha256(material.encode()).hexdigest()
 
     def extract(self, documents: list[Document]) -> list[CandidateFact]:

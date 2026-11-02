@@ -134,6 +134,20 @@ def _file_for(doc) -> tuple[str, bytes, str] | None:
     return None
 
 
+def _files_to_send(docs: list[Any]) -> list[tuple[str, bytes, str]]:
+    """Every approved document, or nothing: a file gone from storage stops the send instead of vanishing from it."""
+    files = []
+    for doc in docs:
+        if doc.doc_type == "seller_shipment":  # a resi the seller typed travels as tracking_info, not as a document
+            continue
+        file = _file_for(doc)
+        if file is None and doc.object_key:
+            raise SubmissionError(409, "DOCUMENT_MISSING", f"Document {doc.evidence_id} is no longer in storage")
+        if file is not None:
+            files.append(file)
+    return files
+
+
 def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
            engine: Engine | None = None) -> dict[str, Any]:
     # 1. Check, claim and gather everything to send, in one short transaction.
@@ -162,6 +176,7 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
         if row.evidence_hash is not None and row.evidence_hash != repo.hash_checksums(d.checksum for d in docs):
             raise SubmissionError(409, "EVIDENCE_CHANGED",
                                   "Documents changed after approval; review and approve the new reply")
+        files = _files_to_send(docs)
         try:
             claimed = s.execute(text("""UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL
                                         WHERE id = :id AND status IN ('APPROVED', 'SUBMIT_FAILED')
@@ -182,9 +197,6 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
     tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof", "seller_shipment")
                       for line in (d.content_lines or [])]
     payload = _payload(row.claims, row.facts, requested, tracking_lines, _is_digital(row.provider_payload))
-    # A resi the seller typed travels as tracking_info above; it is their word, not a document to attach.
-    files = [_file_for(d) for d in docs if d.doc_type != "seller_shipment"]
-    files = [f for f in files if f is not None]
 
     # 2. Network, outside any transaction.
     error, unknown = _send(paypal, row.provider_dispute_id, payload, files)

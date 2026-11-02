@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import secrets
+import threading
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
@@ -23,6 +25,9 @@ from app import repositories as repo
 from app.db import tenant_session
 
 TOKEN_PREFIX = "salagent"
+MAX_FAILURES = 10
+FAILURE_WINDOW_SECONDS = 60
+MAX_TRACKED_ADDRESSES = 10_000
 
 
 class AgentRole(StrEnum):
@@ -36,6 +41,35 @@ class AgentIdentity:
     merchant_id: UUID
     name: str
     role: AgentRole
+
+
+class FailedAttempts:
+    """Bad tokens per address in a sliding window. In-process: each API process counts for itself."""
+
+    def __init__(self) -> None:
+        self._seen: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def _recent(self, address: str, now: float) -> list[float]:
+        return [t for t in self._seen.get(address, []) if now - t < FAILURE_WINDOW_SECONDS]
+
+    def blocked(self, address: str) -> bool:
+        with self._lock:
+            return len(self._recent(address, time.monotonic())) >= MAX_FAILURES
+
+    def record(self, address: str) -> None:
+        with self._lock:
+            now = time.monotonic()
+            if len(self._seen) >= MAX_TRACKED_ADDRESSES:
+                self._seen.clear()
+            self._seen[address] = [*self._recent(address, now), now]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._seen.clear()
+
+
+failed_attempts = FailedAttempts()
 
 
 def _hash(secret: str) -> str:

@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-RULE_VERSION = "SAL-SYN-INR-4"  # 2: one field/two values is a conflict; ASSESS stage (ADR-005)
+RULE_VERSION = "SAL-SYN-INR-5"  # 2: one field/two values is a conflict; ASSESS stage (ADR-005)
 #                                 3: delivered to the PayPal address; ordered -> shipped -> delivered in order
 #                                 4: a document saying the delivery failed outvotes a dated proof
+#                                 5: not-yet wording is no delivery; delivery follows the order; the parcel is tied
+#                                    to this order and named on its proof
 
 FactStatus = Literal["supported", "conflicted", "rejected"]
 

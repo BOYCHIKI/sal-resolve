@@ -215,7 +215,7 @@ class LabelExtractor:
                 # Read every time, so a disagreeing proof-of-delivery date never depends on the model noticing it.
                 if _status_phrase(text) == "DELIVERED" and one_date:
                     got.append(("carrier_event_date", one_date))
-            elif _DELIVERY_DATE.search(text) and one_date:
+            elif _DELIVERY_DATE.search(text) and _status_phrase(text) == "DELIVERED" and one_date:
                 got.append(("delivery_date", one_date))
         return got
 

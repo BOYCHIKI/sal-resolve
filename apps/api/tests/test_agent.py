@@ -330,3 +330,15 @@ def test_a_failed_model_call_caches_nothing(monkeypatch):
     ok_client, completions = _fake_client([_Facts(facts=[])])
     LLMRoles(client=ok_client, model="test-model").extract(docs)
     assert len(completions.calls) == 1  # nothing was cached by the failed attempt
+
+
+def test_one_merchants_cached_reading_never_serves_another():
+    from unittest.mock import MagicMock
+
+    from app.agent.llm import LLMRoles
+    roles = LLMRoles(client=MagicMock(), model="test")
+    doc = {"evidence_id": "resi:JP1", "type": "seller_shipment", "fields": "", "lines": []}
+    roles.cache_scope = "merchant-a"
+    key_a = roles._cache_key(doc)
+    roles.cache_scope = "merchant-b"
+    assert roles._cache_key(doc) != key_a

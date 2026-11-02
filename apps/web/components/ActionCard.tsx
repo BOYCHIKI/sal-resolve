@@ -22,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new suggestion.",
   EVIDENCE_CHANGED: "Documents changed since SAL wrote this. SAL is preparing a new suggestion.",
   DRAFT_OUT_OF_DATE: "This case changed since SAL wrote this reply. SAL is preparing a new one.",
+  DOCUMENT_MISSING: "A document on this case is no longer stored, so nothing was sent. Add it again.",
   SEND_IN_PROGRESS: "An earlier reply is still being confirmed with PayPal. Try again in a few minutes.",
   SUBMIT_UNCONFIRMED: "PayPal didn’t answer in time. SAL will check whether it arrived. Don’t send it again yet.",
   PAYPAL_REJECTED: "PayPal didn’t accept it right now. You can try again from the case page.",

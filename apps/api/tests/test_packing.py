@@ -170,3 +170,36 @@ def test_api_create_upload_list_and_label(merchant, app_engine, tmp_path, monkey
     finally:
         app.dependency_overrides.clear()
         get_settings.cache_clear()
+
+
+def _expire(rec) -> None:
+    engine = create_engine(get_settings().migrator_database_url)
+    with engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.merchant_id', :m, true)"), {"m": rec["merchant"]})
+        conn.execute(text("UPDATE packing_proofs SET expires_at = :t WHERE id = :p"),
+                     {"t": datetime.now(timezone.utc) - timedelta(days=1), "p": rec["id"]})
+    engine.dispose()
+
+
+@pytest.mark.db
+def test_photos_on_an_open_dispute_outlive_the_retention_period(merchant, app_engine, worker_engine, tmp_path):
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-001")
+    rec = packing.create(merchant, "SAL-INR-001", None, None, "operator:test", app_engine)
+    packing.add_file(merchant, UUID(rec["id"]), PNG, "operator:test", tmp_path, app_engine)
+    packing.attach_to_dispute(merchant, dispute_id, worker_engine)
+    _expire({**rec, "merchant": str(merchant)})
+    assert packing.purge_expired(merchant, tmp_path, worker_engine) == 0
+    assert any(p.is_file() for p in (tmp_path / str(merchant)).rglob("*"))
+
+
+@pytest.mark.db
+def test_the_summary_states_when_the_files_arrived_and_claims_nothing_about_shipping(merchant, app_engine, worker_engine, tmp_path):
+    dispute_id = seed_golden(app_engine, merchant, "SAL-INR-001")
+    rec = packing.create(merchant, "SAL-INR-001", None, None, "operator:test", app_engine)
+    packing.add_file(merchant, UUID(rec["id"]), PNG, "operator:test", tmp_path, app_engine)
+    packing.attach_to_dispute(merchant, dispute_id, worker_engine)
+    with tenant_session(merchant, app_engine) as s:
+        lines = s.execute(text("""SELECT content_lines FROM evidence WHERE dispute_id = :d AND mime = 'text/plain'
+                                  AND doc_type = 'packing_proof'"""), {"d": dispute_id}).scalar()
+    summary = " ".join(line["text"] for line in lines)
+    assert "Files received by SAL" in summary and "before shipping" not in summary

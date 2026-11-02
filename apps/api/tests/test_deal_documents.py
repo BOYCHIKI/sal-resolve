@@ -142,8 +142,21 @@ def test_a_photo_is_transcribed_then_grounded(client, worker_engine):
     reader = FakeReader()
     upload(client, PNG)
     doc = read_doc(client, reader, worker_engine)
-    assert reader.transcribed == 1 and doc["status"] == "NEEDS_CONFIRMATION"
+    assert reader.transcribed >= 1 and doc["status"] == "NEEDS_CONFIRMATION"
     assert [line["text"] for line in doc["lines"]] == PAGE
+
+
+@pytest.mark.db
+def test_a_transcription_that_stopped_early_is_taken_again(client, worker_engine):
+    long_page = [f"line {i}" for i in range(12)]
+
+    class Short(FakeReader):
+        def transcribe(self, data, mime):
+            self.transcribed += 1
+            return long_page[:1] if self.transcribed == 1 else long_page
+    reader = Short(page=long_page)
+    upload(client, PNG)
+    assert len(read_doc(client, reader, worker_engine)["lines"]) == 12 and reader.transcribed == 2
 
 
 @pytest.mark.db
@@ -239,3 +252,9 @@ def test_one_merchant_never_sees_anothers_document(client):
     other = create_merchant(f"Doc-{uuid4().hex[:6]}")
     app.dependency_overrides[current_merchant] = lambda: other
     assert client.get("/api/deal-documents").json()["items"] == []
+
+
+def test_a_subtotal_is_never_taken_for_the_total():
+    page = ["Subtotal USD 1,000.00", "Total USD 1,200.00"]
+    assert ground_document(read_page(total=v("1000.00", 1), items=[]), page)["total"]["value"] is None
+    assert ground_document(read_page(total=v("1200.00", 2), items=[]), page)["total"]["value"] == "1200.00"

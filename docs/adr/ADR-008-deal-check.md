@@ -66,7 +66,7 @@ The seller presses **Request a correction** on a held deal. Code writes the mess
 ## 4. Limits
 
 - SAL compares documents. It cannot tell whether an order was right in the first place, or whether a part fits.
-- `/agent/v1/` has no rate limit yet. It must have one before being public.
+- `/agent/v1/` slows repeated bad tokens per address, counted in each API process. A public deployment behind a proxy needs the real client address and a shared counter.
 - Credentials are issued from the command line for the demo merchant only.
 - The agent flow is exercised by simulated scripts, not by a real ACP or AP2 integration.
 - Photos and PO text go to OpenAI. A seller must be told before real documents are used.

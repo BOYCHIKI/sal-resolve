@@ -79,7 +79,8 @@ PROHIBITED_RE = re.compile(
 STATUS_FIELDS = {"carrier_status", "delivery_status"}
 VALUE_FAILS_TYPE_CHECK = "value fails type check"
 # Normalized statuses, so words are joined by underscores: NOT_DELIVERED, RETURNED_TO_SENDER, DELIVERY_ATTEMPT_FAILED.
-_DELIVERY_FAILED = re.compile(r"NOT_|RETURN|FAIL|UNDELIVER|CANCEL|LOST|REFUSED|REJECTED|GAGAL|BELUM|RETUR")
+_DELIVERY_FAILED = re.compile(r"NOT_|CANNOT|NEVER|RETURN|FAIL|UNDELIVER|CANCEL|LOST|REFUSED|REJECTED|GAGAL|BELUM|RETUR|"
+                              r"TIDAK")
 # Real documents use their own references (#100245, 1Z999AA10123456784, 2X920845424009805): letters, digits
 # and dashes with at least one digit. The golden TXN-/ORD-/TRK- ids are a subset.
 # Indonesian invoices often use slashes (INV/2026/10/0087, DBR/0921).
@@ -114,11 +115,14 @@ STATUS_WORDS = {
     "RETURNED": (r"returned", r"dikembalikan", r"retur"),
     "DELIVERED": (r"delivered", r"terkirim", r"selesai antar", r"diterima(?!\s+di\b)"),
 }
-_NEGATED = re.compile(r"\b(not|belum|gagal|failed|undelivered|tidak)\b", re.I)
+# Wording that a parcel did not, or has yet to, arrive: "cannot be delivered", "to be delivered by", "akan diterima".
+_NEGATED = re.compile(r"\b(not|cannot|can't|never|unable|belum|gagal|failed|undelivered|tidak|to be|will be|scheduled|"
+                      r"expected|estimated|akan)\b", re.I)
 
 
 def _status_phrase(text: str) -> str | None:
     """SAL's status for a courier phrase, or None. A negated phrase ("belum terkirim", "not delivered") is none."""
+    text = text.replace("_", " ")
     if _NEGATED.search(text):
         return None
     for status, words in STATUS_WORDS.items():
@@ -159,6 +163,10 @@ def amounts_in(text: str) -> set[Decimal]:
 def value_in_line(field: str, value: str, text: str) -> bool:
     """Is this normalized value really written in the line? Literal match, or the same date, amount or
     status in another common format. Nothing is inferred: the thing itself must be on the line."""
+    if field in STATUS_FIELDS and value in STATUS_WORDS:  # the words decide: DELIVERED is written in "NOT DELIVERED" too
+        return _status_phrase(text) == value
+    if field == "delivery_date" and _NEGATED.search(text):
+        return False
     if _appears(value, text):
         return True
     if field in DATE_FIELDS:
@@ -305,10 +313,10 @@ def _rule_delivered_to_the_paypal_address(first) -> list[Finding]:
 def _rule_no_failed_delivery(facts: list[Fact]) -> list[Finding]:
     """A document saying the parcel did not arrive outvotes a dated proof: the two cannot both stand, so a person
     decides. A negated status ("FAILED") never becomes a fact, so its rejected form counts here too. Only words that
-    mean failure count: "Completed" or an older "In transit" reading are not failures."""
-    failed = [f for f in facts if f.field in STATUS_FIELDS and (
-        (f.status == "rejected" and f.reason == VALUE_FAILS_TYPE_CHECK)
-        or (f.status == "supported" and _DELIVERY_FAILED.search(f.value)))]
+    mean failure count: "Completed", an older "In transit" reading or a long warehouse scan are not failures."""
+    failed = [f for f in facts if f.field in STATUS_FIELDS
+              and ((f.status == "rejected" and f.reason == VALUE_FAILS_TYPE_CHECK) or f.status == "supported")
+              and _DELIVERY_FAILED.search(re.sub(r"[\s-]+", "_", f.value.upper()))]
     if not failed:
         return []
     why = f"A document says the delivery did not succeed ({failed[0].value}); requires human review"
@@ -331,7 +339,35 @@ def _rule_timeline_in_order(first) -> list[Finding]:
         why = f"Delivered on {delivered.value}, before it was shipped on {shipped.value}"
         _mark_conflicted((shipped, delivered), why)
         findings.append(Finding("conflict", "delivered_before_ship", (shipped.source, delivered.source), why))
+    if ordered and delivered and ordered.status == "supported" and delivered.status == "supported" \
+            and delivered.value < ordered.value:
+        why = f"Delivered on {delivered.value}, before the order date {ordered.value}"
+        _mark_conflicted((ordered, delivered), why)
+        findings.append(Finding("conflict", "delivered_before_order", (ordered.source, delivered.source), why))
     return findings
+
+
+def _rule_parcel_belongs_to_this_order(first) -> list[Finding]:
+    """A courier page that names another order is another parcel."""
+    order, parcel_order = first("order_id"), first("tracking_order_id")
+    if not (order and parcel_order and order.value != parcel_order.value):
+        return []
+    why = f"The courier page is for order {parcel_order.value}, not {order.value}; requires human review"
+    _mark_conflicted((order, parcel_order), why)
+    return [Finding("conflict", "tracking_order_id", (order.source, parcel_order.source), why)]
+
+
+def _rule_proof_names_its_parcel(first, documents: list[Document]) -> list[Finding]:
+    """A dated proof that never writes this case's tracking number could belong to any parcel. Some proofs name
+    the parcel another way, so a person looks; it is not called a different parcel."""
+    proof, tracked = first("delivery_date"), first("tracking_id")
+    if not (proof and tracked) or first("delivery_tracking_id"):
+        return []
+    lines = [line.text for doc in documents if doc.evidence_id == proof.source.evidence_id for line in doc.lines]
+    if any(_appears(tracked.value, line) for line in lines):
+        return []
+    return [Finding("missing", "delivery_tracking_id", (proof.source,),
+                    f"The proof of delivery does not mention tracking number {tracked.value}")]
 
 
 def _rule_buyer_amount_matches_payment(first) -> list[Finding]:
@@ -382,6 +418,8 @@ def apply_inr_rules(facts: list[Fact], documents: list[Document], dispute_amount
         findings += _rule_courier_documents_present({d.type for d in documents})
         findings += _rule_delivery_dates_agree(first)
         findings += _rule_tracking_numbers_agree(first)
+        findings += _rule_parcel_belongs_to_this_order(first)
+        findings += _rule_proof_names_its_parcel(first, documents)
         findings += _rule_delivered_to_the_paypal_address(first)
         findings += _rule_timeline_in_order(first)
         findings += _rule_no_failed_delivery(facts)

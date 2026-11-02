@@ -78,6 +78,8 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
     if loaded is None:
         return {"skipped": "dispute not found"}
     case, version, evidence_hash = loaded
+    if hasattr(roles.drafter, "cache_scope"):
+        roles.drafter.cache_scope = str(merchant_id)
 
     label = roles.label
     try:

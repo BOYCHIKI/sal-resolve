@@ -272,9 +272,9 @@ def test_scan_holds_job_turns_transaction_search_into_cards(merchant, app_engine
 # --------------------------------------------------------------- autonomous watch
 def test_watch_queues_one_round_per_window_and_never_doubles_it(merchant, app_engine, worker_engine):
     t = 1_800_000_000.0
-    assert worker.watch_tick(worker_engine, [merchant], t, 10, paypal_ready=True) == 3   # sync, holds, cards
-    assert worker.watch_tick(worker_engine, [merchant], t + 60, 10, paypal_ready=True) == 0  # same window
-    assert worker.watch_tick(worker_engine, [merchant], t + 600, 10, paypal_ready=False) == 1  # cards only
+    assert worker.watch_tick(worker_engine, [merchant], t, 10, paypal_merchant=merchant) == 3   # sync, holds, cards
+    assert worker.watch_tick(worker_engine, [merchant], t + 60, 10, paypal_merchant=merchant) == 0  # same window
+    assert worker.watch_tick(worker_engine, [merchant], t + 600, 10, paypal_merchant=None) == 1  # cards only
     with tenant_session(merchant, app_engine) as s:
         kinds = s.execute(text("SELECT kind FROM jobs WHERE idempotency_key LIKE 'watch:%' ORDER BY kind")).scalars().all()
     assert kinds == ["refresh_actions", "refresh_actions", "scan_holds", "sync_disputes"]
@@ -293,3 +293,12 @@ def test_a_deadline_coming_close_adds_a_reply_card_without_any_new_event(merchan
     assert "REPLY_BEFORE_DEADLINE" not in {a["kind"] for a in list_actions(merchant, engine=app_engine)}
     refresh_open_disputes(merchant, deadline - timedelta(hours=30), worker_engine)  # 30 hours left
     assert "REPLY_BEFORE_DEADLINE" in {a["kind"] for a in list_actions(merchant, engine=app_engine)}
+
+
+@pytest.mark.db
+def test_the_paypal_credential_serves_only_its_own_merchant(merchant, worker_engine):
+    other = create_merchant(f"Other-{uuid4().hex[:6]}")
+    worker.watch_tick(worker_engine, [merchant, other], 7_000_000.0, 10, paypal_merchant=merchant)
+    with tenant_session(other, worker_engine) as s:
+        kinds = s.execute(text("SELECT kind FROM jobs WHERE merchant_id = :m"), {"m": other}).scalars().all()
+    assert kinds == ["refresh_actions"]

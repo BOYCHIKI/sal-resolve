@@ -408,11 +408,16 @@ def _deal_error(exc: deals.DealError) -> HTTPException:
     return HTTPException(exc.status, detail={"code": exc.code, "retryable": False})
 
 
-def current_agent(authorization: str = Header("")) -> agent_identity.AgentIdentity:
+def current_agent(request: Request, authorization: str = Header("")) -> agent_identity.AgentIdentity:
     """The verified agent behind a bearer token. Its merchant comes from the credential, never from the request."""
+    address = request.client.host if request.client else "unknown"
+    if agent_identity.failed_attempts.blocked(address):
+        raise HTTPException(429, detail={"code": "AGENT_RATE_LIMITED", "retryable": True},
+                            headers={"Retry-After": str(agent_identity.FAILURE_WINDOW_SECONDS)})
     scheme, _, token = authorization.partition(" ")
     agent = agent_identity.authenticate(token) if scheme == "Bearer" else None
     if agent is None:
+        agent_identity.failed_attempts.record(address)
         raise HTTPException(401, detail={"code": "AGENT_UNAUTHORIZED", "retryable": False},
                             headers={"WWW-Authenticate": "Bearer"})
     return agent

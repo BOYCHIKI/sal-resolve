@@ -193,14 +193,17 @@ def watched_merchants(engine: Engine, demo_merchant_id: UUID | None) -> list[UUI
     return sorted(ids, key=str)
 
 
-def watch_tick(engine: Engine, merchants: list[UUID], now_epoch: float, minutes: int, paypal_ready: bool) -> int:
+def watch_tick(engine: Engine, merchants: list[UUID], now_epoch: float, minutes: int,
+               paypal_merchant: UUID | None) -> int:
     """Queue one round of checks per merchant: sync PayPal, scan held funds, refresh every open case's cards.
     The job key names the time window, so a restart or a second worker never queues the same round twice.
+    The worker holds one PayPal credential, which belongs to `paypal_merchant` alone, so only that merchant syncs;
+    another merchant must never receive what this credential can see.
     Nothing here writes to PayPal; the round only reads and proposes."""
     window = int(now_epoch // (minutes * 60))
-    kinds = (["sync_disputes", "scan_holds"] if paypal_ready else []) + ["refresh_actions"]
     queued = 0
     for merchant_id in merchants:
+        kinds = (["sync_disputes", "scan_holds"] if merchant_id == paypal_merchant else []) + ["refresh_actions"]
         with tenant_session(merchant_id, engine) as s:
             for kind in kinds:
                 queued += repo.enqueue_job(s, merchant_id, kind, f"watch:{kind}:{merchant_id}:{window}")
@@ -318,12 +321,12 @@ def main() -> None:
     log.info("worker started")
     last_beat = 0.0
     last_watch = float("-inf")
-    paypal_ready = bool(cfg.paypal_client_id and cfg.paypal_client_secret)
+    paypal_merchant = cfg.demo_merchant_id if cfg.paypal_client_id and cfg.paypal_client_secret else None
     while not stopping.is_set():
         if cfg.watch_minutes and time.monotonic() - last_watch >= cfg.watch_minutes * 60:
             try:
                 queued = watch_tick(ctx.engine, watched_merchants(ctx.engine, cfg.demo_merchant_id), time.time(),
-                                    cfg.watch_minutes, paypal_ready)
+                                    cfg.watch_minutes, paypal_merchant)
                 log.info("watch round queued %d jobs", queued)
             except Exception:  # noqa: BLE001 — a failed round is retried next window, the worker keeps running
                 log.exception("watch round failed")

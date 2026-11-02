@@ -103,6 +103,14 @@ def _fresh_settings():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_failed_attempts():
+    """Failed token counts live for the process; each test starts without them."""
+    from app.agent_identity import failed_attempts
+    failed_attempts.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _fresh_extraction_cache():
     """The LLM extraction cache lives for the process; each test starts without it."""
     from app.agent.llm import clear_extraction_cache
