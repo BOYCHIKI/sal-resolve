@@ -61,7 +61,7 @@ const figures = [
 const FOOTER = [
   { title: "Product", links: [["How it works", "#how"], ["What it checks", "#features"], ["AI agents", "#agents"]] },
   { title: "Demo", links: [["Deal Check", "/deals"], ["Practice disputes", "/demo"]] },
-  { title: "Project", links: [["Source on GitHub", "https://github.com/BOYCHIKI/sal-resolve"], ["MIT licence", "https://github.com/BOYCHIKI/sal-resolve/blob/main/LICENSE"]] },
+  { title: "Project", links: [["Security", "/security"], ["Source on GitHub", "https://github.com/BOYCHIKI/sal-resolve"], ["MIT licence", "https://github.com/BOYCHIKI/sal-resolve/blob/main/LICENSE"]] },
 ];
 
 const Icon = ({ children }: { children: React.ReactNode }) => (
