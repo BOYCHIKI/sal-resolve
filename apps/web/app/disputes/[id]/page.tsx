@@ -77,7 +77,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="lp sky min-h-screen">
-      <AppHeader back />
+      <AppHeader />
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-20 pt-8">
         <section aria-label="What happened" data-reveal className="lp-card flex flex-col gap-6 p-6 sm:p-8">
           <div className="flex flex-wrap justify-between gap-5">

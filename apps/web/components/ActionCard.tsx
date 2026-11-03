@@ -88,7 +88,7 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
             : "Sends only this exact reply, and only when you press the button."}</p>}
         {error && <p role="alert" className="text-[15px] text-red-ink">{error}</p>}
       </div>
-      {!info && <div className="flex flex-none items-center gap-2">
+      {!info && <div className="flex max-w-full flex-wrap items-center gap-2 sm:flex-none">
         {caseLink && action.dispute_id && !sends && (
           <Link href={`/disputes/${action.dispute_id}`} className="lp-btn">Open the case</Link>
         )}

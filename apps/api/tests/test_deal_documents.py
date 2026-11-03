@@ -156,7 +156,7 @@ def test_a_transcription_that_stopped_early_is_taken_again(client, worker_engine
             return long_page[:1] if self.transcribed == 1 else long_page
     reader = Short(page=long_page)
     upload(client, PNG)
-    assert len(read_doc(client, reader, worker_engine)["lines"]) == 12 and reader.transcribed == 2
+    assert len(read_doc(client, reader, worker_engine)["lines"]) == 12 and reader.transcribed == 3   # 2 + the second copy
 
 
 @pytest.mark.db
@@ -258,3 +258,48 @@ def test_a_subtotal_is_never_taken_for_the_total():
     page = ["Subtotal USD 1,000.00", "Total USD 1,200.00"]
     assert ground_document(read_page(total=v("1000.00", 1), items=[]), page)["total"]["value"] is None
     assert ground_document(read_page(total=v("1200.00", 2), items=[]), page)["total"]["value"] == "1200.00"
+
+
+def test_a_value_the_second_copy_does_not_show_is_left_blank():
+    second = [line.replace("BP-2217-A", "BP-2211-A").replace("1,200.00", "1,300.00") for line in PAGE]
+    proposal = ground_document(read_page(), PAGE, second)
+    assert proposal["items"][0]["item_code"]["value"] is None and proposal["total"]["value"] is None
+    assert proposal["items"][0]["quantity"]["value"] == "40"
+    assert proposal["reference"]["value"] == "PO-7781"
+
+
+def test_two_agreeing_copies_keep_every_value():
+    assert ground_document(read_page(), PAGE, list(PAGE)) == ground_document(read_page(), PAGE)
+
+
+@pytest.mark.parametrize(("written", "kept"), [("No. PO-7781", "PO-7781"), ("No:#7781", "#7781"), ("Nr. PO-7781", "PO-7781")])
+def test_a_label_in_front_of_the_number_is_dropped(written, kept):
+    page = [f"Order {written}"]
+    assert ground_document(read_page(reference=v(written, 1), items=[]), page)["reference"]["value"] == kept
+
+
+@pytest.mark.parametrize("short", ["54", "02", "A1"])
+def test_a_number_too_short_to_be_a_reference_is_left_blank(short):
+    assert ground_document(read_page(reference=v(short, 1), items=[]), [f"Page {short}"])["reference"]["value"] is None
+
+
+@pytest.mark.db
+def test_a_photo_is_copied_twice_and_a_disagreement_is_blank(client, worker_engine):
+    other = [line.replace("BP-2217-A", "BP-2211-A") for line in PAGE]
+
+    class Reader(FakeReader):
+        def transcribe(self, data, mime):
+            self.transcribed += 1
+            return PAGE if self.transcribed <= 3 else other
+    upload(client, PNG)
+    doc = read_doc(client, Reader(), worker_engine)
+    assert doc["proposal"]["items"][0]["item_code"]["value"] is None
+    assert doc["proposal"]["reference"]["value"] == "PO-7781"
+
+
+@pytest.mark.db
+def test_a_typed_pdf_needs_no_second_copy(client, worker_engine):
+    reader = FakeReader()
+    upload(client, render_text_pdf(PAGE))
+    assert read_doc(client, reader, worker_engine)["proposal"]["reference"]["value"] == "PO-7781"
+    assert reader.transcribed == 0

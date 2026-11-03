@@ -46,6 +46,7 @@ Files pass through three stages in `app/deal_documents.py`:
 
 1. A PDF with text is read directly. A photo goes through the vision model, which copies it into lines.
 2. The model proposes values, each naming its line. `ground_document` keeps a value only if it is written on that line, so a misread leaves a blank and never a wrong number. Blanks in required fields trigger up to two more reads, which may only fill blanks.
+   A photo is copied twice, and the values a deal is compared on must appear in both copies. This reduces misread characters but does not end them: both copies can repeat the same misreading of an alphanumeric code.
 3. The seller checks the values beside the page and confirms. No deal or invoice exists before that, and the confirmed form passes through the D1 models.
 
 ### D6: A clear deal becomes evidence

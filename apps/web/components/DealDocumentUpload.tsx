@@ -5,10 +5,12 @@ import { useState } from "react";
 import { uploadDealDocument } from "@/app/actions";
 
 const MAX_FILE = 10 * 1024 * 1024;
+const FIELD = "min-h-11 rounded-xl border border-(--lp-line-strong) bg-(--lp-well) px-3 py-2 font-normal";
 
-/** Sends one PO or invoice file. The worker reads it, and it comes back below for the seller to confirm. */
+/** Sends one PO or invoice file. The worker reads it, and it comes back for the seller to confirm. */
 export function DealDocumentUpload() {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [kind, setKind] = useState("PURCHASE_ORDER");
   const [dealRef, setDealRef] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -29,14 +31,18 @@ export function DealDocumentUpload() {
     setBusy(false);
     if (!result.ok) return setError(result.code === "DEAL_NOT_FOUND" ? "No deal has that PO number." : result.message);
     setFile(null);
+    setOpen(false);
     router.refresh();
   }
 
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className="lp-btn text-[16px]">Add a document</button>;
+  }
   return (
-    <section className="lp-card flex flex-wrap items-end gap-4 px-6 py-5">
+    <section aria-label="Add a document" className="lp-card flex w-full flex-col gap-4 p-5 sm:max-w-md">
       <label className="flex flex-col gap-1 text-[15px] font-semibold">
-        Document
-        <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-lg border bg-white px-3 py-2 font-normal">
+        What is it?
+        <select value={kind} onChange={(e) => setKind(e.target.value)} className={FIELD}>
           <option value="PURCHASE_ORDER">Purchase order</option>
           <option value="INVOICE">Invoice</option>
         </select>
@@ -44,16 +50,22 @@ export function DealDocumentUpload() {
       {kind === "INVOICE" && (
         <label className="flex flex-col gap-1 text-[15px] font-semibold">
           PO number
-          <input value={dealRef} onChange={(e) => setDealRef(e.target.value)} className="rounded-lg border bg-white px-3 py-2 font-normal" />
+          <input value={dealRef} onChange={(e) => setDealRef(e.target.value)} className={FIELD} />
         </label>
       )}
-      <label className="flex flex-col gap-1 text-[15px] font-semibold">
-        PDF or photo
-        <input type="file" accept="application/pdf,image/jpeg,image/png,image/gif" className="font-normal"
+      <div className="flex flex-col gap-1">
+        <input id="deal-file" type="file" className="sr-only" accept="application/pdf,image/jpeg,image/png,image/gif"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      </label>
-      <button type="button" onClick={send} disabled={busy} className="lp-btn text-[15px]">{busy ? "Sending…" : "Let SAL read it"}</button>
-      {error && <p role="alert" className="w-full text-[15px] text-red-ink">{error}</p>}
+        <label htmlFor="deal-file" className="lp-btn-ghost cursor-pointer text-center text-[15px]">
+          {file ? "Choose a different file" : "Choose a PDF or take a photo"}
+        </label>
+        {file && <span className="muted text-[14px] [overflow-wrap:anywhere]">{file.name}</span>}
+      </div>
+      {error && <p role="alert" className="text-[15px] text-red-ink">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={send} disabled={busy} className="lp-btn text-[15px]">{busy ? "Sending…" : "Let SAL read it"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="muted px-2 py-2 text-[15px] hover:underline">Cancel</button>
+      </div>
     </section>
   );
 }

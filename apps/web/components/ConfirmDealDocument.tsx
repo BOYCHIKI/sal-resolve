@@ -6,6 +6,7 @@ import { confirmDealDocument, discardDealDocument } from "@/app/actions";
 import type { DealDocument, ProposedItem, ProvenValue } from "@/lib/api";
 
 const DEFAULT_APPROVAL_DAYS = 90;
+const INPUT = "min-h-11 rounded-xl border border-(--lp-line-strong) bg-(--lp-well) px-3 py-2 font-normal";
 type Row = { item_code: string; description: string; quantity: string; unit_price: string };
 const EMPTY_ROW: Row = { item_code: "", description: "", quantity: "", unit_price: "" };
 
@@ -25,20 +26,21 @@ function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-function Field({ label, value, onChange, proven }: {
-  label: string; value: string; onChange: (v: string) => void; proven?: ProvenValue;
-}) {
-  const blank = !value.trim();
+type FieldSpec = { label: string; value: string; onChange: (v: string) => void; proven?: ProvenValue; optional?: boolean };
+
+function Field({ label, value, onChange, proven, optional }: Omit<FieldSpec, "onChange"> & { onChange: (v: string) => void }) {
+  const blank = !value.trim() && !optional;
   return (
-    <label className="flex flex-col gap-1 text-[14px] font-semibold">
+    <label className="flex min-w-0 flex-col gap-1 text-[14px] font-semibold">
       <span>{label}{proven?.line ? <span className="muted font-normal"> · line {proven.line}</span> : null}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)}
-        className={`rounded-lg border bg-white px-3 py-2 font-normal ${blank ? "border-red-ink" : ""}`} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={blank}
+        className={`${INPUT} w-full ${blank ? "border-red-ink" : ""}`} />
     </label>
   );
 }
 
-/** The page on one side, the values on the other. A blank means SAL could not prove the value, so the seller types it. */
+/** The page on one side, the values on the other. What SAL proved stays visible to compare, because a proven value can
+ *  still be a misread digit. A blank means SAL could not prove the value, so the seller types it. */
 export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
   const router = useRouter();
   const p = doc.proposal;
@@ -56,11 +58,16 @@ export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
   const [postal, setPostal] = useState(p?.ship_postal_code.value ?? "");
   const [transaction, setTransaction] = useState("");
   const [rows, setRows] = useState<Row[]>(p?.items.length ? p.items.map(toRow) : [EMPTY_ROW]);
+  const [editing, setEditing] = useState(false);
+  const [typed, setTyped] = useState<Set<string>>(new Set());   // keeps a box in place once the seller starts typing
+  const [rowsTyped, setRowsTyped] = useState(false);            // the same for the item rows
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const setRow = (i: number, key: keyof Row, value: string) =>
+  const setRow = (i: number, key: keyof Row, value: string) => {
+    setRowsTyped(true);
     setRows(rows.map((r, n) => (n === i ? { ...r, [key]: value } : r)));
+  };
 
   async function decide(run: () => Promise<{ ok: true } | { ok: false; code: string; message: string }>) {
     setBusy(true);
@@ -82,57 +89,113 @@ export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
     return decide(() => confirmDealDocument(doc.id, doc.kind, body));
   }
 
+  const needsAddress = isInvoice || category === "GOODS";
+  const fields: FieldSpec[] = [
+    { label: isInvoice ? "Invoice number" : "PO number", value: reference, onChange: setReference, proven: p?.reference },
+    ...(isInvoice ? [] : [{ label: "Approved by", value: party, onChange: setParty, proven: p?.party }]),
+    { label: isInvoice ? "Issued on (YYYY-MM-DD)" : "Approval ends (YYYY-MM-DD)", value: date, onChange: setDate,
+      proven: isInvoice ? p?.issued_on : undefined },
+    { label: "Currency", value: currency, onChange: setCurrency, proven: p?.currency },
+    { label: isInvoice ? "Total" : "Approved limit", value: total, onChange: setTotal, proven: p?.total },
+    ...(needsAddress ? [
+      { label: "Country", value: country, onChange: setCountry, proven: p?.ship_country },
+      { label: "City", value: city, onChange: setCity, proven: p?.ship_city },
+      { label: "Postal code", value: postal, onChange: setPostal, proven: p?.ship_postal_code, optional: true },
+    ] : []),
+    ...(isInvoice ? [
+      { label: "Shipping", value: shipping, onChange: setShipping, proven: p?.shipping, optional: true },
+      { label: "Tax", value: tax, onChange: setTax, proven: p?.tax, optional: true },
+      { label: "PayPal transaction ID", value: transaction, onChange: setTransaction, optional: true },
+    ] : []),
+  ];
+  const isBlank = (f: FieldSpec) => !f.value.trim();
+  const toType = fields.filter((f) => !f.optional && (editing || isBlank(f) || typed.has(f.label)));
+  const toCheck = fields.filter((f) => !toType.includes(f) && !isBlank(f));
+  const optional = fields.filter((f) => f.optional && !toCheck.includes(f));
+  const rowsDone = rows.every((r) => Object.values(r).every((v) => v.trim()));
+
+  function FieldInput(f: FieldSpec) {
+    return (
+      <Field key={f.label} label={f.label} value={f.value} proven={f.proven} optional={f.optional}
+        onChange={(v) => { setTyped((old) => new Set(old).add(f.label)); f.onChange(v); }} />
+    );
+  }
+
   return (
-    <li className="lp-card flex flex-wrap gap-6 px-6 py-5">
-      <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-1">
-        <h3 className="text-[17px] font-semibold">{isInvoice ? `Invoice for ${doc.deal_ref}` : "Purchase order"}: what SAL read</h3>
-        <ol className="muted font-mono text-[13px]">
+    <li className="lp-card flex flex-wrap gap-6 px-5 py-5 sm:px-6">
+      <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-2">
+        <h3 className="text-[18px] font-semibold">{isInvoice ? `Invoice for ${doc.deal_ref}` : "Purchase order"}</h3>
+        <p className="muted text-[14px]">The page as SAL read it</p>
+        <ol className="muted max-h-56 overflow-y-auto rounded-xl bg-(--lp-well) p-3 font-mono text-[13px] [overflow-wrap:anywhere]">
           {(doc.lines ?? []).map((l) => <li key={l.line}>{l.line}. {l.text}</li>)}
         </ol>
       </div>
-      <div className="flex flex-[2_1_420px] flex-col gap-3">
-        <p className="muted text-[15px]">Red boxes are values SAL could not find on the page. Check everything, then confirm.</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Field label={isInvoice ? "Invoice number" : "PO number"} value={reference} onChange={setReference} proven={p?.reference} />
-          {!isInvoice && <Field label="Approved by" value={party} onChange={setParty} proven={p?.party} />}
-          <Field label={isInvoice ? "Issued on (YYYY-MM-DD)" : "Approval ends (YYYY-MM-DD)"} value={date} onChange={setDate}
-            proven={isInvoice ? p?.issued_on : undefined} />
-          {!isInvoice && (
-            <label className="flex flex-col gap-1 text-[14px] font-semibold">
-              Category
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-lg border bg-white px-3 py-2 font-normal">
-                <option value="GOODS">Goods</option>
-                <option value="DIGITAL">Digital</option>
-                <option value="SERVICE">Service</option>
-              </select>
-            </label>
-          )}
-          <Field label="Currency" value={currency} onChange={setCurrency} proven={p?.currency} />
-          <Field label={isInvoice ? "Total" : "Approved limit"} value={total} onChange={setTotal} proven={p?.total} />
-          {isInvoice && <Field label="Shipping" value={shipping} onChange={setShipping} proven={p?.shipping} />}
-          {isInvoice && <Field label="Tax" value={tax} onChange={setTax} proven={p?.tax} />}
-          {isInvoice && <Field label="PayPal transaction ID" value={transaction} onChange={setTransaction} />}
-          <Field label="Country" value={country} onChange={setCountry} proven={p?.ship_country} />
-          <Field label="City" value={city} onChange={setCity} proven={p?.ship_city} />
-          <Field label="Postal code" value={postal} onChange={setPostal} proven={p?.ship_postal_code} />
-        </div>
-        {rows.map((row, i) => (
+      <div className="flex min-w-0 flex-[2_1_400px] flex-col gap-4">
+        {!isInvoice && (
+          <label className="flex flex-col gap-1 text-[14px] font-semibold">
+            What was ordered?
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className={INPUT}>
+              <option value="GOODS">Goods</option>
+              <option value="DIGITAL">Digital</option>
+              <option value="SERVICE">Service</option>
+            </select>
+          </label>
+        )}
+        {toType.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[15px] font-semibold">{editing ? "Check and edit" : "SAL couldn’t find these on the page"}</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{toType.map(FieldInput)}</div>
+          </div>
+        )}
+        {(toCheck.length > 0 || !editing) && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[15px] font-semibold">Found on the page: compare with the document</p>
+              {!editing && (
+                <button type="button" onClick={() => setEditing(true)} className="text-[14px] font-semibold underline underline-offset-4">Edit</button>
+              )}
+            </div>
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-[14px] sm:grid-cols-2">
+              {toCheck.map((f) => (
+                <div key={f.label} className="flex justify-between gap-3 border-b border-(--lp-line) py-1.5">
+                  <dt className="muted">{f.label}{f.proven?.line ? ` · line ${f.proven.line}` : ""}</dt>
+                  <dd className="text-right font-medium [overflow-wrap:anywhere]">
+                    {f.value}
+                    {f.proven === p?.reference && <span className="block text-[12px] font-normal text-red-ink">Check each character</span>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+        {editing || rowsTyped || !rowsDone ? rows.map((row, i) => (
           <div key={i} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label="Item code" value={row.item_code} onChange={(v) => setRow(i, "item_code", v)} proven={p?.items[i]?.item_code} />
             <Field label="Description" value={row.description} onChange={(v) => setRow(i, "description", v)} proven={p?.items[i]?.description} />
             <Field label="Quantity" value={row.quantity} onChange={(v) => setRow(i, "quantity", v)} proven={p?.items[i]?.quantity} />
             <Field label="Unit price" value={row.unit_price} onChange={(v) => setRow(i, "unit_price", v)} proven={p?.items[i]?.unit_price} />
           </div>
-        ))}
-        <div className="flex flex-wrap items-center gap-4">
+        )) : (
+          <ul className="flex flex-col text-[14px]">
+            {rows.map((row, i) => (
+              <li key={i} className="flex justify-between gap-3 border-b border-(--lp-line) py-1.5">
+                <span className="[overflow-wrap:anywhere]"><span className="font-mono">{row.item_code}</span> · {row.description}</span>
+                <span className="font-medium whitespace-nowrap">{row.quantity} × {row.unit_price}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {optional.length > 0 && editing && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{optional.map(FieldInput)}</div>}
+        <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={confirm} disabled={busy} className="lp-btn text-[15px]">
             {busy ? "Saving…" : "Confirm"}
           </button>
-          <button type="button" onClick={() => setRows([...rows, EMPTY_ROW])} className="text-[15px] font-semibold underline underline-offset-4">
+          <button type="button" onClick={() => { setEditing(true); setRows([...rows, EMPTY_ROW]); }}
+            className="min-h-11 px-2 text-[15px] font-semibold underline underline-offset-4">
             Add item
           </button>
           <button type="button" onClick={() => decide(() => discardDealDocument(doc.id))} disabled={busy}
-            className="text-[15px] font-semibold underline underline-offset-4">
+            className="muted min-h-11 px-2 text-[15px] hover:underline">
             Discard
           </button>
         </div>

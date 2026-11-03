@@ -45,7 +45,7 @@ export default async function PackingPage() {
 
   return (
     <div className="lp sky min-h-screen">
-      <AppHeader back />
+      <AppHeader />
       <main className="relative">
         <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
         <div className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-12">

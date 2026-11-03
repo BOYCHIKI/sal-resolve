@@ -4,6 +4,7 @@ const ITEMS = [
   "Made-up orders, no real money",
   "Nothing sent without your approval",
   "Facts from your documents only",
+  "Orders checked before delivery",
   "Built on PayPal’s Disputes API",
 ];
 

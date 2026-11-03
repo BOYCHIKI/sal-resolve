@@ -39,7 +39,7 @@ export function RequestCorrection({ deal }: { deal: Deal }) {
   return (
     <div className="flex flex-col items-start gap-2">
       <p className="muted text-[15px]">Send this to the other side. SAL hasn’t sent it to anyone, and the deal’s agents can read it.</p>
-      <pre className="w-full whitespace-pre-wrap rounded-lg bg-white p-3 text-[14px]">{deal.correction.message}</pre>
+      <pre className="w-full whitespace-pre-wrap rounded-xl bg-(--lp-well) p-3 text-[14px] [overflow-wrap:anywhere]">{deal.correction.message}</pre>
       <button type="button" onClick={() => copy(deal.correction!.message)} className="lp-btn-ghost text-[15px]">
         {copied ? "Copied" : "Copy message"}
       </button>

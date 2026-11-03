@@ -1,21 +1,33 @@
 import Link from "next/link";
+import { AppNav, type NavCounts } from "@/components/AppNav";
 import { api } from "@/lib/api";
 
+async function waitingCounts(): Promise<NavCounts> {
+  try {
+    const [deals, documents, actions] = await Promise.all([api.listDeals(), api.listDealDocuments(), api.listActions()]);
+    return {
+      deals: deals.filter((d) => d.status === "HOLD").length + documents.filter((d) => d.status !== "READING").length,
+      disputes: actions.filter((a) => a.dispute_id !== null).length,
+    };
+  } catch {
+    return { deals: 0, disputes: 0 };   // the page itself reports an unreachable server
+  }
+}
+
 // Sits inside a page wrapped in .lp (globals.css), so it takes the landing look.
-export async function AppHeader({ back }: { back?: boolean }) {
+export async function AppHeader() {
   // The worker syncs PayPal and analyses documents; if it stops, say so instead of letting cases stall silently.
-  const health = await api.health();
+  const [health, counts] = await Promise.all([api.health(), waitingCounts()]);
   const workerDown = !health || health.status !== "ok";
   return (
     <header className="sticky top-0 z-10 border-b border-(--lp-line) bg-(--lp-card) backdrop-blur-xl">
-      <div className="mx-auto flex min-h-[60px] max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
-        {back ? (
-          <Link href="/disputes" className="inline-flex min-h-11 items-center text-[15px] font-semibold">‹ All disputes</Link>
-        ) : (
-          <Link href="/" className="display text-xl">
-            SAL <span className="muted font-semibold">Resolve</span>
-          </Link>
-        )}
+      <div className="mx-auto flex min-h-[60px] max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-1">
+        <Link href="/" className="display text-xl">
+          SAL <span className="muted font-semibold">Resolve</span>
+        </Link>
+        <div className="order-last w-full sm:order-none sm:mr-auto sm:w-auto">
+          <AppNav counts={counts} />
+        </div>
         <span className="flex flex-wrap items-center gap-2">
           {workerDown && (
             <span role="status" className="inline-flex items-center gap-2 rounded-full bg-amber-bg px-3.5 py-1.5 text-sm text-amber-ink">

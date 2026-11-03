@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { CourierMarquee, COURIERS, MARKETS } from "@/components/CourierMarquee";
 import { CaseMockup } from "@/components/landing/CaseMockup";
-import { RouteMap } from "@/components/landing/RouteMap";
 import { HeroOrbits } from "@/components/landing/HeroOrbits";
 import { Check, Label } from "@/components/landing/Label";
 import { Ticker } from "@/components/landing/Ticker";
@@ -11,63 +9,63 @@ import { SalMascot } from "@/components/mascot/SalMascot";
 import { SalSays } from "@/components/mascot/SalSays";
 
 export const metadata: Metadata = {
-  title: "SAL Resolve — the evidence copilot for PayPal disputes",
-  description: "When a customer says an order never arrived, SAL checks your documents, flags what doesn’t add up and drafts the reply. You approve before anything is sent.",
+  title: "SAL Resolve — catch the mistake before delivery",
+  description: "SAL checks every order against its invoice before you deliver, and keeps the proof ready if a PayPal dispute comes anyway. You approve before anything is sent.",
 };
 
-const HEADLINE = "Know what your proof shows before you reply.";
+const HEADLINE = "Catch the mistake before delivery.";
 
 const STEPS = [
   {
-    title: "Your disputes, in one list",
-    body: "SAL picks up new disputes from PayPal and shows what the customer claims, how much is at stake, and how many days you have left to reply.",
+    title: "Add the order and the invoice",
+    body: "Upload a PDF or a photo, or let an AI agent send them. SAL reads each value and leaves a blank when it can’t find it on the page.",
     icon: <path d="M4 6h16M4 12h16M4 18h10" />,
   },
   {
-    title: "Your documents, checked for you",
-    body: "SAL reads your invoice, payment receipt and delivery records, and tells you in plain words if proof is missing or two documents disagree.",
+    title: "SAL compares them on its own",
+    body: "Items, quantities, prices, totals, the approved limit and the address. Any difference holds the deal before you deliver.",
     icon: <><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>,
   },
   {
-    title: "You approve, then send",
-    body: "SAL writes the reply using only facts from your documents. You read it, approve it, and send it to PayPal with one click.",
+    title: "If a dispute comes, the proof is ready",
+    body: "A matched deal joins the dispute on that payment. SAL prepares a reply from your documents, and you approve it before it goes to PayPal.",
     icon: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" /></>,
   },
 ];
 
 // Each card names something the product does today; nothing here is a promise.
 const FEATURES = [
-  { title: "Deadline countdown", body: "Every case shows the days left to reply. Under three days, it turns red and moves to the top." },
-  { title: "Mismatches flagged", body: "Two documents with different dates or amounts are pointed out before you reply, not after." },
-  { title: "PayPal’s own record", body: "The payment record is pulled straight from PayPal, so the reply quotes what PayPal already knows." },
-  { title: "Couriers PayPal can follow", body: "The courier on your tracking slip is sent as PayPal’s own carrier code, so PayPal can check the delivery." },
+  { title: "Line-by-line match", body: "Every item, quantity and unit price on the invoice is compared with the order." },
+  { title: "Approved limit", body: "An invoice over the buyer’s limit, or issued after their approval ended, is held." },
+  { title: "Every value shown beside the page", body: "You compare what SAL read with the document before a deal is created." },
+  { title: "A correction you can send", body: "SAL writes the message from the differences it found. You pass it on." },
+  { title: "Dispute deadlines", body: "Every PayPal case shows the time left to reply, with the most urgent on top." },
   { title: "Approval tied to the proof", body: "If a document or the case changes after you approve, the approval lapses and you review again." },
-  { title: "No double sends", body: "If the connection drops mid-send, SAL checks with PayPal before trying again." },
 ];
 
 const TRUST = [
-  "Every sentence comes from one of your documents. Nothing is made up.",
-  "Suspicious text in a customer message is pointed out, never acted on.",
-  "Amounts are shown in the currency the customer paid in.",
+  "Every sentence in a reply comes from one of your documents.",
+  "Instructions hidden in a document are treated as text, never followed.",
+  "The verdict comes from fixed rules, not from an AI’s opinion.",
   "Your business data is kept separate from every other business.",
 ];
 
 const AUDIENCES = [
-  { title: "Small online shops", body: "One person handles orders, shipping and disputes. SAL keeps the paperwork straight so a dispute takes minutes, not an evening." },
-  { title: "Sellers shipping across Southeast Asia", body: "JNE, J&T, Ninja Van, Kerry and more are read straight off your slip, in the courier names you already use." },
-  { title: "Support and finance staff", body: "One list of cases, sorted by urgency, with what to check written out. Nothing leaves without someone approving it." },
+  { title: "Freelancers and agencies", body: "Bill clients anywhere by PayPal invoice, and check the hours, scope and total against what they ordered." },
+  { title: "Small sellers across borders", body: "One person handles orders and paperwork. SAL catches a wrong item, price or address before it ships." },
+  { title: "Teams using AI agents", body: "Buyer and seller agents each get their own identity, and SAL checks what they agreed." },
 ];
 
 const figures = [
-  { value: COURIERS.length, label: "couriers recognised on a tracking slip" },
-  { value: MARKETS, label: "Southeast Asian markets with local couriers" },
-  { value: 3, label: "kinds of proof checked: invoice, payment, delivery" },
+  { value: 9, label: "kinds of difference checked before delivery" },
+  { value: 3, label: "deal types: goods, digital and services" },
+  { value: 2, label: "sides checked: the order and the invoice" },
   { value: 0, label: "replies sent without your approval" },
 ];
 
 const FOOTER = [
-  { title: "Product", links: [["How it works", "#how"], ["What it checks", "#features"], ["Why trust it", "#trust"]] },
-  { title: "Demo", links: [["Open the demo", "/demo"], ["Practice cases", "/disputes"]] },
+  { title: "Product", links: [["How it works", "#how"], ["What it checks", "#features"], ["AI agents", "#agents"], ["Why trust it", "#trust"]] },
+  { title: "Demo", links: [["Deal Check", "/deals"], ["Practice disputes", "/demo"]] },
   { title: "Project", links: [["Source on GitHub", "https://github.com/BOYCHIKI/sal-resolve"], ["MIT licence", "https://github.com/BOYCHIKI/sal-resolve/blob/main/LICENSE"]] },
 ];
 
@@ -93,6 +91,7 @@ export default function Landing() {
           <div className="flex items-center gap-1 text-sm">
             <a href="#how" className="muted hidden px-3.5 py-2.5 md:inline">How it works</a>
             <a href="#features" className="muted hidden px-3.5 py-2.5 md:inline">What it checks</a>
+            <a href="#agents" className="muted hidden px-3.5 py-2.5 md:inline">AI agents</a>
             <a href="#trust" className="muted hidden px-3.5 py-2.5 md:inline">Why trust it</a>
             <Link href="/demo" className="lp-btn">Open the demo</Link>
           </div>
@@ -103,7 +102,7 @@ export default function Landing() {
         <section className="relative overflow-hidden px-4">
           <HeroOrbits />
           <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-5 pb-4 pt-14 text-center sm:pt-20">
-            <span data-reveal><Label>The evidence copilot for PayPal disputes</Label></span>
+            <span data-reveal><Label>The deal checker for PayPal sellers worldwide</Label></span>
             {/* SAL says the headline: a speech bubble pops up beside it and the words arrive one by one (globals.css, .speech). */}
             <SalSays reveal={false} mascot={<SalMascot pose="wave" size={170} />} bubbleClassName="speech-hero max-w-3xl px-6 py-6 sm:px-9 sm:py-8">
               <p className="speech-after mb-2 text-sm font-semibold text-(--lp-blue)">Hi, I’m SAL.</p>
@@ -116,16 +115,16 @@ export default function Landing() {
                 ))}
               </h1>
               <p className="speech-after speech-late muted mt-4 text-lg">
-                I read your PayPal record, invoice and delivery documents, <strong>flag what’s missing</strong>, and draft a reply
-                you approve.
+                I check every order against its invoice, <strong>hold what doesn’t match</strong>, and keep your proof ready if a
+                dispute comes anyway.
               </p>
             </SalSays>
             <div data-reveal className="flex flex-wrap justify-center gap-3">
-              <Link href="/demo" className="lp-btn">Open the demo</Link>
+              <Link href="/deals" className="lp-btn">Try Deal Check</Link>
               <a href="#how" className="lp-btn-ghost lp-ring">See how it works</a>
             </div>
             <ul data-reveal-stagger className="muted flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
-              <li className="flex gap-2"><Check />Facts from your documents only</li>
+              <li className="flex gap-2"><Check />Goods, digital and services</li>
               <li className="flex gap-2"><Check />Nothing sent without you</li>
               <li className="flex gap-2"><Check />Built on PayPal’s Disputes API</li>
             </ul>
@@ -142,25 +141,23 @@ export default function Landing() {
           </div>
         </section>
 
-        <section aria-labelledby="couriers" className="border-t border-(--lp-line) px-4 py-24">
+        <section aria-labelledby="problem" className="border-t border-(--lp-line) px-4 py-24">
           <div className="mx-auto flex max-w-6xl flex-col gap-10">
             <div className="flex max-w-3xl flex-col items-start gap-5">
-              <Label>Couriers</Label>
-              <h2 id="couriers" data-split="reveal" className="display text-4xl sm:text-6xl">Read straight off your tracking slip.</h2>
-              <p data-reveal className="muted text-lg">From local favourites to international carriers, in the courier names you already use.</p>
+              <Label>Why before delivery</Label>
+              <h2 id="problem" data-split="reveal" className="display text-4xl sm:text-6xl">Proof can’t be made after a dispute.</h2>
+              <p data-reveal className="muted text-lg">
+                Once a buyer complains, the order, the invoice and what you agreed are already fixed. SAL checks them while you can still fix them.
+              </p>
             </div>
-            <div data-reveal className="-mx-4 sm:mx-0"><CourierMarquee /></div>
-            <div className="grid items-center gap-10 pt-6 lg:grid-cols-[1.1fr_1fr]">
-              <div className="mx-auto w-full max-w-md lg:max-w-none"><RouteMap /></div>
-              <ul aria-label="SAL by the numbers" data-reveal-stagger className="grid grid-cols-2 gap-x-6 gap-y-10">
-                {figures.map((f) => (
-                  <li key={f.label} className="flex flex-col gap-2 border-t border-dashed border-(--lp-line-strong) pt-5">
-                    <span data-count={f.value} className="display text-6xl tabular-nums text-(--lp-mint) sm:text-7xl">{f.value}</span>
-                    <span className="muted text-[15px]">{f.label}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul aria-label="SAL by the numbers" data-reveal-stagger className="grid grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-4">
+              {figures.map((f) => (
+                <li key={f.label} className="flex flex-col gap-2 border-t border-dashed border-(--lp-line-strong) pt-5">
+                  <span data-count={f.value} className="display text-6xl tabular-nums text-(--lp-mint) sm:text-7xl">{f.value}</span>
+                  <span className="muted text-[15px]">{f.label}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
@@ -168,7 +165,7 @@ export default function Landing() {
           <div className="mx-auto flex max-w-6xl flex-col gap-12">
             <div className="flex max-w-3xl flex-col items-start gap-5">
               <Label>How it works</Label>
-              <h2 data-split="reveal" className="display text-4xl sm:text-6xl">From open dispute to approved reply.</h2>
+              <h2 data-split="reveal" className="display text-4xl sm:text-6xl">From order to proof, before anything goes wrong.</h2>
               <p data-reveal className="muted text-lg">Three steps. SAL prepares; <strong>you decide</strong>.</p>
             </div>
             <ol data-reveal-stagger className="grid gap-5 md:grid-cols-3">
@@ -190,13 +187,13 @@ export default function Landing() {
           <div className="mx-auto flex max-w-6xl flex-col gap-12">
             <div className="flex max-w-3xl flex-col items-start gap-5">
               <Label>What it checks</Label>
-              <h2 data-split="reveal" className="display text-4xl sm:text-6xl">The details that win a dispute.</h2>
+              <h2 data-split="reveal" className="display text-4xl sm:text-6xl">The small details that turn into disputes.</h2>
             </div>
             <SalSays mascot={<Image src="/mascot/sal-focus.png" alt="" width={571} height={527} className="h-auto w-36" />}
               className="lg:self-start" bubbleClassName="max-w-2xl px-6 py-5 sm:px-8 sm:py-6">
               <p className="text-lg">
-                Most disputes are lost on small things: a late reply, a date that doesn’t match, a tracking number PayPal can’t read.
-                <strong> I check each one before you reply.</strong>
+                A wrong item code, an extra hour on the bill, an address that changed along the way.
+                <strong> I compare each one before you deliver.</strong>
               </p>
             </SalSays>
             <div data-reveal-stagger className="grid gap-px overflow-hidden rounded-[20px] border border-(--lp-line) bg-(--lp-line) sm:grid-cols-2 lg:grid-cols-3">
@@ -214,7 +211,7 @@ export default function Landing() {
           <div className="mx-auto flex max-w-6xl flex-col gap-12">
             <div className="flex max-w-3xl flex-col items-start gap-5">
               <Label>Who it’s for</Label>
-              <h2 id="who" data-split="reveal" className="display text-4xl sm:text-6xl">Made for the people who answer disputes.</h2>
+              <h2 id="who" data-split="reveal" className="display text-4xl sm:text-6xl">Made for sellers paid through PayPal, anywhere.</h2>
             </div>
             <div data-reveal-stagger className="grid gap-5 md:grid-cols-3">
               {AUDIENCES.map((a) => (
@@ -224,6 +221,17 @@ export default function Landing() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section id="agents" className="scroll-mt-16 border-t border-(--lp-line) px-4 py-24">
+          <div className="mx-auto flex max-w-6xl flex-col gap-5">
+            <Label>AI agents</Label>
+            <h2 data-split="reveal" className="display max-w-3xl text-4xl sm:text-6xl">When agents buy and sell, someone has to check the deal.</h2>
+            <p data-reveal className="muted max-w-3xl text-lg">
+              Each agent gets its own revocable identity and role. A buyer’s agent sends the order, a seller’s agent sends the invoice, and SAL
+              compares what they agreed. SAL never buys, pays or holds money. Our demo uses simulated agents.
+            </p>
           </div>
         </section>
 
@@ -256,7 +264,10 @@ export default function Landing() {
               <SalSays mascot={<SalMascot pose="happy" size={150} />} bubbleClassName="flex max-w-xl flex-col items-start gap-4 px-6 py-6 sm:px-9 sm:py-8">
                 <h2 className="display text-4xl sm:text-5xl">See it with practice cases.</h2>
                 <p className="muted text-lg">I’ll walk you through a dispute on a PayPal test account, with made-up orders. No real customers or money involved.</p>
-                <Link href="/demo" className="lp-btn">Open the demo</Link>
+                <div className="flex flex-wrap gap-3">
+                  <Link href="/deals" className="lp-btn">Try Deal Check</Link>
+                  <Link href="/demo" className="lp-btn-ghost">Open a practice dispute</Link>
+                </div>
               </SalSays>
             </div>
           </div>
@@ -267,7 +278,7 @@ export default function Landing() {
         <div className="mx-auto grid max-w-6xl gap-10 pb-8 pt-14 sm:grid-cols-[1.5fr_repeat(3,1fr)]">
           <div className="flex flex-col gap-2">
             <span className="display text-xl">SAL <span className="muted font-semibold">Resolve</span></span>
-            <p className="muted max-w-xs text-sm">The evidence copilot for PayPal disputes. SAL prepares; you decide.</p>
+            <p className="muted max-w-xs text-sm">The deal checker for PayPal sellers worldwide. SAL prepares; you decide.</p>
           </div>
           {FOOTER.map((col) => (
             <nav key={col.title} aria-label={col.title} className="flex flex-col gap-2.5 text-sm">

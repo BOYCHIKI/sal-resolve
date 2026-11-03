@@ -1,6 +1,6 @@
 """PO and invoice files, as PDFs or photos. The model reads; code decides what is believed; a person confirms.
 
-A PDF with text is read directly. A photo or scan is first copied into lines by the vision model. The model then
+A PDF with text is read directly. A photo or scan is copied into lines twice by the vision model. The model then
 proposes values, each naming the line it came from, and `ground_document` keeps a value only if it really is on that
 line, so a misread leaves a blank instead of a wrong number. Nothing becomes a deal until the seller checks the
 values beside the page and confirms them, and the confirmed form goes through the same strict models as agent data.
@@ -42,6 +42,8 @@ REQUIRED_KEYS = ("reference", "currency", "total")
 ITEM_KEYS = ("item_code", "description", "quantity", "unit_price")
 _NUMBER = re.compile(r"\d[\d,.]*\d|\d")
 _SUBTOTAL = re.compile(r"\bsub[\s-]?total\b", re.I)
+_REFERENCE_LABEL = re.compile(r"^\s*(?:no|nr|number|num)\b\.?\s*:?\s*", re.I)
+MIN_REFERENCE_CHARS = 4   # shorter is a page number or a stray figure, not a PO or invoice number
 
 TRANSCRIBE_SYSTEM = """You copy the text of a business document from an image.
 Copy every line exactly as written, top to bottom, one output line per printed line, keeping table rows on one line.
@@ -156,25 +158,40 @@ def _has_date(value: str, line: str) -> bool:
     return value in dates_in(line)
 
 
-def _proved(read: ReadValue, page: list[str], found_on) -> dict[str, Any]:
+def _has_reference(value: str, line: str) -> bool:
+    return len(value) >= MIN_REFERENCE_CHARS and _has_code(value, line)
+
+
+def _without_label(read: ReadValue) -> ReadValue:
+    """"No. 4410" and "No:#4410" name the number 4410 and #4410."""
+    return ReadValue(value=_REFERENCE_LABEL.sub("", read.value), line=read.line) if read.value else read
+
+
+def _proved(read: ReadValue, page: list[str], found_on, second_copy: list[str] | None = None) -> dict[str, Any]:
     if read.value is None or read.line is None or not 1 <= read.line <= len(page) or not found_on(read.value, page[read.line - 1]):
+        return {"value": None, "line": None}
+    if second_copy is not None and not any(found_on(read.value, line) for line in second_copy):
         return {"value": None, "line": None}
     return {"value": read.value, "line": read.line}
 
 
-def ground_document(read: ReadDocument, page: list[str]) -> dict[str, Any]:
-    """Only what is written on the line the model named. Everything else comes back blank for the seller to fill."""
+def ground_document(read: ReadDocument, page: list[str], second_copy: list[str] | None = None) -> dict[str, Any]:
+    """Only what is written on the line the model named. Everything else comes back blank for the seller to fill.
+    A photo also has a second copy: one misread digit can sit on its line and pass, so the values a deal is compared
+    on must appear in both copies. A typed PDF has no copy to misread."""
     return {
-        "reference": _proved(read.reference, page, _has_code), "party": _proved(read.party, page, _has_text),
+        "reference": _proved(_without_label(read.reference), page, _has_reference, second_copy),
+        "party": _proved(read.party, page, _has_text),
         "issued_on": _proved(read.issued_on, page, _has_date), "currency": _proved(read.currency, page, _has_code),
-        "total": _proved(read.total, page, _has_total), "shipping": _proved(read.shipping, page, _has_number),
-        "tax": _proved(read.tax, page, _has_number), "ship_country": _proved(read.ship_country, page, _has_code),
-        "ship_city": _proved(read.ship_city, page, _has_text),
-        "ship_postal_code": _proved(read.ship_postal_code, page, _has_code),
-        "items": [{"item_code": _proved(i.item_code, page, _has_code),
+        "total": _proved(read.total, page, _has_total, second_copy),
+        "shipping": _proved(read.shipping, page, _has_number, second_copy),
+        "tax": _proved(read.tax, page, _has_number, second_copy),
+        "ship_country": _proved(read.ship_country, page, _has_code), "ship_city": _proved(read.ship_city, page, _has_text),
+        "ship_postal_code": _proved(read.ship_postal_code, page, _has_code, second_copy),
+        "items": [{"item_code": _proved(i.item_code, page, _has_code, second_copy),
                    "description": _proved(i.description, page, _has_text),
-                   "quantity": _proved(i.quantity, page, _has_number),
-                   "unit_price": _proved(i.unit_price, page, _has_number)} for i in read.items],
+                   "quantity": _proved(i.quantity, page, _has_number, second_copy),
+                   "unit_price": _proved(i.unit_price, page, _has_number, second_copy)} for i in read.items],
     }
 
 
@@ -251,13 +268,20 @@ def _fullest_copy(reader: DocumentReader, image: bytes, mime: str) -> list[str]:
     return best
 
 
-def _page_lines(data: bytes, mime: str, reader: DocumentReader) -> list[str]:
+def _clean(raw: list[str]) -> list[str]:
+    return [cleaned for line in raw if (cleaned := " ".join(line.split()))][:evidence_store.MAX_LINES]
+
+
+def _page_lines(data: bytes, mime: str, reader: DocumentReader) -> tuple[list[str], list[str] | None]:
+    """The page, and for a photo or scan a second, independent copy to compare it with."""
     typed = [line["text"] for line in evidence_store.extract_lines(data, mime)]
     if typed:
-        return typed
+        return typed, None
     images = _scanned_pages(data) if mime == "application/pdf" else [(data, mime)]
-    raw = [line for image, image_mime in images for line in _fullest_copy(reader, image, image_mime)]
-    return [cleaned for line in raw if (cleaned := " ".join(line.split()))][:evidence_store.MAX_LINES]
+    first = _clean([line for image, image_mime in images for line in _fullest_copy(reader, image, image_mime)])
+    if not first:
+        return [], None
+    return first, _clean([line for image, image_mime in images for line in _fullest_copy(reader, image, image_mime)])
 
 
 def _set_read(merchant_id: UUID, document_id: UUID, engine: Engine, status: DocumentStatus,
@@ -281,17 +305,17 @@ def read_document(merchant_id: UUID, document_id: UUID, reader: DocumentReader, 
         return {"skipped": "nothing to read"}
     data = evidence_store.read_file(storage_dir, row.object_key)
     try:
-        lines = _page_lines(data, row.mime, reader) if data else []
+        lines, second_copy = _page_lines(data, row.mime, reader) if data else ([], None)
     except evidence_store.EvidenceError:
-        lines = []
+        lines, second_copy = [], None
     if not lines:
         _set_read(merchant_id, document_id, engine, DocumentStatus.UNREADABLE)
         return {"status": DocumentStatus.UNREADABLE.value}
-    proposal = ground_document(reader.read(DocumentKind(row.kind), lines), lines)
+    proposal = ground_document(reader.read(DocumentKind(row.kind), lines), lines, second_copy)
     for _ in range(READ_ROUNDS - 1):
         if not has_blanks(proposal):
             break
-        proposal = fill_blanks(proposal, ground_document(reader.read(DocumentKind(row.kind), lines), lines))
+        proposal = fill_blanks(proposal, ground_document(reader.read(DocumentKind(row.kind), lines), lines, second_copy))
     _set_read(merchant_id, document_id, engine, DocumentStatus.NEEDS_CONFIRMATION, lines, proposal)
     return {"status": DocumentStatus.NEEDS_CONFIRMATION.value, "lines": len(lines)}
 

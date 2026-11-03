@@ -9,7 +9,7 @@ const text = Inter({ subsets: ["latin"], variable: "--font-text", display: "swap
 
 export const metadata: Metadata = {
   title: "SAL Resolve",
-  description: "The evidence copilot for PayPal disputes: know what your documents prove before you reply. You approve before anything is sent.",
+  description: "The deal checker for PayPal sellers worldwide: catch the mistake before delivery, and keep the proof ready. You approve before anything is sent.",
 };
 
 // Runs before paint: turn motion on only for visitors who allow it, and give it back if the motion code never loads.
