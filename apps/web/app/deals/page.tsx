@@ -122,10 +122,10 @@ export default async function DealsPage() {
           </PageHead>
           {!error && (
             <StatTiles stats={[
-              { label: "Needs you", value: needsYou, note: "Holds and documents to confirm", tone: needsYou ? "red" : "green", icon: ICONS.alert },
-              { label: "SAL is working", value: working, note: "Reading or waiting for an invoice", tone: "blue", icon: ICONS.spin },
-              { label: "Clear to deliver", value: clear.length, note: "Order and invoice match", tone: "green", icon: ICONS.check },
-              { label: "Deals", value: deals.length, note: "Orders SAL is watching", tone: "blue", icon: ICONS.file },
+              { label: "Needs you", value: needsYou, note: "Holds and documents to confirm", icon: ICONS.alert },
+              { label: "SAL is working", value: working, note: "Reading or waiting for an invoice", icon: ICONS.spin },
+              { label: "Clear to deliver", value: clear.length, note: "Order and invoice match", icon: ICONS.check },
+              { label: "Deals", value: deals.length, note: "Orders SAL is watching", icon: ICONS.file },
             ]} />
           )}
           {error && (

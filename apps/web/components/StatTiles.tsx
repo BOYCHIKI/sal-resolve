@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 
-export type Stat = { label: string; value: ReactNode; note?: string; tone?: "red" | "amber" | "blue" | "green"; icon: ReactNode };
-
-const TINT = {
-  red: "bg-red-bg text-red-ink",
-  amber: "bg-amber-bg text-amber-ink",
-  blue: "bg-blue-bg text-blue-ink",
-  green: "bg-green-bg text-green-ink",
-};
+export type Stat = { label: string; value: ReactNode; note?: string; icon: ReactNode };
 
 /** The row of figures at the top of a working screen: what is waiting, at a glance. */
 export function StatTiles({ stats }: { stats: Stat[] }) {
@@ -16,7 +9,7 @@ export function StatTiles({ stats }: { stats: Stat[] }) {
       {stats.map((s) => (
         <li key={s.label} className="lp-card flex flex-col gap-3 p-4 sm:p-5">
           <span className="flex items-center gap-2.5">
-            <span aria-hidden="true" className={`grid h-8 w-8 place-items-center rounded-lg ${TINT[s.tone ?? "blue"]}`}>
+            <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-lg bg-blue-bg text-blue-ink">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
                 strokeLinejoin="round">{s.icon}</svg>
             </span>

@@ -5,7 +5,7 @@ import { Check } from "@/components/landing/Label";
 import { Ticker } from "@/components/landing/Ticker";
 import { api, type Dispute } from "@/lib/api";
 import { money } from "@/lib/format";
-import { CASE_TYPES, caseTypeOf, nextStep, origin, stageOf, type Tone } from "@/lib/plain";
+import { CASE_TYPES, caseTypeOf, origin } from "@/lib/plain";
 
 export const metadata: Metadata = {
   title: "Try the demo — SAL Resolve",
@@ -14,23 +14,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const PILL: Record<Tone, string> = {
-  red: "bg-red-bg text-red-ink",
-  amber: "bg-amber-bg text-amber-ink",
-  blue: "bg-blue-bg text-blue-ink",
-  green: "bg-green-bg text-green-ink",
-  grey: "bg-grey-bg text-grey-ink",
-};
-
-const DOT: Record<Tone, string> = {
-  red: "bg-red-ink", amber: "bg-amber-ink", blue: "bg-blue-ink", green: "bg-green-ink", grey: "bg-grey-ink",
-};
-
-// Enough to see the different situations inside one type without turning the box into a list. Practice cases first.
-const PER_TYPE = 5;
+// Two examples keep each row to a couple of lines; the rest are one click away on the cases page.
+const PER_TYPE = 2;
 
 function grouped(disputes: Dispute[]): Map<string, Dispute[]> {
-  const out = new Map<string, Dispute[]>();  // every case per type; the box shows the first PER_TYPE
+  const out = new Map<string, Dispute[]>();  // every case per type; the row shows the first PER_TYPE
   const sorted = [...disputes].sort((a, b) => Number(a.origin === "PAYPAL_SANDBOX") - Number(b.origin === "PAYPAL_SANDBOX"));
   for (const d of sorted) {
     const key = caseTypeOf(d).key;
@@ -42,25 +30,15 @@ function grouped(disputes: Dispute[]): Map<string, Dispute[]> {
 }
 
 function Example({ d }: { d: Dispute }) {
-  const step = nextStep(d);
-  const stage = stageOf(d);
   return (
-    <Link href={`/disputes/${d.id}`}
-      className="group flex flex-col gap-2 rounded-2xl border border-(--lp-line) bg-(--lp-well) px-4 py-3 transition-colors hover:border-(--lp-mint)">
-      <span className="flex items-center gap-3">
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-semibold">{d.summary?.item ?? "Order"}</span>
-          <span className="muted truncate text-[13px]">{money(d.amount)} · {origin(d.origin)}</span>
-        </span>
-        <span className="text-sm font-semibold whitespace-nowrap">Open <span aria-hidden="true" className="inline-block transition-transform group-hover:translate-x-1">→</span></span>
-      </span>
-      <span className="flex flex-wrap gap-1.5 text-xs font-medium">
-        <span className={`rounded-full px-2.5 py-1 ${PILL[step.tone]}`}>{step.label}</span>
-        {stage && <span className={`rounded-full px-2.5 py-1 ${PILL[stage.tone]}`}>{stage.label}</span>}
-      </span>
+    <Link href={`/disputes/${d.id}`} className="group flex items-center justify-between gap-3 py-1 text-[15px]">
+      <span className="min-w-0 truncate"><span className="font-semibold">{d.summary?.item ?? "Order"}</span>
+        <span className="muted"> · {money(d.amount)} · {origin(d.origin)}</span></span>
+      <span aria-hidden="true" className="text-(--lp-blue) transition-transform group-hover:translate-x-1">→</span>
     </Link>
   );
 }
+
 export default async function DemoPage() {
   let groups = new Map<string, Dispute[]>();
   let error = false;
@@ -90,7 +68,7 @@ export default async function DemoPage() {
             <div className="flex max-w-2xl flex-col items-start gap-3">
               <h1 className="text-[28px] font-semibold tracking-tight sm:text-[32px]">Every kind of dispute, sorted</h1>
               <p className="muted text-[16px]">
-                Buyers open different kinds of disputes. Each box is one kind, what the buyer says and what SAL does about it. Open an example to see the case screen as a seller would.
+                Buyers open different kinds of disputes. Each row is one kind: what the buyer says and what SAL does about it. Open an example to see the case screen as a seller would.
               </p>
               <ul className="muted flex flex-wrap gap-x-5 gap-y-1.5 text-[15px]">
                 <li className="flex gap-2"><Check />PayPal test account</li>
@@ -107,36 +85,47 @@ export default async function DemoPage() {
             </p>
           )}
 
-          {!error && (
-            <section aria-label="Case types" className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Kinds that have cases first; the rest stay listed so a seller sees what SAL covers. */}
-              {[...CASE_TYPES].sort((a, b) => Number(!groups.has(a.key)) - Number(!groups.has(b.key))).map((type) => {
-                const all = groups.get(type.key) ?? [];
-                const examples = all.slice(0, PER_TYPE);
-                return (
-                  <article key={type.key} data-reveal
-                    className={`lp-card flex flex-col gap-3 p-5 sm:p-6 ${examples.length ? "" : "opacity-80"}`}>
-                    <div className="flex items-center gap-2.5">
-                      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${DOT[type.tone]}`} />
-                      <h2 className="text-lg font-semibold">{type.title}</h2>
-                      <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-semibold ${PILL[type.tone]}`}>
-                        {all.length} case{all.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                    <p className="text-[15px] font-medium">{type.buyer}</p>
-                    <p className="muted text-[15px] leading-relaxed">{type.sal}</p>
-                    {examples.length > 0 ? (
-                      <div className="flex flex-col gap-2">{examples.map((d) => <Example key={d.id} d={d} />)}</div>
-                    ) : (
-                      <p className="muted rounded-2xl border border-dashed border-(--lp-line-strong) px-4 py-3 text-sm">
-                        No case of this kind yet. When one comes in, SAL puts it here.
-                      </p>
-                    )}
-                  </article>
-                );
-              })}
-            </section>
-          )}
+          {!error && (() => {
+            const withCases = CASE_TYPES.filter((t) => groups.has(t.key));
+            const without = CASE_TYPES.filter((t) => !groups.has(t.key));
+            return (
+              <section aria-label="Case types" className="flex flex-col gap-4">
+                <ul className="lp-card flex flex-col divide-y divide-(--lp-line)">
+                  {withCases.map((type) => {
+                    const all = groups.get(type.key) ?? [];
+                    return (
+                      <li key={type.key} className="grid gap-x-8 gap-y-3 px-5 py-5 sm:px-6 md:grid-cols-[1fr_minmax(260px,340px)]">
+                        <div className="flex flex-col gap-1">
+                          <h2 className="text-[17px] font-semibold">{type.title} <span className="muted font-normal">· {all.length}</span></h2>
+                          <p className="text-[15px]">{type.buyer}</p>
+                          <p className="muted text-[15px]">{type.sal}</p>
+                        </div>
+                        <div className="flex flex-col">
+                          {all.slice(0, PER_TYPE).map((d) => <Example key={d.id} d={d} />)}
+                          {all.length > PER_TYPE && (
+                            <Link href="/disputes" className="muted py-1 text-[14px] hover:underline">+{all.length - PER_TYPE} more</Link>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {without.length > 0 && (
+                  <details className="text-[15px]">
+                    <summary className="muted cursor-pointer font-semibold">Other kinds SAL knows · {without.length}</summary>
+                    <ul className="lp-card mt-3 flex flex-col divide-y divide-(--lp-line)">
+                      {without.map((type) => (
+                        <li key={type.key} className="flex flex-col gap-1 px-5 py-4 sm:px-6">
+                          <h2 className="font-semibold">{type.title}</h2>
+                          <p className="muted">{type.buyer} {type.sal}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </section>
+            );
+          })()}
           <section aria-label="Before you ship" className="lp-card flex flex-wrap items-center gap-5 p-5 sm:p-6">
             <div className="flex min-w-0 flex-[999_1_320px] flex-col gap-1">
               <h2 className="text-lg font-semibold">Before you ship: packing proof</h2>

@@ -94,12 +94,10 @@ export default async function DisputesPage() {
 
           {!error && (
             <StatTiles stats={[
-              { label: "Needs you", value: todo.length, note: todo.length ? "Decisions waiting" : "Nothing right now",
-                tone: todo.length ? "red" : "green", icon: ICONS.alert },
-              { label: "Next deadline", value: nearest ? nearest.due.short : "None", note: "To reply to PayPal",
-                tone: nearest?.due.urgent ? "red" : "amber", icon: ICONS.clock },
-              { label: "Money on hold", value: held ?? "0", note: "Held by PayPal while cases are open", tone: "amber", icon: ICONS.lock },
-              { label: "PayPal cases", value: paypal.length, note: "On your test account", tone: "blue", icon: ICONS.cases },
+              { label: "Needs you", value: todo.length, note: todo.length ? "Decisions waiting" : "Nothing right now", icon: ICONS.alert },
+              { label: "Next deadline", value: nearest ? nearest.due.short : "None", note: "To reply to PayPal", icon: ICONS.clock },
+              { label: "Money on hold", value: held ?? "0", note: "Held by PayPal while cases are open", icon: ICONS.lock },
+              { label: "PayPal cases", value: paypal.length, note: "On your test account", icon: ICONS.cases },
             ]} />
           )}
 
