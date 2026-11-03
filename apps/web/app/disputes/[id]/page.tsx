@@ -62,13 +62,14 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     (dispute.origin !== "PAYPAL_SANDBOX" || dispute.allowed_actions.includes("provide_evidence"));
   const deadlineDate = dispute.deadline_at ? due.text.replace(/^Reply by /, "").split(" · ")[0] : "None";
 
+  const noReply = !!analysis && !draft?.claims.length;   // nothing to cite, so there is no reply to approve
   const steps: { label: string; state: StepState }[] = [
     { label: "Documents checked", state: analysis ? "done" : "current" },
     {
-      label: findings.length ? `Check ${findings.length} detail${findings.length > 1 ? "s" : ""}` : "Nothing to check",
-      state: !analysis ? "todo" : findings.length && draft?.status === "DRAFT" ? "current" : "done",
+      label: findings.length ? `Check ${findings.length} detail${findings.length > 1 ? "s" : ""}` : noReply ? "Add proof" : "Nothing to check",
+      state: !analysis ? "todo" : (findings.length && draft?.status === "DRAFT") || noReply ? "current" : "done",
     },
-    { label: "Approve the reply", state: sent || approved ? "done" : analysis && !findings.length ? "current" : "todo" },
+    { label: "Approve the reply", state: sent || approved ? "done" : analysis && !findings.length && !noReply ? "current" : "todo" },
     { label: "Send to PayPal", state: sent ? "done" : approved ? "current" : "todo" },
   ];
   const conflictDate = findings.some((f) => f.field === "delivery_date");
@@ -99,7 +100,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               {dispute.channel === "EXTERNAL" && (
                 <p className="text-[15px] font-semibold text-red-ink">The buyer’s bank decides. PayPal Seller Protection may not cover it, depending on the reason and your country.</p>
               )}
-              <h1 className="display text-[30px] sm:text-[44px]">{headline}</h1>
+              <h1 className="text-[26px] font-semibold tracking-tight sm:text-[32px]">{headline}</h1>
               <p className="text-lg text-ink-soft">{detail}</p>
             </div>
             <div className={`flex flex-col gap-1 self-start rounded-[20px] px-5 py-4 ${due.urgent ? BOX.red : BOX.grey}`}>
@@ -124,7 +125,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
           return (
             <section aria-label="What your documents prove" data-reveal className="lp-card flex flex-col gap-4 p-6 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="display text-2xl sm:text-3xl">What your documents prove</h2>
+                <h2 className="text-xl font-semibold sm:text-2xl">What your documents prove</h2>
                 <span className={`rounded-full px-4 py-1.5 text-[15px] font-semibold ${BOX[r.tone]}`}>{r.label}</span>
               </div>
               {due.urgent && !sent && (
@@ -203,7 +204,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
             <section aria-label="Your reply" data-reveal className="lp-card flex flex-col gap-4 p-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="display text-2xl sm:text-3xl">Your reply to PayPal</h2>
+                <h2 className="text-xl font-semibold sm:text-2xl">Your reply to PayPal</h2>
                 <span className="text-sm text-ink-muted">Written by SAL from your documents</span>
               </div>
               {!draft || claimCount === 0 ? (

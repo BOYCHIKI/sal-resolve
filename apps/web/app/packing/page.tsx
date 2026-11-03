@@ -1,7 +1,7 @@
 import { AppHeader } from "@/components/AppHeader";
-import { Label } from "@/components/landing/Label";
 import { PackingFiles } from "@/components/PackingFiles";
 import { PackingForm } from "@/components/PackingForm";
+import { PageHead } from "@/components/StatTiles";
 import { api, type PackingRecord } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ function PackingRow({ p }: { p: PackingRecord }) {
   const refs = [p.order_ref && `Order ${p.order_ref}`, p.transaction_id && `PayPal ${p.transaction_id}`,
     p.tracking_number && `Resi ${p.tracking_number}`].filter(Boolean).join(" · ");
   return (
-    <li className="lp-card flex flex-wrap items-start gap-5 px-6 py-5">
+    <li className="flex flex-wrap items-start gap-5 px-5 py-4 sm:px-6">
       <div className="flex min-w-0 flex-[999_1_280px] flex-col gap-1">
         <span className="text-[17px] font-semibold">{refs}</span>
         <span className="muted text-[15px]">
@@ -46,18 +46,10 @@ export default async function PackingPage() {
   return (
     <div className="lp sky min-h-screen">
       <AppHeader />
-      <main className="relative">
-        <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-12">
-          <div className="flex flex-col items-start gap-4">
-            <Label>Before you ship</Label>
-            <h1 className="display text-[42px] sm:text-6xl">Packing proof</h1>
-            <p className="muted max-w-2xl text-[17px]">
-              Film or photograph the item going into the box. SAL keeps the files with the time they arrived and a
-              fingerprint of each one. If the buyer later says the item was wrong or damaged, SAL adds the photos to
-              that case for you. It shows what you packed, not that it was delivered.
-            </p>
-          </div>
+      <main>
+        <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-8">
+          <PageHead title="Packing proof"
+            lead="Photograph or film the item going into the box. If the buyer later says it was wrong or damaged, SAL adds the files to that case. It shows what you packed, not that it was delivered." />
 
           {error && (
             <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">
@@ -69,8 +61,8 @@ export default async function PackingPage() {
 
           {records.length > 0 ? (
             <section aria-label="Packing records" className="flex flex-col gap-3">
-              <h2 className="text-xl font-semibold">Your packing records <span className="muted">· {records.length}</span></h2>
-              <ul className="flex flex-col gap-2.5">{records.map((p) => <PackingRow key={p.id} p={p} />)}</ul>
+              <h2 className="text-[18px] font-semibold">Your packing records <span className="muted font-normal">· {records.length}</span></h2>
+              <ul className="lp-card flex flex-col divide-y divide-(--lp-line)">{records.map((p) => <PackingRow key={p.id} p={p} />)}</ul>
             </section>
           ) : !error && (
             <p className="muted lp-dashed rounded-[20px] p-10 text-center">No packing records yet.</p>

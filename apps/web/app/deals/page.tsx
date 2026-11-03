@@ -2,8 +2,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ConfirmDealDocument } from "@/components/ConfirmDealDocument";
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
-import { Label } from "@/components/landing/Label";
 import { RequestCorrection } from "@/components/RequestCorrection";
+import { ICONS, PageHead, StatTiles } from "@/components/StatTiles";
 import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCode } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -69,23 +69,26 @@ function HeldDeal({ deal }: { deal: Deal }) {
   );
 }
 
-function CompactDeal({ deal, note }: { deal: Deal; note: string }) {
+const NOTE_TONE = { green: "bg-green-bg text-green-ink", blue: "bg-blue-bg text-blue-ink" };
+
+// One row of a list panel; the panel draws the dividers.
+function CompactDeal({ deal, note, tone }: { deal: Deal; note: string; tone: keyof typeof NOTE_TONE }) {
   return (
-    <li className="lp-card flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-4 sm:px-6">
+    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3.5 sm:px-6">
       <div className="flex min-w-0 flex-col">
         <span className="text-[16px] font-semibold">{deal.deal_ref}</span>
         <Summary deal={deal} />
       </div>
-      <span className="text-[15px] font-semibold">{note}</span>
+      <span className={`rounded-full px-3 py-0.5 text-[14px] font-semibold ${NOTE_TONE[tone]}`}>{note}</span>
     </li>
   );
 }
 
-function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+function Section({ title, count, panel, children }: { title: string; count: number; panel?: boolean; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-[20px] font-semibold">{title} <span className="muted font-normal">· {count}</span></h2>
-      <ul className="flex flex-col gap-3">{children}</ul>
+      <h2 className="text-[18px] font-semibold">{title} <span className="muted font-normal">· {count}</span></h2>
+      <ul className={panel ? "lp-card flex flex-col divide-y divide-(--lp-line)" : "flex flex-col gap-3"}>{children}</ul>
     </section>
   );
 }
@@ -112,19 +115,19 @@ export default async function DealsPage() {
     <div className="lp sky min-h-screen">
       <AppHeader />
       <AutoRefresh seconds={REFRESH_SECONDS} />
-      <main className="relative">
-        <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-10">
-          <div className="flex flex-wrap items-end justify-between gap-5">
-            <div className="flex max-w-2xl flex-col items-start gap-3">
-              <Label>Before you deliver</Label>
-              <h1 className="display text-[42px] sm:text-6xl">Deal Check</h1>
-              <p className="muted text-[17px]">
-                SAL compares each order with its invoice on its own. A hold stays inside SAL, and nothing is sent to PayPal.
-              </p>
-            </div>
+      <main>
+        <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-8">
+          <PageHead title="Deal Check" lead="SAL compares each order with its invoice before you deliver. Nothing here is sent to PayPal.">
             <DealDocumentUpload />
-          </div>
+          </PageHead>
+          {!error && (
+            <StatTiles stats={[
+              { label: "Needs you", value: needsYou, note: "Holds and documents to confirm", tone: needsYou ? "red" : "green", icon: ICONS.alert },
+              { label: "SAL is working", value: working, note: "Reading or waiting for an invoice", tone: "blue", icon: ICONS.spin },
+              { label: "Clear to deliver", value: clear.length, note: "Order and invoice match", tone: "green", icon: ICONS.check },
+              { label: "Deals", value: deals.length, note: "Orders SAL is watching", tone: "blue", icon: ICONS.file },
+            ]} />
+          )}
           {error && (
             <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">
               SAL can’t reach its server right now. Please try again in a moment.
@@ -142,20 +145,20 @@ export default async function DealsPage() {
             </Section>
           )}
           {working > 0 && (
-            <Section title="SAL is working" count={working}>
-              {reading.map((d) => <li key={d.id} className="lp-card px-5 py-4 text-[15px] sm:px-6">Reading your document…</li>)}
+            <Section title="SAL is working" count={working} panel>
+              {reading.map((d) => <li key={d.id} className="px-5 py-3.5 text-[15px] sm:px-6">Reading your document…</li>)}
               {waiting.map((d) => (
-                <CompactDeal key={d.deal_ref} deal={d} note={d.status === "CHECKING" ? "Checking" : "Waiting for the invoice"} />
+                <CompactDeal key={d.deal_ref} deal={d} tone="blue" note={d.status === "CHECKING" ? "Checking" : "Waiting for the invoice"} />
               ))}
             </Section>
           )}
           {clear.length > 0 && (
-            <Section title="Clear to deliver" count={clear.length}>
-              {clear.map((d) => <CompactDeal key={d.deal_ref} deal={d} note="Matches" />)}
+            <Section title="Clear to deliver" count={clear.length} panel>
+              {clear.map((d) => <CompactDeal key={d.deal_ref} deal={d} tone="green" note="Matches" />)}
             </Section>
           )}
           {!error && deals.length === 0 && documents.length === 0 && (
-            <p className="muted text-[17px]">No deals yet. Add a purchase order to start.</p>
+            <p className="muted lp-dashed rounded-[20px] p-10 text-center">No deals yet. Add a purchase order to start.</p>
           )}
         </div>
       </main>

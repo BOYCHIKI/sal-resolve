@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, Label } from "@/components/landing/Label";
+import { Check } from "@/components/landing/Label";
 import { Ticker } from "@/components/landing/Ticker";
 import { api, type Dispute } from "@/lib/api";
 import { money } from "@/lib/format";
@@ -84,17 +84,15 @@ export default async function DemoPage() {
         </nav>
       </header>
 
-      <main className="relative px-4">
-        <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-10 pb-16 pt-10 sm:pt-14">
+      <main className="px-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-8 pb-16 pt-8">
           <section className="flex flex-wrap items-end justify-between gap-6">
-            <div className="flex max-w-2xl flex-col items-start gap-4">
-              <span data-reveal><Label>Try the demo</Label></span>
-              <h1 className="display text-[34px] leading-tight sm:text-5xl">Every kind of dispute, sorted</h1>
-              <p data-reveal className="muted text-[17px]">
+            <div className="flex max-w-2xl flex-col items-start gap-3">
+              <h1 className="text-[28px] font-semibold tracking-tight sm:text-[32px]">Every kind of dispute, sorted</h1>
+              <p className="muted text-[16px]">
                 Buyers open different kinds of disputes. Each box is one kind, what the buyer says and what SAL does about it. Open an example to see the case screen as a seller would.
               </p>
-              <ul data-reveal-stagger className="muted flex flex-wrap gap-x-5 gap-y-1.5 text-[15px]">
+              <ul className="muted flex flex-wrap gap-x-5 gap-y-1.5 text-[15px]">
                 <li className="flex gap-2"><Check />PayPal test account</li>
                 <li className="flex gap-2"><Check />Made-up orders, no real money</li>
                 <li className="flex gap-2"><Check />Nothing sent without your OK</li>

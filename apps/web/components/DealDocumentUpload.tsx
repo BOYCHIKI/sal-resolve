@@ -54,9 +54,10 @@ export function DealDocumentUpload() {
         </label>
       )}
       <div className="flex flex-col gap-1">
-        <input id="deal-file" type="file" className="sr-only" accept="application/pdf,image/jpeg,image/png,image/gif"
+        <input id="deal-file" type="file" className="peer sr-only" accept="application/pdf,image/jpeg,image/png,image/gif"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        <label htmlFor="deal-file" className="lp-btn-ghost cursor-pointer text-center text-[15px]">
+        {/* the input is hidden, so its keyboard focus is drawn on the label */}
+        <label htmlFor="deal-file" className="lp-btn-ghost cursor-pointer text-center text-[15px] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-(--action-focus) peer-focus-visible:outline-solid">
           {file ? "Choose a different file" : "Choose a PDF or take a photo"}
         </label>
         {file && <span className="muted text-[14px] [overflow-wrap:anywhere]">{file.name}</span>}

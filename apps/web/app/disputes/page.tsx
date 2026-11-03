@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ActionCard } from "@/components/ActionCard";
 import { AppHeader } from "@/components/AppHeader";
-import { Label } from "@/components/landing/Label";
+import { ICONS, PageHead, StatTiles } from "@/components/StatTiles";
 import { SyncButton } from "@/components/SyncButton";
 import { api, type AgentAction, type Dispute } from "@/lib/api";
 import { caseTypeOf, dueText, nextStep, orderNumber, origin, reason, stageOf, type Tone } from "@/lib/plain";
@@ -23,7 +23,7 @@ function CaseRow({ d, step, due }: Row) {
   const type = caseTypeOf(d);
   const stage = stageOf(d);
   return (
-    <Link href={`/disputes/${d.id}`} className="lp-card group flex flex-wrap items-center gap-5 px-6 py-[18px] transition-colors">
+    <Link href={`/disputes/${d.id}`} className="group flex flex-wrap items-center gap-5 px-5 py-4 transition-colors hover:bg-(--lp-card-2) sm:px-6">
       <div className="flex min-w-0 flex-[999_1_280px] flex-col gap-1">
         <span className="text-[17px] font-semibold">{d.summary?.item ?? "Order"}</span>
         <span className="muted text-[15px]">
@@ -80,19 +80,11 @@ export default async function DisputesPage() {
   return (
     <div className="lp sky min-h-screen">
       <AppHeader />
-      <main className="relative">
-        <div aria-hidden="true" className="lp-dots absolute inset-x-0 top-0 h-80" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-16 pt-12">
-          <div className="flex flex-wrap items-end justify-between gap-5">
-            <div className="flex flex-col items-start gap-4">
-              <Label>Your PayPal account</Label>
-              <h1 className="display text-[42px] sm:text-6xl">What SAL found</h1>
-              <p className="muted max-w-2xl text-[17px]">SAL checks your PayPal account and tells you what needs doing. Nothing is sent without your OK.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <SyncButton />
-            </div>
-          </div>
+      <main>
+        <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-8">
+          <PageHead title="Disputes" lead="SAL checks your PayPal account and tells you what needs doing. Nothing is sent without your OK.">
+            <SyncButton />
+          </PageHead>
 
           {error && (
             <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">
@@ -101,24 +93,26 @@ export default async function DisputesPage() {
           )}
 
           {!error && (
-            <p className="lp-card px-6 py-5 text-[17px] leading-relaxed">
-              {held ? <>PayPal is holding <strong>{held}</strong> of your money. </> : <>PayPal isn’t holding any of your money. </>}
-              {todo.length === 0 ? "Nothing needs you right now."
-                : <><strong>{todo.length} thing{todo.length === 1 ? "" : "s"}</strong> need{todo.length === 1 ? "s" : ""} your decision.</>}
-              {nearest && <> Next PayPal deadline: <strong className="text-red-ink">{nearest.due.short}</strong>.</>}
-            </p>
+            <StatTiles stats={[
+              { label: "Needs you", value: todo.length, note: todo.length ? "Decisions waiting" : "Nothing right now",
+                tone: todo.length ? "red" : "green", icon: ICONS.alert },
+              { label: "Next deadline", value: nearest ? nearest.due.short : "None", note: "To reply to PayPal",
+                tone: nearest?.due.urgent ? "red" : "amber", icon: ICONS.clock },
+              { label: "Money on hold", value: held ?? "0", note: "Held by PayPal while cases are open", tone: "amber", icon: ICONS.lock },
+              { label: "PayPal cases", value: paypal.length, note: "On your test account", tone: "blue", icon: ICONS.cases },
+            ]} />
           )}
 
           {todo.length > 0 && (
             <section aria-label="Needs you" className="flex flex-col gap-3">
-              <h2 className="text-xl font-semibold">Needs you <span className="muted">· {todo.length}</span></h2>
+              <h2 className="text-[18px] font-semibold">Needs you <span className="muted font-normal">· {todo.length}</span></h2>
               {todo.map((a) => <ActionCard key={a.id} action={a} />)}
             </section>
           )}
 
           {holds.length > 0 && (
             <section aria-label="Money on hold" className="flex flex-col gap-3">
-              <h2 className="text-xl font-semibold">Money on hold <span className="muted">· {held}</span></h2>
+              <h2 className="text-[18px] font-semibold">Money on hold <span className="muted font-normal">· {held}</span></h2>
               {holds.map((a) => <ActionCard key={a.id} action={a} />)}
             </section>
           )}
@@ -131,8 +125,8 @@ export default async function DisputesPage() {
 
           {paypal.length > 0 && (
             <section aria-label="PayPal cases" className="flex flex-col gap-4">
-              <h2 className="text-xl font-semibold">Your PayPal cases <span className="muted">· {paypal.length}</span></h2>
-              <div className="flex flex-col gap-2.5">
+              <h2 className="text-[18px] font-semibold">Your PayPal cases <span className="muted font-normal">· {paypal.length}</span></h2>
+              <div className="lp-card flex flex-col divide-y divide-(--lp-line) overflow-hidden">
                 {paypal.map((r) => <CaseRow key={r.d.id} {...r} />)}
               </div>
             </section>
@@ -143,7 +137,7 @@ export default async function DisputesPage() {
               <summary className="muted cursor-pointer text-sm font-semibold">
                 Practice cases <span className="muted">· {practice.length} · made-up data, never sent to PayPal</span>
               </summary>
-              <div className="mt-4 flex flex-col gap-2.5">
+              <div className="lp-card mt-4 flex flex-col divide-y divide-(--lp-line) overflow-hidden">
                 {practice.map((r) => <CaseRow key={r.d.id} {...r} />)}
               </div>
             </details>

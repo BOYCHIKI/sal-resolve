@@ -216,6 +216,9 @@ export function summarySentence(d: Dispute, a: Analysis | null): { headline: str
   const delivered = factValue(a.facts, "carrier_status") === "DELIVERED";
   if (conflicts)
     return { headline, detail: `${paid} ${delivered ? "Your documents show it was delivered, but " : ""}${conflicts === 1 ? "one detail needs" : `${conflicts} details need`} a quick check before you reply.` };
+  // No findings is not the same as proof: with nothing to cite, SAL has written no reply.
+  if (!a.draft?.claims.length)
+    return { headline, detail: `${paid} SAL has nothing from your documents to reply with yet. See what SAL suggests below.` };
   return { headline, detail: `${paid} Your documents back this up. Read the reply and approve it.` };
 }
 
