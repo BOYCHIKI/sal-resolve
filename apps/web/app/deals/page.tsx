@@ -3,7 +3,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { ConfirmDealDocument } from "@/components/ConfirmDealDocument";
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
 import { RequestCorrection } from "@/components/RequestCorrection";
-import { ICONS, PageHead, StatTiles } from "@/components/StatTiles";
+import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
 import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCode } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,7 @@ function Summary({ deal }: { deal: Deal }) {
 function HeldDeal({ deal }: { deal: Deal }) {
   const count = deal.findings.length;
   return (
-    <li className="lp-card flex flex-col gap-3 border-l-4 border-l-red-ink px-5 py-5 sm:px-6">
+    <li className="lp-card flex flex-col gap-3 px-5 py-5 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[18px] font-semibold">{deal.deal_ref}</h3>
         <span className="rounded-full bg-red-bg px-3 py-0.5 text-[14px] font-semibold text-red-ink">Don’t deliver yet</span>
@@ -69,31 +69,25 @@ function HeldDeal({ deal }: { deal: Deal }) {
   );
 }
 
-const NOTE_TONE = { green: "bg-green-bg text-green-ink", blue: "bg-blue-bg text-blue-ink" };
-
 // One row of a list panel; the panel draws the dividers.
-function CompactDeal({ deal, note, tone }: { deal: Deal; note: string; tone: keyof typeof NOTE_TONE }) {
+function CompactDeal({ deal, children }: { deal: Deal; children: React.ReactNode }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3.5 sm:px-6">
-      <div className="flex min-w-0 flex-col">
+    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 sm:px-6">
+      <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-[16px] font-semibold">{deal.deal_ref}</span>
         <Summary deal={deal} />
       </div>
-      <span className={`rounded-full px-3 py-0.5 text-[14px] font-semibold ${NOTE_TONE[tone]}`}>{note}</span>
+      <span className="muted flex flex-wrap items-center gap-3 text-[14px]">{children}</span>
     </li>
   );
 }
 
-function Section({ title, count, panel, children }: { title: string; count: number; panel?: boolean; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-[18px] font-semibold">{title} <span className="muted font-normal">· {count}</span></h2>
-      <ul className={panel ? "lp-card flex flex-col divide-y divide-(--lp-line)" : "flex flex-col gap-3"}>{children}</ul>
-    </section>
-  );
-}
+const Panel = ({ children }: { children: React.ReactNode }) => (
+  <ul className="lp-card flex flex-col divide-y divide-(--lp-line)">{children}</ul>
+);
 
-export default async function DealsPage() {
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const { view: asked } = await searchParams;
   let deals: Deal[] = [];
   let documents: DealDocument[] = [];
   let error = false;
@@ -103,62 +97,91 @@ export default async function DealsPage() {
     error = true;
   }
   const held = deals.filter((d) => d.status === "HOLD");
-  const toConfirm = documents.filter((d) => d.status === "NEEDS_CONFIRMATION");
-  const unreadable = documents.filter((d) => d.status === "UNREADABLE");
+  const docs = documents.filter((d) => d.status !== "READING");   // read, waiting for the seller
   const reading = documents.filter((d) => d.status === "READING");
   const waiting = deals.filter((d) => d.status === "WAITING_INVOICE" || d.status === "CHECKING");
   const clear = deals.filter((d) => d.status === "CLEAR");
-  const needsYou = held.length + toConfirm.length + unreadable.length;
-  const working = reading.length + waiting.length;
+
+  // Most urgent first: a held deal can stop a wrong delivery; a document only waits to become a deal.
+  const views: View[] = [
+    { key: "hold", label: "On hold", count: held.length },
+    { key: "confirm", label: "To confirm", count: docs.length + reading.length },
+    { key: "waiting", label: "Waiting for invoice", count: waiting.length },
+    { key: "clear", label: "Clear to deliver", count: clear.length },
+  ];
+  const view = pickView(views, asked);
 
   return (
     <div className="lp sky min-h-screen">
       <AppHeader />
       <AutoRefresh seconds={REFRESH_SECONDS} />
       <main>
-        <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-16 pt-8">
           <PageHead title="Deal Check" lead="SAL compares each order with its invoice before you deliver. Nothing here is sent to PayPal.">
             <DealDocumentUpload />
           </PageHead>
-          {!error && (
-            <StatTiles stats={[
-              { label: "Needs you", value: needsYou, note: "Holds and documents to confirm", icon: ICONS.alert },
-              { label: "SAL is working", value: working, note: "Reading or waiting for an invoice", icon: ICONS.spin },
-              { label: "Clear to deliver", value: clear.length, note: "Order and invoice match", icon: ICONS.check },
-              { label: "Deals", value: deals.length, note: "Orders SAL is watching", icon: ICONS.file },
-            ]} />
-          )}
-          {error && (
+          {error ? (
             <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">
               SAL can’t reach its server right now. Please try again in a moment.
             </p>
-          )}
-          {needsYou > 0 && (
-            <Section title="Needs you" count={needsYou}>
-              {held.map((d) => <HeldDeal key={d.deal_ref} deal={d} />)}
-              {toConfirm.map((d) => <ConfirmDealDocument key={d.id} doc={d} />)}
-              {unreadable.map((d) => (
-                <li key={d.id} className="lp-card px-5 py-4 text-[15px] sm:px-6">
-                  SAL couldn’t read this document. Try a clearer photo or a PDF.
-                </li>
-              ))}
-            </Section>
-          )}
-          {working > 0 && (
-            <Section title="SAL is working" count={working} panel>
-              {reading.map((d) => <li key={d.id} className="px-5 py-3.5 text-[15px] sm:px-6">Reading your document…</li>)}
-              {waiting.map((d) => (
-                <CompactDeal key={d.deal_ref} deal={d} tone="blue" note={d.status === "CHECKING" ? "Checking" : "Waiting for the invoice"} />
-              ))}
-            </Section>
-          )}
-          {clear.length > 0 && (
-            <Section title="Clear to deliver" count={clear.length} panel>
-              {clear.map((d) => <CompactDeal key={d.deal_ref} deal={d} tone="green" note="Matches" />)}
-            </Section>
-          )}
-          {!error && deals.length === 0 && documents.length === 0 && (
-            <p className="muted lp-dashed rounded-[20px] p-10 text-center">No deals yet. Add a purchase order to start.</p>
+          ) : (
+            <>
+              <ViewTabs views={views} current={view} path="/deals" />
+
+              {view === "hold" && (held.length ? (
+                <>
+                  <ViewLead>The invoice doesn’t match the order. Don’t deliver until a corrected invoice matches.</ViewLead>
+                  <ul className="flex flex-col gap-4">{held.map((d) => <HeldDeal key={d.deal_ref} deal={d} />)}</ul>
+                </>
+              ) : <Empty>No deal is on hold. Every invoice so far matches its order.</Empty>)}
+
+              {view === "confirm" && (docs.length + reading.length ? (
+                <>
+                  <ViewLead>Documents SAL has read. Check each one; it becomes part of a deal only when you confirm.</ViewLead>
+                  <ul className="flex flex-col gap-3">
+                    {docs.map((d) => d.status === "UNREADABLE" ? (
+                      <li key={d.id} className="lp-card flex flex-col gap-0.5 px-5 py-4 sm:px-6">
+                        <span className="font-semibold">{d.kind === "INVOICE" ? "Invoice" : "Purchase order"} couldn’t be read</span>
+                        <span className="muted text-[14px]">Try a clearer photo or a PDF.</span>
+                      </li>
+                    ) : <ConfirmDealDocument key={d.id} doc={d} />)}
+                    {reading.map((d) => (
+                      <li key={d.id} className="lp-card muted px-5 py-4 text-[15px] sm:px-6">
+                        Reading your {d.kind === "INVOICE" ? "invoice" : "purchase order"}… this takes up to a minute.
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : <Empty>No documents waiting. Press <strong>Add a document</strong> to start a deal from a purchase order.</Empty>)}
+
+              {view === "waiting" && (waiting.length ? (
+                <>
+                  <ViewLead>Confirmed orders. Add each one’s invoice and SAL checks it against the order.</ViewLead>
+                  <Panel>
+                    {waiting.map((d) => (
+                      <CompactDeal key={d.deal_ref} deal={d}>
+                        {d.status === "CHECKING" ? "Checking…" : <DealDocumentUpload dealRef={d.deal_ref} />}
+                      </CompactDeal>
+                    ))}
+                  </Panel>
+                </>
+              ) : <Empty>No order is waiting for an invoice.</Empty>)}
+
+              {view === "clear" && (clear.length ? (
+                <>
+                  <ViewLead>The invoice matches the order. These are safe to deliver.</ViewLead>
+                  <Panel>
+                    {clear.map((d) => (
+                      <CompactDeal key={d.deal_ref} deal={d}>
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--lp-blue)" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-10" /></svg>
+                        Matches
+                      </CompactDeal>
+                    ))}
+                  </Panel>
+                </>
+              ) : <Empty>No deal is clear yet.</Empty>)}
+            </>
           )}
         </div>
       </main>

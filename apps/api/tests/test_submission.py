@@ -114,6 +114,16 @@ def test_dispute_change_after_analysis_blocks_approval(client, merchant, app_eng
     assert approve(client, a).json()["detail"]["code"] == "DISPUTE_CHANGED"
 
 
+def test_reply_without_sentences_cannot_be_approved(client, merchant, app_engine, worker_engine):
+    dispute_id, a = analyzed(app_engine, worker_engine, merchant)
+    with tenant_session(merchant, app_engine) as s:
+        s.execute(text("UPDATE drafts SET claims = '[]'::jsonb WHERE dispute_id = :d"), {"d": dispute_id})
+    r = approve(client, a)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_TO_SEND"
+    with tenant_session(merchant, app_engine) as s:
+        assert s.execute(text("SELECT count(*) FROM approvals")).scalar() == 0
+
+
 def test_other_tenant_cannot_approve(client, merchant, app_engine, worker_engine):
     _, a = analyzed(app_engine, worker_engine, merchant)
     app.dependency_overrides[current_merchant] = lambda: create_merchant("Intruder")

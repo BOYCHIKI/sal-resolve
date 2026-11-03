@@ -6,14 +6,14 @@ import { useState } from "react";
 import { decideAction } from "@/app/actions";
 import type { ActionKind, AgentAction } from "@/lib/api";
 
-const LOOK: Record<ActionKind, { eyebrow: string; pill: string; primary: string }> = {
-  SEND_EVIDENCE: { eyebrow: "Ready to send", pill: "bg-blue-bg text-blue-ink", primary: "Send to PayPal" },
-  REPLY_BEFORE_DEADLINE: { eyebrow: "Deadline", pill: "bg-red-bg text-red-ink", primary: "Done" },
-  ADD_DOCUMENT: { eyebrow: "Missing document", pill: "bg-amber-bg text-amber-ink", primary: "I added it" },
-  EXPLAIN_HELD_FUNDS: { eyebrow: "Money on hold", pill: "bg-grey-bg text-grey-ink", primary: "" },
-  EXPLAIN_DISPUTE: { eyebrow: "From SAL", pill: "bg-amber-bg text-amber-ink", primary: "Got it" },
-  OFFER_REFUND: { eyebrow: "Settle it", pill: "bg-blue-bg text-blue-ink", primary: "Send offer to PayPal" },
-  REVIEW_DEAL_HOLD: { eyebrow: "Before you deliver", pill: "bg-red-bg text-red-ink", primary: "I’ve seen it" },
+const LOOK: Record<ActionKind, { eyebrow: string; primary: string }> = {
+  SEND_EVIDENCE: { eyebrow: "Ready to send", primary: "Send to PayPal" },
+  REPLY_BEFORE_DEADLINE: { eyebrow: "Deadline", primary: "Done" },
+  ADD_DOCUMENT: { eyebrow: "Missing document", primary: "I added it" },
+  EXPLAIN_HELD_FUNDS: { eyebrow: "Money on hold", primary: "" },
+  EXPLAIN_DISPUTE: { eyebrow: "From SAL", primary: "Got it" },
+  OFFER_REFUND: { eyebrow: "Settle it", primary: "Send offer to PayPal" },
+  REVIEW_DEAL_HOLD: { eyebrow: "Before you deliver", primary: "I’ve seen it" },
 };
 
 const MESSAGES: Record<string, string> = {
@@ -69,7 +69,7 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
     <article className="lp-card flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:p-6">
       <div className="flex min-w-0 flex-[999_1_320px] flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-3 py-0.5 text-[13px] font-medium ${look.pill}`}>{look.eyebrow}</span>
+          <span className="muted text-[13px] font-semibold uppercase tracking-wide">{look.eyebrow}</span>
           {due && <span className={`text-[13px] ${due === "Overdue" || due.includes("hour") ? "font-semibold text-red-ink" : "muted"}`}>{due}</span>}
         </div>
         <h3 className="text-[18px] font-semibold">{action.title}</h3>
@@ -88,16 +88,17 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
             : "Sends only this exact reply, and only when you press the button."}</p>}
         {error && <p role="alert" className="text-[15px] text-red-ink">{error}</p>}
       </div>
-      {!info && <div className="flex max-w-full flex-wrap items-center gap-2 sm:flex-none">
+      {/* Fixed widths, so the buttons sit in the same columns on every card. */}
+      {!info && <div className="flex max-w-full flex-wrap items-center gap-2 sm:w-[392px] sm:flex-none sm:flex-nowrap sm:justify-end">
         {caseLink && action.dispute_id && !sends && (
-          <Link href={`/disputes/${action.dispute_id}`} className="lp-btn">Open the case</Link>
+          <Link href={`/disputes/${action.dispute_id}`} className="lp-btn whitespace-nowrap sm:w-[176px]">Open the case</Link>
         )}
-        {action.kind === "REVIEW_DEAL_HOLD" && <Link href="/deals" className="lp-btn">Open Deal Check</Link>}
-        <button className={sends ? "lp-btn" : "lp-btn-ghost"} disabled={busy || (offer && !amount.trim())}
+        {action.kind === "REVIEW_DEAL_HOLD" && <Link href="/deals" className="lp-btn whitespace-nowrap sm:w-[176px]">Open Deal Check</Link>}
+        <button className={sends ? "lp-btn whitespace-nowrap sm:w-[312px]" : "lp-btn-ghost whitespace-nowrap sm:w-[128px]"} disabled={busy || (offer && !amount.trim())}
           onClick={() => decide("approve")}>
           {busy ? "Working…" : look.primary}
         </button>
-        <button className="muted px-2 py-2 text-sm hover:underline" disabled={busy} onClick={() => decide("dismiss")}>
+        <button className="muted px-2 py-2 text-sm whitespace-nowrap hover:underline sm:w-[72px]" disabled={busy} onClick={() => decide("dismiss")}>
           Not now
         </button>
       </div>}

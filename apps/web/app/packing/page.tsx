@@ -1,7 +1,7 @@
 import { AppHeader } from "@/components/AppHeader";
 import { PackingFiles } from "@/components/PackingFiles";
 import { PackingForm } from "@/components/PackingForm";
-import { PageHead } from "@/components/StatTiles";
+import { PageHead } from "@/components/WorkPage";
 import { api, type PackingRecord } from "@/lib/api";
 
 export const dynamic = "force-dynamic";

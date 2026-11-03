@@ -216,7 +216,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
               {claimCount > 0 && <p className="text-sm text-ink-muted">Every sentence comes from one of your documents.</p>}
-              {draft && analysis && (
+              {/* With no sentence there is nothing to approve or send; the backend refuses it too. */}
+              {draft && analysis && claimCount > 0 && (
                 <DraftActions
                   disputeId={dispute.id}
                   draftId={draft.id}
@@ -230,6 +231,16 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                 />
               )}
             </section>
+            {analysis && (
+              <section aria-label="How SAL prepared this" data-reveal className="lp-dashed flex flex-col gap-2.5 rounded-[20px] p-6">
+                <h2 className="text-[17px]">How SAL prepared this</h2>
+                <p className="text-[15px] text-ink-soft">
+                  Read {read} document{read === 1 ? "" : "s"}, found {facts.length} details, flagged {findings.length} to check,
+                  and wrote {claimCount} sentence{claimCount === 1 ? "" : "s"} using only what the documents say.
+                  SAL can’t send anything or issue refunds on its own.
+                </p>
+              </section>
+            )}
           </div>
 
           <div className="flex min-w-0 flex-[1_1_340px] flex-col gap-6">
@@ -253,9 +264,6 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <section aria-label="Documents" data-reveal className="lp-card flex flex-col gap-2.5 p-6">
               <h2 className="text-xl">Documents ({evidence.length})</h2>
               {evidence.length === 0 && <p className="text-ink-soft">No documents yet.</p>}
-              {canAddDocuments && ["ITEM_NOT_RECEIVED", "UNAUTHORISED"].includes(dispute.reason) &&
-                <AddTracking disputeId={dispute.id} />}
-              {canAddDocuments && <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />}
               {evidence.map((doc) => (
                 <details key={doc.evidence_id} id={doc.evidence_id} className="scroll-mt-24 rounded-2xl bg-(--lp-card-2) open:bg-(--lp-well)">
                   <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3.5 px-3.5 py-2.5">
@@ -279,18 +287,20 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                   </div>
                 </details>
               ))}
+              {canAddDocuments && (
+                <details className="group mt-1" open={evidence.length === 0}>
+                  <summary className="lp-btn-ghost w-full cursor-pointer list-none">
+                    <span className="group-open:hidden">Add a document</span>
+                    <span className="hidden group-open:inline">Close</span>
+                  </summary>
+                  <div className="mt-3 flex flex-col gap-3">
+                    {["ITEM_NOT_RECEIVED", "UNAUTHORISED"].includes(dispute.reason) && <AddTracking disputeId={dispute.id} />}
+                    <UploadEvidence disputeId={dispute.id} analysisId={analysis?.analysis_id ?? null} />
+                  </div>
+                </details>
+              )}
             </section>
 
-            {analysis && (
-              <section aria-label="How SAL prepared this" data-reveal className="lp-dashed flex flex-col gap-2.5 rounded-[20px] p-6">
-                <h2 className="text-[17px]">How SAL prepared this</h2>
-                <p className="text-[15px] text-ink-soft">
-                  Read {read} document{read === 1 ? "" : "s"}, found {facts.length} details, flagged {findings.length} to check,
-                  and wrote {claimCount} sentence{claimCount === 1 ? "" : "s"} using only what the documents say.
-                  SAL can’t send anything or issue refunds on its own.
-                </p>
-              </section>
-            )}
           </div>
         </div>
       </main>

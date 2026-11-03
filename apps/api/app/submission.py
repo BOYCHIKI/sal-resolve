@@ -51,7 +51,7 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
             engine: Engine | None = None) -> dict[str, Any]:
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text("""
-            SELECT d.id, d.dispute_id, d.revision, d.status, d.payload_hash, a.snapshot_hash, a.dispute_version,
+            SELECT d.id, d.dispute_id, d.revision, d.status, d.payload_hash, d.claims, a.snapshot_hash, a.dispute_version,
                    a.evidence_hash AS analysed_hash, p.version AS current_version,
                    (SELECT max(revision) FROM drafts x WHERE x.dispute_id = d.dispute_id) AS latest_revision
             FROM drafts d
@@ -63,6 +63,9 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
             raise SubmissionError(404, "DRAFT_NOT_FOUND", "Draft not found")
         if row.status != "DRAFT":
             raise SubmissionError(409, "DRAFT_NOT_PENDING", f"Draft is {row.status.lower()}, not awaiting approval")
+        # A reply with no sentence has nothing the documents back, so there is nothing to approve or send.
+        if not row.claims:
+            raise SubmissionError(409, "NOTHING_TO_SEND", "SAL wrote no sentence from your documents; add documents first")
         if revision != row.revision or row.revision != row.latest_revision:
             raise SubmissionError(409, "STALE_REVISION", "A newer draft revision exists; review it instead")
         if snapshot_hash != row.snapshot_hash:
