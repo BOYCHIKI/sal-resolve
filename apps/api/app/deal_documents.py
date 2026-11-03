@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
+from openai import LengthFinishReasonError
 from pydantic import BaseModel
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
@@ -42,7 +43,9 @@ REQUIRED_KEYS = ("reference", "currency", "total")
 ITEM_KEYS = ("item_code", "description", "quantity", "unit_price")
 _NUMBER = re.compile(r"\d[\d,.]*\d|\d")
 _SUBTOTAL = re.compile(r"\bsub[\s-]?total\b", re.I)
-_REFERENCE_LABEL = re.compile(r"^\s*(?:no|nr|number|num)\b\.?\s*:?\s*", re.I)
+# "No.", "Invoice No.", "PO#" and the like in front of the number itself.
+_REFERENCE_LABEL = re.compile(r"^\s*(?:(?:invoice|inv|purchase\s+order|order|po)\s*)?(?:(?:no|nr|number|num)\b\.?|#)\s*:?\s*",
+                              re.I)
 MIN_REFERENCE_CHARS = 4   # shorter is a page number or a stray figure, not a PO or invoice number
 
 TRANSCRIBE_SYSTEM = """You copy the text of a business document from an image.
@@ -98,6 +101,11 @@ class ReadDocument(BaseModel):
     items: list[ReadItem]
 
 
+def blank_read() -> ReadDocument:
+    empty = ReadValue(value=None, line=None)
+    return ReadDocument(**{name: empty for name in ReadDocument.model_fields if name != "items"}, items=[])
+
+
 class DocumentReader(Protocol):
     def transcribe(self, data: bytes, mime: str) -> list[str]: ...
     def read(self, kind: DocumentKind, lines: list[str]) -> ReadDocument: ...
@@ -114,8 +122,14 @@ class LLMDocumentReader(LLMRoles):
 
     def read(self, kind: DocumentKind, lines: list[str]) -> ReadDocument:
         numbered = [{"line": i, "text": line} for i, line in enumerate(lines, 1)]
-        return self._parse(READ_SYSTEM, json.dumps({"kind": kind.value, "lines": numbered}, ensure_ascii=False),
-                           ReadDocument)
+        try:
+            return self._parse(READ_SYSTEM, json.dumps({"kind": kind.value, "lines": numbered}, ensure_ascii=False),
+                               ReadDocument)
+        except LengthFinishReasonError:
+            # A long real document (a 179-line timesheet invoice, 2026-11-03) can use up the model's answer before it
+            # is written. Reading again gives the same result, so every value is left for the seller to type.
+            log.warning("document too long for one read", extra={"kind": "deal_document", "outcome": len(lines)})
+            return blank_read()
 
 
 # ---------------------------------------------------------------- proving values against the page

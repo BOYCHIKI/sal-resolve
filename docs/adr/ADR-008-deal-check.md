@@ -71,5 +71,10 @@ The seller presses **Request a correction** on a held deal. Code writes the mess
 - Credentials are issued from the command line for the demo merchant only.
 - The agent flow is exercised by simulated scripts, not by a real ACP or AP2 integration.
 - Photos and PO text go to OpenAI. A seller must be told before real documents are used.
-- Scanned PDFs need Pillow, which is not installed, so they end as unreadable.
-- Accuracy on real, messy documents has not been measured.
+- Scanned PDFs are read through Pillow (pinned in `requirements.lock`); no real scanned document has been tried yet.
+- First real public documents, 2026-11-03 (four City of San Diego POs, three Bradenton Beach timesheet invoices):
+  - PO number, total and tax were right on all four POs.
+  - On one PO the model swapped quantity and unit price (70,000 × 1.00 read as 1 × 70,000). Both numbers are on the line, so proof cannot catch it; the seller's check has to.
+  - Line numbers were taken as item codes, and invoices that show only "$" left the currency blank.
+  - Long timesheet invoices (180 to 400 lines) gave only part of their items, and twice used up the model's answer. Such a read now comes back blank instead of failing. The partial items then fail the invoice total check and hold the deal.
+- Accuracy is still measured on a handful of real documents, so no rate is claimed.

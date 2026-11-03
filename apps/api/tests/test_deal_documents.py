@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from openai import LengthFinishReasonError
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -272,10 +274,25 @@ def test_two_agreeing_copies_keep_every_value():
     assert ground_document(read_page(), PAGE, list(PAGE)) == ground_document(read_page(), PAGE)
 
 
-@pytest.mark.parametrize(("written", "kept"), [("No. PO-7781", "PO-7781"), ("No:#7781", "#7781"), ("Nr. PO-7781", "PO-7781")])
+@pytest.mark.parametrize(("written", "kept"), [
+    ("No. PO-7781", "PO-7781"), ("No:#7781", "#7781"), ("Nr. PO-7781", "PO-7781"),
+    # labels seen on real public documents (San Diego POs, Bradenton Beach invoices, 2026-11-03)
+    ("Invoice No. INV-2001", "INV-2001"), ("PO# 4500105350", "4500105350"), ("Invoice number: INV-2001", "INV-2001"),
+    ("PO-7781", "PO-7781"), ("INV-2001", "INV-2001"),
+])
 def test_a_label_in_front_of_the_number_is_dropped(written, kept):
     page = [f"Order {written}"]
     assert ground_document(read_page(reference=v(written, 1), items=[]), page)["reference"]["value"] == kept
+
+
+def test_a_document_too_long_for_one_read_comes_back_blank():
+    class Overflowing:
+        def parse(self, **_):
+            raise LengthFinishReasonError(completion=SimpleNamespace(usage=None))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Overflowing()))
+    read = deal_documents.LLMDocumentReader(client=client, model="test-model").read(DocumentKind.INVOICE, PAGE)
+    proposal = ground_document(read, PAGE)
+    assert proposal["total"]["value"] is None and proposal["items"] == [] and deal_documents.has_blanks(proposal)
 
 
 @pytest.mark.parametrize("short", ["54", "02", "A1"])
