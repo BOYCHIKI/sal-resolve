@@ -23,6 +23,7 @@ from functools import lru_cache
 from app import logs
 from app import repositories as repo
 from app import accounts
+from app.auth_routes import current_session, router as auth_router
 from app import actions
 from app import agent_identity
 from app import deal_documents
@@ -47,6 +48,7 @@ async def lifespan(_app: FastAPI):
 _prod = get_settings().env == "prod"
 app = FastAPI(title="SAL Resolve API", version="0.1.0", lifespan=lifespan,
               docs_url=None if _prod else "/docs", redoc_url=None, openapi_url=None if _prod else "/openapi.json")
+app.include_router(auth_router)   # /api/auth/*: accounts and sessions (app/auth_routes.py)
 
 # ---------------------------------------------------------------- request guard
 # Paths anyone may reach: platform health checks and PayPal's webhook (which carries its own signature).
@@ -88,17 +90,6 @@ _paypal_client = lru_cache(maxsize=1)(PayPalDisputes)
 WORKER_STALE_SECONDS = 60
 
 
-SESSION_HEADER = "x-sal-session"   # set by the SAL web server from its httpOnly cookie; browsers never reach the API
-
-
-def current_session(x_sal_session: str = Header("")) -> accounts.Session:
-    """The signed-in seller (ADR-009). The merchant comes from the session, never from the request."""
-    session = accounts.authenticate(x_sal_session)
-    if session is None:
-        raise HTTPException(401, detail={"code": "AUTH_REQUIRED", "retryable": False})
-    return session
-
-
 def current_merchant(request: Request, session: accounts.Session = Depends(current_session)) -> UUID:
     request.state.actor = f"user:{session.user_id}"
     return session.merchant_id
@@ -108,15 +99,6 @@ def current_actor(request: Request, merchant_id: UUID = Depends(current_merchant
     """Who approves and sends, for the audit log and approvals. Tests that replace current_merchant get the
     fixed demo actor."""
     return getattr(request.state, "actor", DEMO_ACTOR)
-
-
-def client_address(request: Request) -> str:
-    """The browser's address for rate limits. The web server forwards it; trusted only when the internal token
-    proves the caller is that server."""
-    forwarded = request.headers.get("x-sal-client-ip", "")
-    if get_settings().internal_token and forwarded:
-        return forwarded[:64]
-    return request.client.host if request.client else "unknown"
 
 
 ZERO_DECIMAL_CURRENCIES = {"JPY", "HUF", "TWD"}  # PayPal: amounts in whole units
@@ -260,7 +242,8 @@ def list_evidence(dispute_id: UUID, merchant_id: UUID = Depends(current_merchant
     with tenant_session(merchant_id) as s:
         rows = s.execute(text("""SELECT coalesce(source_ref, id::text) AS evidence_id, doc_type, content_lines,
                                         uploaded_at, origin
-                                 FROM evidence WHERE dispute_id = :d ORDER BY uploaded_at, source_ref NULLS LAST, id"""),
+                                 FROM evidence WHERE dispute_id = :d
+                                 ORDER BY uploaded_at, source_ref NULLS LAST, id"""),
                          {"d": dispute_id}).all()
     return {"items": [{"evidence_id": r.evidence_id, "type": r.doc_type, "lines": r.content_lines or [],
                        "origin": r.origin} for r in rows]}
@@ -325,7 +308,8 @@ def _submission_error(exc: submission.SubmissionError) -> HTTPException:
 
 
 @app.post("/api/drafts/{draft_id}/approve")
-def approve_draft(draft_id: UUID, body: ApproveBody, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def approve_draft(draft_id: UUID, body: ApproveBody, merchant_id: UUID = Depends(current_merchant),
+                  actor: str = Depends(current_actor)) -> dict:
     """The operator approves the exact revision and analysis snapshot they reviewed."""
     try:
         return submission.approve(merchant_id, draft_id, body.revision, body.snapshot_hash, actor)
@@ -366,7 +350,8 @@ def list_actions(status: str = Query("PROPOSED"), dispute_id: UUID | None = Quer
 
 
 @app.post("/api/actions/{action_id}/approve")
-def approve_action(action_id: UUID, body: ActionApproveBody, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor),
+def approve_action(action_id: UUID, body: ActionApproveBody, merchant_id: UUID = Depends(current_merchant),
+                   actor: str = Depends(current_actor),
                    paypal: submission.EvidenceSink = Depends(paypal_sink)) -> dict:
     """The merchant approves the exact suggestion they read (payload_hash). Only SEND_EVIDENCE and OFFER_REFUND
     write to PayPal."""
@@ -378,7 +363,8 @@ def approve_action(action_id: UUID, body: ActionApproveBody, merchant_id: UUID =
 
 
 @app.post("/api/actions/{action_id}/dismiss")
-def dismiss_action(action_id: UUID, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def dismiss_action(action_id: UUID, merchant_id: UUID = Depends(current_merchant),
+                   actor: str = Depends(current_actor)) -> dict:
     try:
         return actions.dismiss(merchant_id, action_id, actor)
     except actions.ActionError as exc:
@@ -392,7 +378,8 @@ class TrackingBody(BaseModel):
 
 
 @app.post("/api/disputes/{dispute_id}/tracking", status_code=201)
-def add_tracking(dispute_id: UUID, body: TrackingBody, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def add_tracking(dispute_id: UUID, body: TrackingBody, merchant_id: UUID = Depends(current_merchant),
+                 actor: str = Depends(current_actor)) -> dict:
     """The seller types the resi and courier. SAL records it as the seller's word (not proof), names the PayPal
     carrier code, and checks the case again; the courier's own page still has to show the parcel moving."""
     try:
@@ -491,7 +478,8 @@ def list_deal_documents(merchant_id: UUID = Depends(current_merchant)) -> dict:
 
 
 @app.post("/api/deal-documents/{document_id}/confirm-order", status_code=201)
-def confirm_deal_order(document_id: UUID, order: deals.PurchaseOrder, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def confirm_deal_order(document_id: UUID, order: deals.PurchaseOrder, merchant_id: UUID = Depends(current_merchant),
+                       actor: str = Depends(current_actor)) -> dict:
     try:
         return deal_documents.confirm_order(merchant_id, document_id, order, actor)
     except deals.DealError as exc:
@@ -499,7 +487,8 @@ def confirm_deal_order(document_id: UUID, order: deals.PurchaseOrder, merchant_i
 
 
 @app.post("/api/deal-documents/{document_id}/confirm-invoice")
-def confirm_deal_invoice(document_id: UUID, invoice: deals.Invoice, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def confirm_deal_invoice(document_id: UUID, invoice: deals.Invoice, merchant_id: UUID = Depends(current_merchant),
+                         actor: str = Depends(current_actor)) -> dict:
     try:
         return deal_documents.confirm_invoice(merchant_id, document_id, invoice, actor)
     except deals.DealError as exc:
@@ -520,7 +509,8 @@ def list_deals(merchant_id: UUID = Depends(current_merchant)) -> dict:
 
 
 @app.post("/api/deals/{deal_ref}/request-correction")
-def request_deal_correction(deal_ref: str, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def request_deal_correction(deal_ref: str, merchant_id: UUID = Depends(current_merchant),
+                            actor: str = Depends(current_actor)) -> dict:
     try:
         return deals.request_correction(merchant_id, deal_ref, actor)
     except deals.DealError as exc:
@@ -536,7 +526,8 @@ def get_deal(deal_ref: str, merchant_id: UUID = Depends(current_merchant)) -> di
 
 
 @app.post("/api/packing", status_code=201)
-def create_packing(body: PackingBody, merchant_id: UUID = Depends(current_merchant), actor: str = Depends(current_actor)) -> dict:
+def create_packing(body: PackingBody, merchant_id: UUID = Depends(current_merchant),
+                   actor: str = Depends(current_actor)) -> dict:
     """Record a parcel before shipping; returns the random code that the QR label carries."""
     try:
         return packing.create(merchant_id, body.order_ref, body.transaction_id, body.tracking_number, actor)
@@ -568,137 +559,3 @@ def packing_label(packing_id: UUID, merchant_id: UUID = Depends(current_merchant
         raise HTTPException(404, detail={"code": "PACKING_NOT_FOUND", "retryable": False})
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'attachment; filename="sal-packing-label.pdf"'})
-
-
-# ---------------------------------------------------------------- accounts (ADR-009)
-# Called only by the SAL web server, which keeps the token in an httpOnly cookie. Every reply that starts a session
-# carries the token once; nothing else ever returns it.
-class SignUpBody(BaseModel):
-    model_config = {"extra": "forbid"}
-    business_name: str = Field(min_length=1, max_length=120)
-    email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=accounts.MAX_PASSWORD)
-
-
-class SignInBody(BaseModel):
-    model_config = {"extra": "forbid"}
-    email: str = Field(min_length=1, max_length=254)
-    password: str = Field(min_length=1, max_length=accounts.MAX_PASSWORD)
-
-
-class CodeBody(BaseModel):
-    model_config = {"extra": "forbid"}
-    code: str = Field(min_length=6, max_length=20)
-
-
-class PasswordBody(BaseModel):
-    model_config = {"extra": "forbid"}
-    current: str = Field(min_length=1, max_length=accounts.MAX_PASSWORD)
-    new: str = Field(min_length=1, max_length=accounts.MAX_PASSWORD)
-
-
-class TotpOffBody(BaseModel):
-    model_config = {"extra": "forbid"}
-    password: str = Field(min_length=1, max_length=accounts.MAX_PASSWORD)
-    code: str = Field(min_length=6, max_length=20)
-
-
-def _auth_error(exc: accounts.AuthError) -> HTTPException:
-    return HTTPException(exc.status, detail={"code": exc.code, "message": exc.message, "retryable": False})
-
-
-def _limited(limiter: agent_identity.FailedAttempts, address: str) -> None:
-    if limiter.blocked(address):
-        raise HTTPException(429, detail={"code": "TOO_MANY_TRIES", "message": "Too many tries. Wait a minute and try again.",
-                                         "retryable": True}, headers={"Retry-After": str(limiter.window_seconds)})
-
-
-@app.post("/api/auth/signup", status_code=201)
-def sign_up(body: SignUpBody, request: Request, user_agent: str = Header("")) -> dict:
-    address = client_address(request)
-    _limited(accounts.signups, address)
-    accounts.signups.record(address)
-    try:
-        return {"stage": accounts.SessionStage.ACTIVE.value,
-                "token": accounts.sign_up(body.business_name, body.email, body.password, user_agent)}
-    except accounts.AuthError as exc:
-        raise _auth_error(exc) from None
-
-
-@app.post("/api/auth/login")
-def sign_in(body: SignInBody, request: Request, user_agent: str = Header("")) -> dict:
-    address = client_address(request)
-    _limited(accounts.login_failures, address)
-    try:
-        stage, token = accounts.sign_in(body.email, body.password, user_agent)
-    except accounts.AuthError as exc:
-        accounts.login_failures.record(address)
-        raise _auth_error(exc) from None
-    return {"stage": stage.value, "token": token}
-
-
-@app.post("/api/auth/mfa")
-def finish_sign_in(body: CodeBody, request: Request, x_sal_session: str = Header(""), user_agent: str = Header("")) -> dict:
-    """The second step: the pending session's token and a code from the authenticator app or a recovery code."""
-    address = client_address(request)
-    _limited(accounts.login_failures, address)
-    try:
-        return {"stage": accounts.SessionStage.ACTIVE.value,
-                "token": accounts.finish_sign_in(x_sal_session, body.code, user_agent)}
-    except accounts.AuthError as exc:
-        accounts.login_failures.record(address)
-        raise _auth_error(exc) from None
-
-
-@app.post("/api/auth/logout")
-def sign_out(x_sal_session: str = Header("")) -> dict:
-    accounts.end_session(x_sal_session)
-    return {"signed_out": True}
-
-
-@app.post("/api/auth/logout-others")
-def sign_out_elsewhere(session: accounts.Session = Depends(current_session)) -> dict:
-    return {"signed_out": accounts.end_other_sessions(session)}
-
-
-@app.get("/api/auth/me")
-def me(session: accounts.Session = Depends(current_session)) -> dict:
-    return accounts.account(session)
-
-
-@app.post("/api/auth/password")
-def change_password(body: PasswordBody, session: accounts.Session = Depends(current_session)) -> dict:
-    try:
-        accounts.change_password(session, body.current, body.new)
-    except accounts.AuthError as exc:
-        raise _auth_error(exc) from None
-    return {"changed": True}
-
-
-@app.post("/api/auth/mfa/setup")
-def start_two_step(session: accounts.Session = Depends(current_session)) -> dict:
-    """A new authenticator secret as a QR code. It counts only after confirm_two_step accepts a code from it."""
-    import segno
-    try:
-        started = accounts.start_totp(session)
-    except accounts.AuthError as exc:
-        raise _auth_error(exc) from None
-    return {**started, "qr_svg": segno.make(started["otpauth_uri"], error="m").svg_data_uri(scale=5)}
-
-
-@app.post("/api/auth/mfa/enable")
-def confirm_two_step(body: CodeBody, session: accounts.Session = Depends(current_session)) -> dict:
-    """Recovery codes come back here once and are never shown again."""
-    try:
-        return {"recovery_codes": accounts.confirm_totp(session, body.code)}
-    except accounts.AuthError as exc:
-        raise _auth_error(exc) from None
-
-
-@app.post("/api/auth/mfa/disable")
-def turn_off_two_step(body: TotpOffBody, session: accounts.Session = Depends(current_session)) -> dict:
-    try:
-        accounts.turn_off_totp(session, body.password, body.code)
-    except accounts.AuthError as exc:
-        raise _auth_error(exc) from None
-    return {"two_step": False}

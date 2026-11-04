@@ -8,6 +8,7 @@ import { DOCS } from "@/lib/plain";
 const MAX_BYTES = 10 * 1024 * 1024;
 
 const MESSAGES: Record<string, string> = {
+  AUTH_REQUIRED: "Your session ended. Sign in again to continue.",
   UNSUPPORTED_TYPE: "Only PDF, JPG, PNG or GIF files can be added.",
   DUPLICATE_FILE: "This file is already attached.",
   FILE_TOO_LARGE: "This file is larger than 10 MB.",

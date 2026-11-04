@@ -188,11 +188,13 @@ class LLMRoles:
         fresh: dict[str, list[CandidateFact]] = {eid: [] for eid in todo}
         if todo:  # one call for every document not seen before
             # ensure_ascii=False: the model must see "₱2,450.00", not "\u20b12,450.00", or its quotes never match.
-            out = self._parse(EXTRACT_SYSTEM, json.dumps({"documents": [payloads[e] for e in todo]}, ensure_ascii=False),
+            out = self._parse(EXTRACT_SYSTEM,
+                              json.dumps({"documents": [payloads[e] for e in todo]}, ensure_ascii=False),
                               _Facts)
             for f in out.facts:
                 if f.evidence_id in fresh:  # a fact pointing elsewhere would fail grounding anyway
-                    fresh[f.evidence_id].append(CandidateFact(f.field, f.value, SourceRef(f.evidence_id, f.line), f.quote))
+                    fresh[f.evidence_id].append(CandidateFact(f.field, f.value,
+                                                              SourceRef(f.evidence_id, f.line), f.quote))
             for eid in todo:  # cached only after the call succeeded, including documents with no facts
                 _cache_put(keys[eid], fresh[eid])
         # Same order as the documents, so the first extractor's fact still wins in the rules.

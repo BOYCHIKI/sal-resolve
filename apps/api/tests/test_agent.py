@@ -196,7 +196,8 @@ def test_llm_output_still_goes_through_grounding_and_claim_checks(monkeypatch):
     client, completions = _fake_client([facts, claims])
     llm = LLMRoles(client=client, model="test-model")
     result = analyze(case("SAL-INR-001"), ReadAllPlanner(), llm, llm)
-    assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"), ("payment_amount", "supported"),
+    assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"),
+                                                           ("payment_amount", "supported"),
                                                            ("delivery_date", "rejected")]
     assert [c.text for c in result.claims] == ["The payment record references transaction TXN-SYN-100000."]
     # nothing the model might reject is sent unless configured (gpt-5 models refuse temperature)

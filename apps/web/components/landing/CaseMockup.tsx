@@ -12,9 +12,6 @@ export function CaseMockup() {
     <div className="mock" aria-label="SAL Deal Check screen, an invented deal held before delivery" role="img">
       <div className="flex items-center justify-between border-b border-[#e6e8ee] px-5 py-3">
         <span className="text-[13px] font-semibold text-[#0b0c0f]">SAL <span className="font-normal text-[#6b7180]">Resolve</span></span>
-        <span className="flex items-center gap-1.5 rounded-full bg-[#e7f6ec] px-2.5 py-1 text-[11px] font-medium text-[#1d6b37]">
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />PayPal test mode
-        </span>
       </div>
 
       <div className="grid gap-5 p-5 md:grid-cols-[1.25fr_1fr] md:p-7">

@@ -125,7 +125,7 @@ export function DealDocumentUpload({ dealRef }: { dealRef?: string }) {
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="muted text-[13px] sm:max-w-[300px]">
-              SAL reads it with an AI model (OpenAI) and shows you each value to check. Nothing is saved until you confirm.
+              Documents are read by our AI provider, OpenAI. You check each value before anything is saved.
             </p>
             <div className="flex items-center gap-2">
               <button type="button" onClick={close} className="muted px-3 py-2 text-[15px] hover:underline">Cancel</button>

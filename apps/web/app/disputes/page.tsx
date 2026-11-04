@@ -64,12 +64,14 @@ export default async function DisputesPage({ searchParams }: { searchParams: Pro
   const rows: Row[] = disputes.map((d) => ({ d, step: nextStep(d), due: dueText(d.deadline_at) }));
   const paypal = rows.filter((r) => r.d.origin === "PAYPAL_SANDBOX");
   const practice = rows.filter((r) => r.d.origin !== "PAYPAL_SANDBOX");
-  const open = paypal.filter((r) => r.step.tone !== "grey" && r.d.deadline_at);
+  // Open PayPal cases with a deadline, and the one due first (without reordering the list itself).
+  const deadlines = paypal.flatMap((r) => (r.step.tone !== "grey" && r.d.deadline_at ? [{ row: r, at: r.d.deadline_at }] : []));
   const holds = actions.filter((a) => a.kind === "EXPLAIN_HELD_FUNDS");
   // Only work on a PayPal case belongs here; a held deal is shown on Deal Check.
   const todo = actions.filter((a) => a.kind !== "EXPLAIN_HELD_FUNDS" && a.dispute_id !== null);
   const held = holds.length ? moneyOnHold(holds) : null;
-  const nearest = open.sort((a, b) => a.d.deadline_at!.localeCompare(b.d.deadline_at!))[0];
+  const nearest = deadlines.reduce<(typeof deadlines)[number] | undefined>(
+    (first, next) => (!first || next.at < first.at ? next : first), undefined)?.row;
 
   const views: View[] = [
     { key: "todo", label: "Needs you", count: todo.length },
@@ -108,7 +110,7 @@ export default async function DisputesPage({ searchParams }: { searchParams: Pro
 
               {view === "cases" && (paypal.length ? (
                 <>
-                  <ViewLead>Every dispute on your PayPal test account. Open one to see its documents and reply.</ViewLead>
+                  <ViewLead>Every dispute on your PayPal account. Open one to see its documents and reply.</ViewLead>
                   <div className="lp-card flex flex-col divide-y divide-(--lp-line) overflow-hidden">
                     {paypal.map((r) => <CaseRow key={r.d.id} {...r} />)}
                   </div>
@@ -124,12 +126,12 @@ export default async function DisputesPage({ searchParams }: { searchParams: Pro
 
               {view === "practice" && (practice.length ? (
                 <>
-                  <ViewLead>Made-up cases to try SAL. Nothing here is ever sent to PayPal.</ViewLead>
+                  <ViewLead>Example cases to explore SAL. They are never sent to PayPal.</ViewLead>
                   <div className="lp-card flex flex-col divide-y divide-(--lp-line) overflow-hidden">
                     {practice.map((r) => <CaseRow key={r.d.id} {...r} />)}
                   </div>
                 </>
-              ) : <Empty>No practice cases.</Empty>)}
+              ) : <Empty>No example cases.</Empty>)}
             </>
           )}
         </div>

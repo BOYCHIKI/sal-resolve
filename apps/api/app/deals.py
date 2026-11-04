@@ -217,7 +217,8 @@ def check_deal(order: PurchaseOrder, invoice: Invoice) -> DealCheck:
     if invoice.issued_at > order.expires_at:
         findings.append(DealFinding(FindingCode.APPROVAL_EXPIRED, "issued_at", order.expires_at.isoformat(),
                                     invoice.issued_at.isoformat()))
-    if order.category is DealCategory.GOODS and (invoice.ship_to is None or not _same_place(order.ship_to, invoice.ship_to)):
+    goods = order.category is DealCategory.GOODS   # only goods have an address to compare; services may have none
+    if goods and (invoice.ship_to is None or not _same_place(order.ship_to, invoice.ship_to)):
         findings.append(DealFinding(FindingCode.ADDRESS_DIFFERS, "ship_to", _address_label(order.ship_to),
                                     _address_label(invoice.ship_to)))
     return DealCheck(DealStatus.HOLD if findings else DealStatus.CLEAR, tuple(findings))
@@ -239,7 +240,8 @@ def create_deal(agent: AgentIdentity, order: PurchaseOrder, engine: Engine | Non
     return get_deal(agent.merchant_id, order.deal_ref, engine)
 
 
-def insert_deal(s: Session, merchant_id: UUID, order: PurchaseOrder, actor: str, ordered_by: UUID | None = None) -> None:
+def insert_deal(s: Session, merchant_id: UUID, order: PurchaseOrder, actor: str,
+                ordered_by: UUID | None = None) -> None:
     """`ordered_by` is the agent's credential; NULL when a person confirmed the order from a document."""
     try:
         s.execute(text("""INSERT INTO deals (merchant_id, deal_ref, category, purchase_order, ordered_by)
@@ -251,7 +253,8 @@ def insert_deal(s: Session, merchant_id: UUID, order: PurchaseOrder, actor: str,
     repo.write_audit(s, merchant_id, actor, "deal.ordered", target=order.deal_ref)
 
 
-def submit_invoice(agent: AgentIdentity, deal_ref: str, invoice: Invoice, engine: Engine | None = None) -> dict[str, Any]:
+def submit_invoice(agent: AgentIdentity, deal_ref: str, invoice: Invoice,
+                   engine: Engine | None = None) -> dict[str, Any]:
     if agent.role is not AgentRole.SELLER_AGENT:
         raise DealError("AGENT_ROLE_NOT_ALLOWED", 403)
     with tenant_session(agent.merchant_id, engine or app_engine()) as s:
@@ -271,7 +274,8 @@ def record_invoice(s: Session, merchant_id: UUID, deal_ref: str, invoice: Invoic
     if row is None:
         raise DealError("DEAL_NOT_FOUND", 404)
     repo.enqueue_job(s, merchant_id, CHECK_DEAL_JOB, f"{CHECK_DEAL_JOB}:{row.id}:{row.invoice_revision}", row.id)
-    repo.write_audit(s, merchant_id, actor, "deal.invoiced", target=deal_ref, summary={"revision": row.invoice_revision})
+    repo.write_audit(s, merchant_id, actor, "deal.invoiced", target=deal_ref,
+                     summary={"revision": row.invoice_revision})
 
 
 def run_check(merchant_id: UUID, deal_id: UUID, engine: Engine) -> dict[str, Any]:
@@ -282,7 +286,8 @@ def run_check(merchant_id: UUID, deal_id: UUID, engine: Engine) -> dict[str, Any
         if row is None or row.status != DealStatus.CHECKING:
             return {"skipped": "nothing to check"}
         result = check_deal(PurchaseOrder.model_validate(row.purchase_order), Invoice.model_validate(row.invoice))
-        s.execute(text("""INSERT INTO deal_checks (merchant_id, deal_id, invoice_revision, rule_version, status, findings)
+        s.execute(text("""INSERT INTO deal_checks (merchant_id, deal_id, invoice_revision, rule_version, status,
+                                                   findings)
                           VALUES (:m, :d, :rev, :rule, :status, CAST(:findings AS jsonb))
                           ON CONFLICT (deal_id, invoice_revision, rule_version) DO NOTHING"""),
                   {"m": merchant_id, "d": deal_id, "rev": row.invoice_revision, "rule": RULE_VERSION,
@@ -361,7 +366,8 @@ def correction_message(deal_ref: str, invoice_ref: str, findings: list[dict[str,
     rows = [f"- {CORRECTION_TEXT[FindingCode(f['code'])]} ({f['field']}): ordered {f['ordered'] or 'nothing'}, "
             f"invoiced {f['invoiced'] or 'nothing'}" for f in findings]
     return "\n".join([f"Order {deal_ref} and invoice {invoice_ref} do not match:", *rows,
-                      "Please confirm which is right and send a corrected document. Delivery is on hold until they match."])
+                      "Please confirm which is right and send a corrected document. "
+                      "Delivery is on hold until they match."])
 
 
 def request_correction(merchant_id: UUID, deal_ref: str, actor: str, engine: Engine | None = None) -> dict[str, Any]:
@@ -374,7 +380,8 @@ def request_correction(merchant_id: UUID, deal_ref: str, actor: str, engine: Eng
         if row.status != DealStatus.HOLD:
             raise DealError("DEAL_NOT_ON_HOLD", 409)
         if row.correction_message is None:
-            s.execute(text("""INSERT INTO deal_corrections (merchant_id, deal_id, invoice_revision, message, requested_by)
+            s.execute(text("""INSERT INTO deal_corrections (merchant_id, deal_id, invoice_revision, message,
+                                                            requested_by)
                               VALUES (:m, :d, :rev, :message, :actor)"""),
                       {"m": merchant_id, "d": row.id, "rev": row.invoice_revision, "actor": actor,
                        "message": correction_message(deal_ref, row.invoice["invoice_ref"], row.findings)})
@@ -408,8 +415,8 @@ def get_deal(merchant_id: UUID, deal_ref: str, engine: Engine | None = None,
              ordered_by: UUID | None = None) -> dict[str, Any]:
     """`ordered_by` limits the answer to that agent's own orders."""
     with tenant_session(merchant_id, engine or app_engine()) as s:
-        row = s.execute(text(_DEAL_SELECT + " WHERE d.deal_ref = :ref AND (CAST(:by AS uuid) IS NULL OR d.ordered_by = :by)"),
-                        {"rule": RULE_VERSION, "ref": deal_ref, "by": ordered_by}).first()
+        where = " WHERE d.deal_ref = :ref AND (CAST(:by AS uuid) IS NULL OR d.ordered_by = :by)"
+        row = s.execute(text(_DEAL_SELECT + where), {"rule": RULE_VERSION, "ref": deal_ref, "by": ordered_by}).first()
     if row is None:
         raise DealError("DEAL_NOT_FOUND", 404)
     return _deal_view(row, row.findings)

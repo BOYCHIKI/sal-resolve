@@ -58,13 +58,15 @@ def create(merchant_id: UUID, order_ref: str | None, transaction_id: str | None,
     txn = (transaction_id or "").strip().upper() or None
     resi = "".join((tracking_number or "").split()).upper() or None
     if not (order or txn or resi):
-        raise EvidenceError(422, "PACKING_NEEDS_REFERENCE", "Give the order number, PayPal transaction id or tracking number.")
+        raise EvidenceError(422, "PACKING_NEEDS_REFERENCE",
+                            "Give the order number, PayPal transaction id or tracking number.")
     if order and not _ORDER.fullmatch(order):
         raise EvidenceError(422, "BAD_ORDER_REF", "Order number: up to 64 letters, digits and # / _ . -")
     if txn and not _TXN.fullmatch(txn):
         raise EvidenceError(422, "BAD_TRANSACTION_ID", "A PayPal transaction id has 17 letters and digits.")
     if resi and not _RESI.fullmatch(resi):
-        raise EvidenceError(422, "BAD_TRACKING_NUMBER", "Enter the tracking number (resi) as printed: 6-40 letters and digits.")
+        raise EvidenceError(422, "BAD_TRACKING_NUMBER",
+                            "Enter the tracking number (resi) as printed: 6-40 letters and digits.")
     code = new_code()
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text("""

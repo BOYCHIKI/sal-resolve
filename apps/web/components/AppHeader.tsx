@@ -36,10 +36,6 @@ export async function AppHeader() {
               {health ? "Background work paused: SAL’s worker isn’t running" : "SAL can’t reach its server"}
             </span>
           )}
-          <span className="inline-flex items-center gap-2 rounded-full bg-green-bg px-3.5 py-1.5 text-sm text-green-ink">
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-current" />
-            PayPal test mode
-          </span>
           <Link href="/account" className="muted inline-flex min-h-11 items-center px-2 text-[15px] font-semibold hover:text-(--lp-ink)">Account</Link>
           <form action={signOut}>
             <button type="submit" className="muted inline-flex min-h-11 items-center px-2 text-[15px] hover:text-(--lp-ink) hover:underline">Sign out</button>

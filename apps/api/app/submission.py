@@ -51,8 +51,8 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
             engine: Engine | None = None) -> dict[str, Any]:
     with tenant_session(merchant_id, engine) as s:
         row = s.execute(text("""
-            SELECT d.id, d.dispute_id, d.revision, d.status, d.payload_hash, d.claims, a.snapshot_hash, a.dispute_version,
-                   a.evidence_hash AS analysed_hash, p.version AS current_version,
+            SELECT d.id, d.dispute_id, d.revision, d.status, d.payload_hash, d.claims,
+                   a.snapshot_hash, a.dispute_version, a.evidence_hash AS analysed_hash, p.version AS current_version,
                    (SELECT max(revision) FROM drafts x WHERE x.dispute_id = d.dispute_id) AS latest_revision
             FROM drafts d
             JOIN analyses a ON a.id = d.analysis_id
@@ -65,18 +65,21 @@ def approve(merchant_id: UUID, draft_id: UUID, revision: int, snapshot_hash: str
             raise SubmissionError(409, "DRAFT_NOT_PENDING", f"Draft is {row.status.lower()}, not awaiting approval")
         # A reply with no sentence has nothing the documents back, so there is nothing to approve or send.
         if not row.claims:
-            raise SubmissionError(409, "NOTHING_TO_SEND", "SAL wrote no sentence from your documents; add documents first")
+            raise SubmissionError(409, "NOTHING_TO_SEND",
+                                  "SAL wrote no sentence from your documents; add documents first")
         if revision != row.revision or row.revision != row.latest_revision:
             raise SubmissionError(409, "STALE_REVISION", "A newer draft revision exists; review it instead")
         if snapshot_hash != row.snapshot_hash:
             raise SubmissionError(409, "STALE_SNAPSHOT", "The analysis changed since you reviewed it")
         if row.dispute_version != row.current_version:
-            raise SubmissionError(409, "DISPUTE_CHANGED", "The dispute changed after this analysis; wait for re-analysis")
+            raise SubmissionError(409, "DISPUTE_CHANGED",
+                                  "The dispute changed after this analysis; wait for re-analysis")
         # Bind the approval to the documents the analysis read, not to whatever is on the case now: a document
         # added meanwhile was never checked. Every insert queues a re-analysis, which writes the next draft.
         evidence_hash = repo.evidence_hash(s, row.dispute_id)
         if row.analysed_hash is not None and row.analysed_hash != evidence_hash:
-            raise SubmissionError(409, "EVIDENCE_CHANGED", "Documents changed after this analysis; wait for re-analysis")
+            raise SubmissionError(409, "EVIDENCE_CHANGED",
+                                  "Documents changed after this analysis; wait for re-analysis")
 
         s.execute(text("""INSERT INTO approvals (merchant_id, draft_id, revision, payload_hash, snapshot_hash, actor,
                                                  evidence_hash)
@@ -181,12 +184,13 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                                   "Documents changed after approval; review and approve the new reply")
         files = _files_to_send(docs)
         try:
-            claimed = s.execute(text("""UPDATE drafts SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL
+            claimed = s.execute(text("""UPDATE drafts
+                                        SET status = 'SUBMITTING', submit_started_at = now(), submit_note = NULL
                                         WHERE id = :id AND status IN ('APPROVED', 'SUBMIT_FAILED')
                                         RETURNING submit_started_at"""), {"id": draft_id}).first()
         except IntegrityError:  # drafts_one_send_per_dispute: an earlier send of this case is still open
-            raise SubmissionError(409, "SEND_IN_PROGRESS",
-                                  "An earlier reply is still being confirmed with PayPal. Try again in a few minutes.") from None
+            raise SubmissionError(409, "SEND_IN_PROGRESS", "An earlier reply is still being confirmed with PayPal. "
+                                                           "Try again in a few minutes.") from None
         if claimed is None:
             raise SubmissionError(409, "NOT_SUBMITTABLE", "Draft must be approved and not already sent")
         # Safety net for a crash or timeout below: the worker settles this send from PayPal's own record.
@@ -197,7 +201,8 @@ def submit(merchant_id: UUID, draft_id: UUID, actor: str, paypal: EvidenceSink,
                          delay_seconds=RECONCILE_AFTER_SECONDS)
     requested = [e["evidence_type"] for e in (row.provider_payload or {}).get("evidences") or []
                  if e.get("source") == "REQUESTED_FROM_SELLER"]
-    tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking", "delivery_proof", "seller_shipment")
+    tracking_lines = [line["text"] for d in docs if d.doc_type in ("carrier_tracking",
+                                                                   "delivery_proof", "seller_shipment")
                       for line in (d.content_lines or [])]
     payload = _payload(row.claims, row.facts, requested, tracking_lines, _is_digital(row.provider_payload))
 
@@ -339,8 +344,9 @@ def reconcile(merchant_id: UUID, draft_id: UUID, paypal: EvidenceSink, engine: E
     if not sent and row.submit_note is None and elapsed < SEND_GRACE:
         # The sender has not come back, so the upload may be running: "nothing arrived" means nothing yet.
         with tenant_session(merchant_id, engine) as s:
+            wait_round = elapsed // timedelta(seconds=RECONCILE_AFTER_SECONDS)
             repo.enqueue_job(s, merchant_id, "reconcile_submission",
-                             f"reconcile:{draft_id}:{attempt.isoformat()}:wait:{elapsed // timedelta(seconds=RECONCILE_AFTER_SECONDS)}",
+                             f"reconcile:{draft_id}:{attempt.isoformat()}:wait:{wait_round}",
                              row.dispute_id, payload={"draft_id": str(draft_id), "started_at": attempt.isoformat()},
                              delay_seconds=RECONCILE_AFTER_SECONDS)
         return {"draft_id": str(draft_id), "waiting": "send may still be running"}

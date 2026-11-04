@@ -68,7 +68,8 @@ def test_a_token_names_its_agent(merchant, app_engine):
 @pytest.mark.parametrize("header", [None, "", "Bearer", "Bearer nonsense", "Basic abc", "Bearer salagent.x.y",
                                     "Bearer salagent.aaaaaaaa-0000-4000-8000-000000000001.wrong"])
 def test_anything_but_a_valid_token_gets_the_same_refusal(migrated_db, header):
-    r = TestClient(app).post(ORDER_URL, json=order_body(), headers={"authorization": header} if header is not None else {})
+    r = TestClient(app).post(ORDER_URL, json=order_body(),
+                             headers={"authorization": header} if header is not None else {})
     assert r.status_code == 401 and r.json()["detail"]["code"] == "AGENT_UNAUTHORIZED"
 
 

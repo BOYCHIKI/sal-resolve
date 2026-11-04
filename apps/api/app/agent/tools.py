@@ -59,7 +59,8 @@ class CaseToolbox:
             self.read_ids.append(doc.evidence_id)
             # Text is returned as data with an explicit label; instructions inside it carry no authority.
             return {"evidence_id": doc.evidence_id, "type": doc.type, "untrusted_document_text": True,
-                    "lines": [{"line": line.line, "text": line.text} for line in doc.lines]}, True, f"read {doc.evidence_id}"
+                    "lines": [{"line": line.line,
+                               "text": line.text} for line in doc.lines]}, True, f"read {doc.evidence_id}"
         return {"error": f"unknown tool {name!r}"}, False, "rejected: unknown tool"
 
 

@@ -187,16 +187,9 @@ a.lp-card:hover { border-color: var(--lp-mint); }
   mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
 }
 .marquee-track { display: flex; width: max-content; animation: marquee 70s linear infinite; }
-.marquee-reverse { animation-direction: reverse; }
 .marquee:hover .marquee-track { animation-play-state: paused; }
 .marquee-row { display: flex; gap: 12px; padding-right: 12px; }
 @keyframes marquee { to { transform: translateX(-50%); } }
-.courier-chip {
-  display: flex; align-items: center; justify-content: space-between; gap: 28px; min-width: 210px;
-  padding: 16px 18px; border-radius: 14px; background: var(--lp-card); border: 1px solid var(--lp-line);
-  font-size: 15px; font-weight: 500; white-space: nowrap;
-}
-.courier-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--lp-mint); }
 @media (prefers-reduced-motion: reduce) {
   .marquee-track { animation: none; }
   .marquee-row[aria-hidden] { display: none; }
@@ -207,11 +200,6 @@ a.lp-card:hover { border-color: var(--lp-mint); }
 .ticker { border-bottom: 1px solid var(--lp-line); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .ticker .marquee-track { animation-duration: 40s; }
 .ticker .marquee-row { gap: 40px; padding: 10px 40px 10px 0; }
-
-/* The shipping lane that is "live" on the route map. */
-.lane-live { animation: lane 1.6s linear infinite; }
-@keyframes lane { to { stroke-dashoffset: -18; } }
-@media (prefers-reduced-motion: reduce) { .lane-live { animation: none; } }
 
 /* Hero rings (components/landing/HeroOrbits.tsx) fade out towards the sides and the bottom. */
 .lp-fade {
@@ -233,23 +221,6 @@ a.lp-card:hover { border-color: var(--lp-mint); }
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 @media (max-width: 639px) { .lp-nav.is-stuck > nav { margin-left: 12px; margin-right: 12px; } }
-
-/* A light that runs round a button's edge. */
-@property --lp-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-.lp-ring { position: relative; isolation: isolate; }
-.lp-ring::before {
-  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; padding: 1px;
-  background: conic-gradient(from var(--lp-angle), transparent 70%, var(--lp-mint) 92%, transparent);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: lp-ring 4s linear infinite;
-}
-@keyframes lp-ring { to { --lp-angle: 360deg; } }
-
-/* A dot running down a dashed connector (the hero's line into the case screen). */
-.lp-drip { position: absolute; left: -2px; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--lp-mint);
-  animation: lp-drip 2.4s cubic-bezier(0.5, 0, 0.5, 1) infinite; }
-@keyframes lp-drip { 0% { top: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { top: calc(100% - 5px); opacity: 0; } }
 
 /*
  * The sky: every screen (landing, /demo, /disputes, the case page) adds .sky to .lp. Same tokens, light values:
@@ -318,39 +289,7 @@ a.lp-card:hover { border-color: var(--lp-mint); }
   border-block: 1px solid var(--glass-edge);
 }
 
-/*
- * SAL's speech bubbles (components/mascot/SalSays.tsx). The tail points up at SAL on phones and left at SAL on wide screens.
- * With motion on (the .motion gate in layout.tsx), the bubble pops up, the headline arrives word by word (--i is
- * the word's place), then the rest of what SAL says; without motion everything simply shows.
- */
-.speech::before {
-  content: ""; position: absolute; width: 24px; height: 24px; background: rgba(255, 255, 255, 0.8);
-  left: 50%; top: -12px; transform: translateX(-50%) rotate(45deg); border-radius: 4px;
-}
-@media (min-width: 1024px) { .speech::before { left: -12px; top: 50%; transform: translateY(-50%) rotate(45deg); } }
-.speech-word { display: inline-block; }
-.motion .speech-hero { animation: speech-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.25s both; transform-origin: 50% 0; }
-@media (min-width: 1024px) { .motion .speech-hero { transform-origin: 0 50%; } }
-.motion .speech-word { animation: speech-word 0.35s ease-out both; animation-delay: calc(0.75s + var(--i) * 0.11s); }
-.motion .speech-after { animation: speech-word 0.5s ease-out 0.6s both; }
-.motion .speech-late { animation-delay: 1.75s; }
-@keyframes speech-pop { from { opacity: 0; transform: scale(0.85); } }
-@keyframes speech-word { from { opacity: 0; transform: translateY(6px); filter: blur(4px); } }
-
-/*
- * SAL sits on a small cloud, so the blue shield stands out from the blue sky instead of melting into it.
- * Sets no position or display: those stay with the utilities on the same element (unlayered CSS would override them).
- */
-.mascot-cloud { isolation: isolate; }
-.mascot-cloud::before {
-  content: ""; position: absolute; z-index: -1; left: -14%; right: -14%; top: 10%; bottom: -4%; border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55) 60%, transparent);
-  filter: blur(4px);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .sky a.lp-card:hover { transform: none; }
-  .lp-ring::before { animation: none; }
-  .lp-drip { display: none; }
   .lp-nav, .lp-nav > nav { transition: none; }
 }

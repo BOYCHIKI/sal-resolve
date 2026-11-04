@@ -59,9 +59,3 @@ def _single_page(ops: list[str]) -> bytes:
         out += f"{off:010d} 00000 n \n".encode()
     out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return bytes(out)
-
-
-def render_evidence(evidence: dict) -> bytes:
-    lines = ["SAL SYNTHETIC TEST EVIDENCE - NOT REAL DATA", f"Evidence: {evidence['evidence_id']}", ""]
-    lines += [row["text"] for row in evidence.get("content_lines", [])]
-    return render_text_pdf(lines)

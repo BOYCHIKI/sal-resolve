@@ -73,7 +73,8 @@ class OracleExtractor:
 
     def extract(self, documents):
         lines = {(d.evidence_id, line.line): line.text for d in documents for line in d.lines}
-        return [CandidateFact(f["field"], f["value"], SourceRef(f["source_ref"]["evidence_id"], f["source_ref"]["line"]),
+        return [CandidateFact(f["field"], f["value"],
+                              SourceRef(f["source_ref"]["evidence_id"], f["source_ref"]["line"]),
                               lines[(f["source_ref"]["evidence_id"], f["source_ref"]["line"])])
                 for f in self.case["ground_truth"]["supported_facts"]]
 

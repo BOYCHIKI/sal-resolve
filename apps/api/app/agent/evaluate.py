@@ -43,7 +43,8 @@ def load_cases(split: str, golden_dir: Path = GOLDEN_DIR) -> list[dict[str, Any]
 def to_case_input(case: dict[str, Any]) -> CaseInput:
     d = case["dispute"]
     # Dataset documents stand in for what PayPal and the merchant would provide (practice data: SEED).
-    docs = tuple(Document(e["evidence_id"], e["type"], tuple(Line(line["line"], line["text"]) for line in e["content_lines"]),
+    docs = tuple(Document(e["evidence_id"], e["type"],
+                          tuple(Line(line["line"], line["text"]) for line in e["content_lines"]),
                           "SEED") for e in case["evidence"])
     return CaseInput(case["case_id"], d["reason"], d["amount"]["value"], d["amount"]["currency"], (), docs)
 
@@ -135,7 +136,12 @@ def evaluate(split: str, planner=None, extractor=None, drafter=None, limit: int 
     by_scenario: dict[str, Score] = defaultdict(Score)
     cases = load_cases(split, SPLIT_DIRS.get(split, GOLDEN_DIR))
     if limit:  # one case per scenario first, so a small run still covers every scenario
-        cases = sorted(cases, key=lambda c: [x['case_id'] for x in cases if x['scenario'] == c['scenario']].index(c['case_id']))[:limit]
+        place_in_scenario: dict[str, int] = {}
+        seen: dict[str, int] = defaultdict(int)
+        for case in cases:
+            place_in_scenario[case["case_id"]] = seen[case["scenario"]]
+            seen[case["scenario"]] += 1
+        cases = sorted(cases, key=lambda case: place_in_scenario[case["case_id"]])[:limit]
     for i, case in enumerate(cases, 1):
         print(f"[{i}/{len(cases)}] {case['case_id']} ...", end=" ", flush=True)
         t0 = time.perf_counter()
@@ -160,7 +166,8 @@ def report(scores: dict[str, Score]) -> str:
     for name, s in sorted(scores.items()) + [("ALL", total)]:
         rows.append((name, str(s.cases), _ratio(s.facts_correct, s.facts_predicted),
                      _ratio(s.facts_found, s.facts_expected), _ratio(s.provenance_ok, s.facts_found),
-                     _ratio(s.missing_tp, s.missing_tp + s.missing_fn), _ratio(s.missing_tp, s.missing_tp + s.missing_fp),
+                     _ratio(s.missing_tp,
+                            s.missing_tp + s.missing_fn), _ratio(s.missing_tp, s.missing_tp + s.missing_fp),
                      _ratio(s.conflict_tp, s.conflict_tp + s.conflict_fn),
                      _ratio(s.conflict_tp, s.conflict_tp + s.conflict_fp),
                      _ratio(s.review_correct, s.cases), _ratio(s.readiness_correct, s.cases),
@@ -175,7 +182,8 @@ def report(scores: dict[str, Score]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split", default="development", choices=["development", "calibration", "holdout", "real_format", "sea_dev", "sea_holdout"])
+    parser.add_argument("--split", default="development",
+                        choices=["development", "calibration", "holdout", "real_format", "sea_dev", "sea_holdout"])
     parser.add_argument("--final", action="store_true", help="required to touch the holdout split")
     parser.add_argument("--roles", default="baseline", choices=["baseline", "llm"])
     parser.add_argument("--limit", type=int, help="score only N cases (free-tier quotas)")
@@ -189,7 +197,8 @@ def main() -> None:
         get_settings()  # loads apps/api/.env
         from app.agent.roles import LabelExtractor, RuleExtractor, UnionExtractor
         llm = LLMRoles()  # same composition as the worker (runner.configured_roles)
-        scores = evaluate(args.split, extractor=UnionExtractor(RuleExtractor(), LabelExtractor(), llm), drafter=llm, limit=args.limit)
+        scores = evaluate(args.split, extractor=UnionExtractor(RuleExtractor(), LabelExtractor(), llm),
+                          drafter=llm, limit=args.limit)
         print(f"split={args.split} roles=rules+llm model={llm.model} {llm.options}")
     else:
         scores = evaluate(args.split, limit=args.limit)

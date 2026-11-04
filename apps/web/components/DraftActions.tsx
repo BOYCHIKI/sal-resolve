@@ -17,6 +17,7 @@ type Props = {
 };
 
 const MESSAGES: Record<string, string> = {
+  AUTH_REQUIRED: "Your session ended. Sign in again to continue.",
   STALE_REVISION: "SAL wrote a newer version of this reply. Please read that one.",
   STALE_SNAPSHOT: "Something changed since you opened this page. Reload it and read the reply again.",
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new reply.",
@@ -83,7 +84,7 @@ export function DraftActions(p: Props) {
 
   if (p.status === "APPROVED" || p.status === "SUBMIT_FAILED") {
     const blocked = !p.sandbox
-      ? "This is a practice case, so there’s no real PayPal case to send it to."
+      ? "This is an example case, so there is no PayPal case to send it to."
       : !p.canProvideEvidence ? "PayPal isn’t accepting documents for this case right now." : null;
     return (
       <div className="flex flex-col gap-3">

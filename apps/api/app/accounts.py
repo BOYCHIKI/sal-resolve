@@ -181,12 +181,15 @@ def check_totp(secret: str, code: str, last_step: int | None, now: float | None 
 
 def otpauth_uri(secret: str, email: str) -> str:
     label = quote(f"{ISSUER}:{email}")
-    return f"otpauth://totp/{label}?secret={secret}&issuer={quote(ISSUER)}&digits={TOTP_DIGITS}&period={TOTP_STEP_SECONDS}"
+    return (f"otpauth://totp/{label}?secret={secret}&issuer={quote(ISSUER)}"
+            f"&digits={TOTP_DIGITS}&period={TOTP_STEP_SECONDS}")
 
 
 def _new_recovery_codes() -> list[str]:
     alphabet = "abcdefghjkmnpqrstuvwxyz23456789"   # no 0/o, 1/l/i
-    return ["-".join("".join(secrets.choice(alphabet) for _ in range(5)) for _ in range(2)) for _ in range(RECOVERY_CODES)]
+    def half() -> str:
+        return "".join(secrets.choice(alphabet) for _ in range(5))
+    return [f"{half()}-{half()}" for _ in range(RECOVERY_CODES)]
 
 
 def _code_hash(code: str) -> str:
@@ -196,7 +199,8 @@ def _code_hash(code: str) -> str:
 # ---------------------------------------------------------------- sessions
 def _open_session(s, merchant_id: UUID, user_id: UUID, stage: SessionStage, user_agent: str | None) -> str:
     token, token_hash = _new_token(merchant_id)
-    life = timedelta(minutes=MFA_PENDING_MINUTES) if stage is SessionStage.MFA_PENDING else timedelta(hours=SESSION_HOURS)
+    pending = stage is SessionStage.MFA_PENDING
+    life = timedelta(minutes=MFA_PENDING_MINUTES) if pending else timedelta(hours=SESSION_HOURS)
     s.execute(text("""INSERT INTO user_sessions (merchant_id, user_id, token_hash, stage, user_agent, expires_at)
                       VALUES (:m, :u, :h, :stage, :ua, now() + :life)"""),
               {"m": merchant_id, "u": user_id, "h": token_hash, "stage": stage.value,
@@ -292,7 +296,8 @@ def add_user(merchant_id: UUID, email: str, password: str, engine: Engine | None
 def _find_account(email: str, engine: Engine | None) -> tuple[UUID, UUID] | None:
     """Uses a throwaway tenant id: the lookup function needs no tenant, and the session must have one set."""
     with tenant_session(uuid4(), engine) as s:
-        row = s.execute(text("SELECT merchant_id, user_id FROM auth_find_account(:h)"), {"h": email_hash(email)}).first()
+        row = s.execute(text("SELECT merchant_id, user_id FROM auth_find_account(:h)"),
+                        {"h": email_hash(email)}).first()
     return (row.merchant_id, row.user_id) if row else None
 
 
@@ -300,12 +305,14 @@ def _register_failure(s, merchant_id: UUID, user_id: UUID, failed: int) -> None:
     failed += 1
     lock = min(2 ** (failed - LOCK_AFTER), MAX_LOCK_MINUTES) if failed >= LOCK_AFTER else 0
     s.execute(text("""UPDATE users SET failed_logins = :f,
-                             locked_until = CASE WHEN :lock > 0 THEN now() + make_interval(mins => :lock) ELSE locked_until END
+                             locked_until = CASE WHEN :lock > 0 THEN now() + make_interval(mins => :lock)
+                                                 ELSE locked_until END
                       WHERE id = :u"""), {"f": failed, "lock": lock, "u": user_id})
     repo.write_audit(s, merchant_id, f"user:{user_id}", "auth.sign_in_failed", summary={"in_a_row": failed})
 
 
-def sign_in(email: str, password: str, user_agent: str | None = None, engine: Engine | None = None) -> tuple[SessionStage, str]:
+def sign_in(email: str, password: str, user_agent: str | None = None,
+            engine: Engine | None = None) -> tuple[SessionStage, str]:
     """A session token: ACTIVE, or MFA_PENDING when the account uses an authenticator app."""
     found = _find_account(normalize_email(email), engine)
     if found is None:
@@ -347,7 +354,8 @@ def finish_sign_in(pending_token: str, code: str, user_agent: str | None = None,
         used_recovery = False
         if step is None and not user.locked:
             used_recovery = s.execute(text("""UPDATE recovery_codes SET used_at = now()
-                                              WHERE user_id = :u AND code_hash = :h AND used_at IS NULL RETURNING id"""),
+                                              WHERE user_id = :u AND code_hash = :h AND used_at IS NULL
+                                              RETURNING id"""),
                                       {"u": pending.user_id, "h": _code_hash(code)}).first() is not None
         if step is None and not used_recovery:
             if not user.locked:
@@ -371,9 +379,11 @@ def finish_sign_in(pending_token: str, code: str, user_agent: str | None = None,
 def account(session: Session, engine: Engine | None = None) -> dict:
     with tenant_session(session.merchant_id, engine) as s:
         user = s.execute(text("""SELECT u.email, u.totp_enabled, m.name AS business FROM users u
-                                 JOIN merchants m ON m.id = u.merchant_id WHERE u.id = :u"""), {"u": session.user_id}).one()
+                                 JOIN merchants m ON m.id = u.merchant_id WHERE u.id = :u"""),
+                         {"u": session.user_id}).one()
         sessions = s.execute(text("""SELECT id, user_agent, created_at, last_seen_at FROM user_sessions
-                                     WHERE user_id = :u AND stage = 'ACTIVE' AND revoked_at IS NULL AND expires_at > now()
+                                     WHERE user_id = :u AND stage = 'ACTIVE' AND revoked_at IS NULL
+                                       AND expires_at > now()
                                        AND last_seen_at > now() - :idle ORDER BY last_seen_at DESC"""),
                              {"u": session.user_id, "idle": timedelta(minutes=IDLE_MINUTES)}).all()
         left = s.execute(text("SELECT count(*) FROM recovery_codes WHERE user_id = :u AND used_at IS NULL"),
@@ -423,8 +433,8 @@ def confirm_totp(session: Session, code: str, engine: Engine | None = None) -> l
 def turn_off_totp(session: Session, password: str, code: str, engine: Engine | None = None) -> None:
     """Needs the password and a current code, so a stolen open session alone can't remove the second step."""
     with tenant_session(session.merchant_id, engine) as s:
-        user = s.execute(text("SELECT password_hash, totp_secret, totp_last_step, totp_enabled FROM users WHERE id = :u FOR UPDATE"),
-                         {"u": session.user_id}).one()
+        user = s.execute(text("""SELECT password_hash, totp_secret, totp_last_step, totp_enabled
+                                 FROM users WHERE id = :u FOR UPDATE"""), {"u": session.user_id}).one()
         step = check_totp(user.totp_secret, code, user.totp_last_step) if user.totp_enabled else None
         if not (verify_password(password, user.password_hash) and step is not None):
             raise AuthError(422, "CHECK_FAILED", "The password or the code is wrong.")

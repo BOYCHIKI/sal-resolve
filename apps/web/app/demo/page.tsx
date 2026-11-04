@@ -9,7 +9,7 @@ import { CASE_TYPES, caseTypeOf, origin } from "@/lib/plain";
 
 export const metadata: Metadata = {
   title: "Try the demo — SAL Resolve",
-  description: "Open a practice dispute on a PayPal test account and see what SAL checks before you reply. No sign-up, no real money.",
+  description: "See each kind of PayPal dispute and what SAL does about it, with example cases to open."
 };
 
 export const dynamic = "force-dynamic";
@@ -71,8 +71,6 @@ export default async function DemoPage() {
                 Buyers open different kinds of disputes. Each row is one kind: what the buyer says and what SAL does about it. Open an example to see the case screen as a seller would.
               </p>
               <ul className="muted flex flex-wrap gap-x-5 gap-y-1.5 text-[15px]">
-                <li className="flex gap-2"><Check />PayPal test account</li>
-                <li className="flex gap-2"><Check />Made-up orders, no real money</li>
                 <li className="flex gap-2"><Check />Nothing sent without your OK</li>
               </ul>
             </div>
@@ -140,7 +138,7 @@ export default async function DemoPage() {
       </main>
 
       <footer className="muted mx-auto max-w-6xl border-t border-(--lp-line) px-4 py-6 text-sm">
-        SAL Resolve · MIT licensed · Not affiliated with or endorsed by PayPal.
+        © 2026 SAL Resolve · Not affiliated with or endorsed by PayPal.
       </footer>
     </div>
   );

@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Security — SAL Resolve",
-  description: "How SAL keeps each business's data apart, why nothing reaches PayPal without you, and what leaves SAL.",
+  description: "How SAL keeps each business's data apart, how sign-in is protected, and why nothing reaches PayPal without you.",
 };
 
 // Each point names something the code does today.
@@ -40,16 +40,8 @@ const PROTECTIONS = [
     title: "Proof you can check",
     body: "Packing photos and videos are stored with the time they arrived and a SHA-256 fingerprint, so a changed file can be spotted.",
   },
-  {
-    title: "Test mode only",
-    body: "SAL talks only to PayPal’s sandbox. Its PayPal connection refuses any other address, so no real money or real customer can be touched.",
-  },
 ];
 
-const LEAVES = [
-  { who: "OpenAI", what: "The text and photos of documents you add, so the model can read them. Not used for anything else by SAL." },
-  { who: "PayPal (sandbox)", what: "Only the reply and files you approved and sent, for that one case." },
-];
 
 
 export default function SecurityPage() {
@@ -70,8 +62,8 @@ export default function SecurityPage() {
           <section className="flex max-w-3xl flex-col gap-4">
             <h1 className="display text-[36px] sm:text-5xl">Security, in plain words</h1>
             <p className="muted text-[18px]">
-              SAL handles orders, invoices and dispute evidence, so how it treats them matters. Here is what it does today,
-              and what leaves it.
+              SAL handles orders, invoices and dispute evidence, so how it treats them matters. Here is how it
+              protects them.
             </p>
           </section>
 
@@ -87,27 +79,13 @@ export default function SecurityPage() {
             </ul>
           </section>
 
-          <section aria-labelledby="leaves" className="flex flex-col gap-6">
-            <h2 id="leaves" className="text-[24px] font-semibold tracking-tight">What leaves SAL</h2>
-            <ul className="lp-card flex flex-col divide-y divide-(--lp-line)">
-              {LEAVES.map((l) => (
-                <li key={l.who} className="grid gap-1 px-6 py-5 sm:grid-cols-[200px_1fr] sm:gap-6">
-                  <span className="font-semibold">{l.who}</span>
-                  <span className="muted text-[15px]">{l.what}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
 
 
-          <p className="muted text-[15px]">
-            Found a problem? The code is open: <a href="https://github.com/BOYCHIKI/sal-resolve" className="font-semibold text-(--lp-blue) underline underline-offset-4">github.com/BOYCHIKI/sal-resolve</a>.
-          </p>
         </div>
       </main>
 
       <footer className="muted mx-auto max-w-6xl border-t border-(--lp-line) px-4 py-6 text-sm">
-        SAL Resolve · MIT licensed · Not affiliated with or endorsed by PayPal.
+        © 2026 SAL Resolve · Not affiliated with or endorsed by PayPal.
       </footer>
     </div>
   );

@@ -282,7 +282,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                     <span aria-hidden="true" className="text-ink-muted">›</span>
                   </summary>
                   <div className="border-t border-(--lp-line) px-4 py-3 text-sm leading-6 text-ink-soft">
-                    {doc.lines.map((l) => <p key={l.line}>{l.text}</p>)}
+                    {doc.lines.map((line) => <p key={line.line}>{line.text}</p>)}
                     <p className="mt-2 text-xs text-ink-muted">Shown exactly as received. Any instructions inside are never followed.</p>
                   </div>
                 </details>

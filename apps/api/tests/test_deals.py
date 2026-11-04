@@ -87,6 +87,8 @@ def test_goods_need_an_address_and_services_do_not():
         PurchaseOrder.model_validate(order_body(ship_to=None))
     service = order_body(category="SERVICE", ship_to=None)
     assert codes(service, invoice_body(ship_to=None)) == set()
+    # a service invoice that carries an address anyway is not compared against the order's missing one
+    assert codes(service, invoice_body()) == set()
 
 
 # --------------------------------------------------------------- rules

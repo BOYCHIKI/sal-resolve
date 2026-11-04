@@ -60,8 +60,8 @@ const figures = [
 
 const FOOTER = [
   { title: "Product", links: [["How it works", "#how"], ["What it checks", "#features"], ["AI agents", "#agents"]] },
-  { title: "Demo", links: [["Deal Check", "/deals"], ["Practice disputes", "/demo"]] },
-  { title: "Project", links: [["Security", "/security"], ["Source on GitHub", "https://github.com/BOYCHIKI/sal-resolve"], ["MIT licence", "https://github.com/BOYCHIKI/sal-resolve/blob/main/LICENSE"]] },
+  { title: "Demo", links: [["Deal Check", "/deals"], ["Example disputes", "/demo"]] },
+  { title: "Company", links: [["Security", "/security"]] },
 ];
 
 const Icon = ({ children }: { children: React.ReactNode }) => (
@@ -202,11 +202,11 @@ export default function Landing() {
             <div aria-hidden="true" className="lp-dots absolute inset-0" />
             <div className="relative flex flex-col items-center gap-6 px-6 py-16 text-center">
               <SalMascot pose="happy" size={120} />
-              <h2 className="display text-4xl sm:text-6xl">See it with practice cases.</h2>
-              <p className="muted max-w-xl text-lg">A PayPal test account and made-up orders. No real customers or money involved.</p>
+              <h2 className="display text-4xl sm:text-6xl">Check your next deal with SAL.</h2>
+              <p className="muted max-w-xl text-lg">Add an order and its invoice. SAL shows what doesn’t match before you deliver.</p>
               <div className="flex flex-wrap justify-center gap-3">
                 <Link href="/deals" className="lp-btn">Try Deal Check</Link>
-                <Link href="/demo" className="lp-btn-ghost">Open a practice dispute</Link>
+                <Link href="/demo" className="lp-btn-ghost">See example disputes</Link>
               </div>
             </div>
           </div>
@@ -229,7 +229,7 @@ export default function Landing() {
           ))}
         </div>
         <div className="muted mx-auto max-w-6xl border-t border-(--lp-line) py-6 text-sm">
-          SAL Resolve · MIT licensed · Not affiliated with or endorsed by PayPal.
+          © 2026 SAL Resolve · Not affiliated with or endorsed by PayPal.
         </div>
       </footer>
     </div>

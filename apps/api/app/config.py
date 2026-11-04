@@ -58,7 +58,8 @@ class Settings:
     def summary(self) -> dict:
         """Safe to log: no secret values, only whether they are set."""
         return {"env": self.env, "agent_roles": self.agent_roles, "llm_model": self.llm_model or None,
-                "llm_key_set": bool(self.llm_api_key), "paypal_set": bool(self.paypal_client_id and self.paypal_client_secret),
+                "llm_key_set": bool(self.llm_api_key),
+                "paypal_set": bool(self.paypal_client_id and self.paypal_client_secret),
                 "webhook_set": bool(self.paypal_webhook_id), "internal_token_set": bool(self.internal_token),
                 "demo_merchant_set": self.demo_merchant_id is not None, "storage_dir": str(self.storage_dir),
                 "watch_minutes": self.watch_minutes}

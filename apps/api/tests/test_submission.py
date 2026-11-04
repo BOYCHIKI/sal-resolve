@@ -543,7 +543,8 @@ def test_an_analysis_that_read_an_older_document_set_is_discarded_and_redone(mer
     assert queued == 1
 
 def test_a_file_that_went_missing_stops_the_send(tmp_path, monkeypatch):
-    doc = SimpleNamespace(evidence_id="E", object_key="gone/file", mime="image/png", content_lines=[], doc_type="packing_proof")
+    doc = SimpleNamespace(evidence_id="E", object_key="gone/file", mime="image/png",
+                          content_lines=[], doc_type="packing_proof")
     monkeypatch.setenv("SAL_STORAGE_DIR", str(tmp_path))
     with pytest.raises(submission.SubmissionError) as missing:
         submission._files_to_send([doc])

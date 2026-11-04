@@ -16,9 +16,7 @@ gsap.registerPlugin(MotionPathPlugin, ScrollTrigger, SplitText, useGSAP);
  *   data-reveal          block fades up into view
  *   data-reveal-stagger  its children fade up one after another
  *   data-count="N"       figure counts up from 0 to N when it scrolls into view
- *   data-scrub-text      words light up one by one as the block scrolls through the screen
  *   data-tilt-in         block leans back and straightens as it scrolls up (the case screen still)
- *   data-grow            line grows downwards when it scrolls into view
  *   data-orbit           on an <svg>: each .orbit-dot inside rides the path named by its data-path, looping
  *                        (data-seconds per trip, data-start as a head start, data-reverse to go the other way);
  *                        data-orbit-origin="x y" also widens the svg's own paths out from that point on load
@@ -68,29 +66,10 @@ export function Motion() {
         gsap.fromTo(el.children, rise, { ...risen, stagger: 0.08, scrollTrigger: { trigger: el, start: "top 92%", once: true } });
       });
 
-      gsap.utils.toArray<HTMLElement>("[data-scrub-text]").forEach((el) => {
-        SplitText.create(el, {
-          type: "words",
-          autoSplit: true,
-          onSplit: (self) =>
-            gsap.fromTo(self.words, { opacity: 0.18 }, {
-              opacity: 1, stagger: 0.1, ease: "none",
-              scrollTrigger: { trigger: el, start: "top 85%", end: "bottom 45%", scrub: true },
-            }),
-        });
-      });
-
       gsap.utils.toArray<HTMLElement>("[data-tilt-in]").forEach((el) => {
         gsap.fromTo(el, { rotateX: 14, scale: 0.93, y: 40, transformPerspective: 1400, transformOrigin: "50% 0%" }, {
           rotateX: 0, scale: 1, y: 0, ease: "none",
           scrollTrigger: { trigger: el, start: "top bottom", end: "top 20%", scrub: true },
-        });
-      });
-
-      gsap.utils.toArray<HTMLElement>("[data-grow]").forEach((el) => {
-        gsap.fromTo(el, { scaleY: 0 }, {
-          scaleY: 1, transformOrigin: "50% 0%", duration: 1, ease: "power2.inOut",
-          scrollTrigger: { trigger: el, start: "top 95%", once: true },
         });
       });
 

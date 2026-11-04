@@ -58,7 +58,7 @@ def render_record(details: dict[str, Any]) -> list[str]:
 def fetch_and_store(merchant_id: UUID, dispute_id: UUID, source: TransactionSource,
                     engine: Engine | None = None) -> dict[str, Any]:
     with tenant_session(merchant_id, engine) as s:
-        d = s.execute(text("""SELECT provider_payload, origin FROM disputes WHERE id = :d"""), {"d": dispute_id}).first()
+        d = s.execute(text("SELECT provider_payload, origin FROM disputes WHERE id = :d"), {"d": dispute_id}).first()
         if d is None:
             return {"skipped": "dispute not found"}
         have = s.execute(text("SELECT 1 FROM evidence WHERE dispute_id = :d AND origin = 'PAYPAL_API'"),

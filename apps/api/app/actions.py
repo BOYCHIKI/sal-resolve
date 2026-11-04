@@ -43,7 +43,8 @@ HOLD_REASON = {
     "dispute": "PayPal holds this money while the buyer's dispute is open. It is released when the dispute "
                "closes in your favour.",
     "payment": "PayPal is holding this payment, as it does for newer sellers or unusual sales. Adding tracking "
-               "and delivery helps it release sooner; holds usually last up to 21â€“30 days depending on your country.",
+               "and delivery helps it release sooner; holds usually last up to 21–30 days depending on your "
+               "country.",
     "reserve": "PayPal keeps this part of your sales as a reserve and releases it on its own schedule.",
     "review": "PayPal is reviewing this payment before releasing it.",
 }
@@ -516,4 +517,5 @@ def _send_offer(merchant_id: UUID, row: Any, amount: Decimal, actor: str, paypal
                                   "currency": currency})
     _finish(merchant_id, row.id, "DONE", {"outcome": "offer_sent", "amount": str(amount), "currency": currency},
             engine)
-    return {"id": str(row.id), "status": "DONE", "kind": row.kind, "offer": {"amount": str(amount), "currency": currency}}
+    return {"id": str(row.id), "status": "DONE", "kind": row.kind,
+            "offer": {"amount": str(amount), "currency": currency}}

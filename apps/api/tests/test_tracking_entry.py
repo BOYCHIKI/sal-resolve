@@ -25,7 +25,8 @@ def _seller_doc(resi: str) -> Document:
 
 def test_a_typed_resi_names_the_parcel_but_never_proves_it_moved_or_arrived():
     doc = _seller_doc("1102846637184921")
-    facts = ground([CandidateFact("tracking_id", "1102846637184921", SourceRef("S", 1), "Tracking number: 1102846637184921"),
+    facts = ground([CandidateFact("tracking_id", "1102846637184921", SourceRef("S", 1),
+                                  "Tracking number: 1102846637184921"),
                     CandidateFact("carrier_status", "DELIVERED", SourceRef("S", 2), "Courier: JNE")], [doc])
     assert [(f.field, f.status) for f in facts] == [("tracking_id", "supported"), ("carrier_status", "rejected")]
     a = assess(facts, apply_inr_rules(facts, [doc], "45.00", "USD"), [doc], "45.00", "USD")
@@ -37,7 +38,8 @@ def test_a_typed_resi_names_the_parcel_but_never_proves_it_moved_or_arrived():
 def test_a_typed_resi_that_differs_from_the_courier_page_is_a_conflict():
     seller = _seller_doc("1102846637184921")
     courier = Document("T", "carrier_tracking", (Line(1, "No. Resi: 1102846637999999"),), "UPLOAD")
-    facts = ground([CandidateFact("tracking_id", "1102846637184921", SourceRef("S", 1), "Tracking number: 1102846637184921"),
+    facts = ground([CandidateFact("tracking_id", "1102846637184921", SourceRef("S", 1),
+                                  "Tracking number: 1102846637184921"),
                     CandidateFact("tracking_id", "1102846637999999", SourceRef("T", 1), "No. Resi: 1102846637999999")],
                    [seller, courier])
     findings = apply_inr_rules(facts, [seller, courier], "45.00", "USD")
@@ -70,7 +72,8 @@ def test_entering_a_resi_records_it_with_the_paypal_carrier_and_queues_a_check(c
                                 WHERE id = :e"""), {"e": body["evidence_id"]}).one()
         queued = s.execute(text("SELECT count(*) FROM jobs WHERE kind = 'analyze_dispute' AND target_id = :d"),
                            {"d": dispute_id}).scalar()
-    assert (row.origin, row.doc_type, row.mime, row.object_key) == ("SELLER_INPUT", "seller_shipment", "text/plain", None)
+    assert (row.origin, row.doc_type, row.mime, row.object_key) == ("SELLER_INPUT",
+                                                                    "seller_shipment", "text/plain", None)
     assert [line["text"] for line in row.content_lines] == ["Tracking number: 1102846637184921", "Courier: JNE"]
     assert queued >= 1
 

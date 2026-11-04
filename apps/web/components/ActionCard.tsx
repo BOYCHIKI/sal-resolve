@@ -17,6 +17,7 @@ const LOOK: Record<ActionKind, { eyebrow: string; primary: string }> = {
 };
 
 const MESSAGES: Record<string, string> = {
+  AUTH_REQUIRED: "Your session ended. Sign in again to continue.",
   STALE_ACTION: "SAL updated this suggestion. Reload the page and read it again.",
   ACTION_NOT_OPEN: "This suggestion was already handled.",
   DISPUTE_CHANGED: "PayPal updated this case. SAL is preparing a new suggestion.",

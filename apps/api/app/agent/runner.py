@@ -46,7 +46,8 @@ def configured_roles() -> Roles:
         return baseline_roles()
     from app.agent.llm import LLMRoles
     llm = LLMRoles()
-    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), LabelExtractor(), llm), llm, f"rules+llm:{llm.model}",
+    return Roles(ReadAllPlanner(), UnionExtractor(RuleExtractor(), LabelExtractor(), llm),
+                 llm, f"rules+llm:{llm.model}",
                  fallback=baseline_roles())
 
 
@@ -66,7 +67,8 @@ def load_case(engine: Engine | None, merchant_id: UUID, dispute_id: UUID) -> tup
                                  ORDER BY uploaded_at, source_ref NULLS LAST, id"""), {"id": dispute_id}).all()
         evidence_hash = repo.evidence_hash(s, dispute_id)
     docs = tuple(Document(r.evidence_id, r.doc_type or "unknown",
-                          tuple(Line(int(line["line"]), str(line["text"])) for line in r.content_lines), r.origin) for r in rows)
+                          tuple(Line(int(line["line"]),
+                                     str(line["text"])) for line in r.content_lines), r.origin) for r in rows)
     case = CaseInput(d.case_ref or d.provider_dispute_id, d.reason, f"{d.amount:.2f}", d.currency,
                      _requested(d.provider_payload), docs)
     return case, d.version, evidence_hash
@@ -84,7 +86,7 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
     label = roles.label
     try:
         result = analyze(case, roles.planner, roles.extractor, roles.drafter)
-    except Exception as exc:  # noqa: BLE001 â€” degrade, never block (ADR-004)
+    except Exception as exc:  # noqa: BLE001 — degrade, never block (ADR-004)
         if roles.fallback is None:
             raise
         # The SDK already retried. Missing-evidence checks still work without the model; the run says so.

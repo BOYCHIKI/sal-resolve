@@ -5,6 +5,7 @@ import { useState } from "react";
 import { addTracking } from "@/app/actions";
 
 const MESSAGES: Record<string, string> = {
+  AUTH_REQUIRED: "Your session ended. Sign in again to continue.",
   BAD_TRACKING_NUMBER: "Enter the tracking number (resi) as printed: 6–40 letters and digits.",
   BAD_COURIER: "Enter the courier’s name, for example JNE, J&T or LBC.",
   DUPLICATE_TRACKING: "This tracking number is already on the case.",

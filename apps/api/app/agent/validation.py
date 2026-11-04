@@ -163,7 +163,8 @@ def amounts_in(text: str) -> set[Decimal]:
 def value_in_line(field: str, value: str, text: str) -> bool:
     """Is this normalized value really written in the line? Literal match, or the same date, amount or
     status in another common format. Nothing is inferred: the thing itself must be on the line."""
-    if field in STATUS_FIELDS and value in STATUS_WORDS:  # the words decide: DELIVERED is written in "NOT DELIVERED" too
+    # the words decide: DELIVERED is written in "NOT DELIVERED" too
+    if field in STATUS_FIELDS and value in STATUS_WORDS:
         return _status_phrase(text) == value
     if field == "delivery_date" and _NEGATED.search(text):
         return False

@@ -111,7 +111,8 @@ export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
     ...rows.flatMap((r) => Object.values(r))];
   const blanks = required.filter((v) => !v.trim()).length;
   // An invoice that never names its order may have been added to the wrong one.
-  const wrongOrder = isInvoice && !!doc.deal_ref && lines.length > 0 && !lines.some((l) => l.text.includes(doc.deal_ref!));
+  const orderRef = doc.deal_ref;
+  const wrongOrder = isInvoice && !!orderRef && lines.length > 0 && !lines.some((line) => line.text.includes(orderRef));
   const name = isInvoice ? "Invoice" : "Purchase order";
 
   return (
@@ -145,10 +146,10 @@ export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
             <section aria-label="The page as SAL read it" className="flex max-h-60 shrink-0 flex-col gap-2 overflow-y-auto border-b border-(--lp-line) bg-(--lp-card-2) px-6 py-5 sm:px-8 lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r">
               <h3 className="text-[14px] font-semibold">The page as SAL read it</h3>
               <ol className="flex flex-col font-mono text-[13px]">
-                {lines.map((l) => (
-                  <li key={l.line} className="flex gap-3 py-0.5">
-                    <span className="muted w-6 shrink-0 text-right tabular-nums">{l.line}</span>
-                    <span className="[overflow-wrap:anywhere]">{l.text}</span>
+                {lines.map((line) => (
+                  <li key={line.line} className="flex gap-3 py-0.5">
+                    <span className="muted w-6 shrink-0 text-right tabular-nums">{line.line}</span>
+                    <span className="[overflow-wrap:anywhere]">{line.text}</span>
                   </li>
                 ))}
               </ol>

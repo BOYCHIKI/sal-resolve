@@ -245,7 +245,8 @@ def test_a_claim_paypal_decides_is_not_called_a_bank_chargeback():
 
 READY_WITH_POD = AnalysisState(readiness="READY", snapshot_hash="d" * 64, propositions=[
     *READY.propositions[:3],
-    prop("delivery_date_consistent", "proven", "Courier and proof agree on 2026-10-19", [{"evidence_id": "E4", "line": 3}]),
+    prop("delivery_date_consistent", "proven", "Courier and proof agree on 2026-10-19",
+         [{"evidence_id": "E4", "line": 3}]),
 ])
 
 
@@ -271,7 +272,8 @@ def test_a_chargeback_missing_documents_names_the_document_and_the_stage():
 
 
 def test_an_inquiry_keeps_the_ordinary_cards():
-    assert kinds(actions.propose_for_dispute(dispute(lifecycle_stage="INQUIRY"), READY, DRAFT, NOW)) == ["SEND_EVIDENCE"]
+    assert kinds(actions.propose_for_dispute(dispute(lifecycle_stage="INQUIRY"), READY,
+                                             DRAFT, NOW)) == ["SEND_EVIDENCE"]
 
 
 def test_a_case_paypal_is_not_taking_documents_on_explains_instead_of_asking_for_an_upload():

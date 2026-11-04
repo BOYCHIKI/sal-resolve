@@ -46,7 +46,8 @@ Handler = Callable[[repo.ClaimedJob, "Context"], dict[str, Any]]
 
 class Context:
     def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource],
-                 roles_factory: Callable[[], Any] | None = None, reader_factory: Callable[[], Any] | None = None) -> None:
+                 roles_factory: Callable[[],
+                                         Any] | None = None, reader_factory: Callable[[], Any] | None = None) -> None:
         from app.agent.runner import configured_roles
         from app.deal_documents import LLMDocumentReader
         self.engine = engine
@@ -161,7 +162,8 @@ def _read_deal_document(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     from app.config import get_settings
     from app.deal_documents import give_up, read_document
     try:
-        return read_document(job.merchant_id, job.target_id, ctx.reader_factory(), get_settings().storage_dir, ctx.engine)
+        return read_document(job.merchant_id, job.target_id, ctx.reader_factory(),
+                             get_settings().storage_dir, ctx.engine)
     except Exception:
         if job.attempts < READ_ATTEMPTS:
             raise
@@ -278,7 +280,8 @@ def run_one_job(ctx: Context) -> bool:
     with Session(ctx.engine) as s, s.begin():
         if outcome == "ok":
             repo.complete_job(s, job.id, result)
-            log.info("job %s succeeded", job.kind, extra={"kind": job.kind, "outcome": "ok", "duration_ms": duration_ms})
+            log.info("job %s succeeded", job.kind,
+                     extra={"kind": job.kind, "outcome": "ok", "duration_ms": duration_ms})
         else:
             state = repo.fail_job(s, job.id, error, retryable=(outcome == "retry"))
             log.warning("job %s failed (%s)", job.kind, state,

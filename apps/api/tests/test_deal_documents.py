@@ -38,7 +38,8 @@ def read_page(**overrides) -> ReadDocument:
 
 
 class FakeReader:
-    def __init__(self, page: list[str] = PAGE, read: ReadDocument | None = None, fails: Exception | None = None) -> None:
+    def __init__(self, page: list[str] = PAGE, read: ReadDocument | None = None,
+                 fails: Exception | None = None) -> None:
         self.page, self.result, self.fails, self.transcribed = page, read or read_page(), fails, 0
 
     def transcribe(self, data, mime):
@@ -158,7 +159,8 @@ def test_a_transcription_that_stopped_early_is_taken_again(client, worker_engine
             return long_page[:1] if self.transcribed == 1 else long_page
     reader = Short(page=long_page)
     upload(client, PNG)
-    assert len(read_doc(client, reader, worker_engine)["lines"]) == 12 and reader.transcribed == 3   # 2 + the second copy
+    assert len(read_doc(client, reader,
+                        worker_engine)["lines"]) == 12 and reader.transcribed == 3   # 2 + the second copy
 
 
 @pytest.mark.db

@@ -1,7 +1,5 @@
-/* The strip above the landing nav: short true facts about the demo, on the marquee loop (globals.css, .ticker). */
+/* The strip above the landing nav: short true facts about SAL, on the marquee loop (globals.css, .ticker). */
 const ITEMS = [
-  "Demo on a PayPal test account",
-  "Made-up orders, no real money",
   "Nothing sent without your approval",
   "Facts from your documents only",
   "Orders checked before delivery",

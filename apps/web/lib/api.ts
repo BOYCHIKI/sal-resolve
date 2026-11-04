@@ -176,23 +176,28 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
 /** For actions whose error codes the UI should show (409 stale, 502 PayPal rejected, ...). */
 export type ActionResult = { ok: true } | { ok: false; code: string; message: string };
 
+const SESSION_ENDED = "Your session ended. Sign in again to continue.";
+
+async function result(res: Response, fallback: string): Promise<ActionResult> {
+  if (res.ok) return { ok: true };
+  if (res.status === 401) return { ok: false, code: "AUTH_REQUIRED", message: SESSION_ENDED };
+  const detail = (await res.json().catch(() => ({})))?.detail ?? {};
+  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? fallback };
+}
+
 async function action(path: string, body?: unknown): Promise<ActionResult> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST", cache: "no-store",
     headers: { ...(await apiHeaders()), ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (res.ok) return { ok: true };
-  const detail = (await res.json().catch(() => ({})))?.detail ?? {};
-  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Request failed" };
+  return result(res, "Request failed");
 }
 
 /** Multipart upload of one document; the API checks type, size, duplicates and ownership. */
 async function upload(path: string, form: FormData): Promise<ActionResult> {
   const res = await fetch(`${API_URL}${path}`, { method: "POST", cache: "no-store", body: form, headers: await apiHeaders() });
-  if (res.ok) return { ok: true };
-  const detail = (await res.json().catch(() => ({})))?.detail ?? {};
-  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Upload failed" };
+  return result(res, "Upload failed");
 }
 
 export type Health = { status: "ok" | "degraded" | "down"; worker: { alive: boolean; seconds_since: number | null } | null };

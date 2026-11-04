@@ -130,14 +130,17 @@ def test_a_proof_saying_the_delivery_failed_never_proves_delivery(status):
 
 
 def test_a_courier_page_saying_returned_stops_a_dated_proof():
-    page = Document("trk", "carrier_tracking", (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
-                                                Line(3, "Carrier status: RETURNED"), Line(4, "Latest event: 2026-10-24")))
+    page = Document("trk", "carrier_tracking",
+                    (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
+                                                Line(3,
+                                                     "Carrier status: RETURNED"), Line(4, "Latest event: 2026-10-24")))
     r = run(paypal(), page, proof())
     assert r.assessment.status("delivered") == "contradicted" and r.assessment.readiness == "NEEDS_CHECK"
 
 
 def test_a_parcel_still_moving_on_the_courier_page_is_not_a_failed_delivery():
-    page = Document("trk", "carrier_tracking", (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
+    page = Document("trk", "carrier_tracking",
+                    (Line(1, "SYNTHETIC TRACKING | TRK-SYN-1"), Line(2, "Ship date: 2026-10-20"),
                                                 Line(3, "Carrier status: IN_TRANSIT"), Line(4, "Latest event: 2026-10-24")))
     r = run(paypal(), page, proof())
     assert not [f for f in r.findings if f.field == "delivery_status"]

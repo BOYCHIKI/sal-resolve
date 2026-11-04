@@ -159,7 +159,8 @@ def test_a_sent_case_stays_quiet_after_a_sync_re_analyses_it(client, merchant, a
     dispute_id = ready_case(merchant, app_engine, worker_engine)
     card = cards(client, dispute_id=str(dispute_id))[0]
     app.dependency_overrides[paypal_sink] = lambda: FakePayPal()
-    assert client.post(f"/api/actions/{card['id']}/approve", json={"payload_hash": card["payload_hash"]}).status_code == 200
+    assert client.post(f"/api/actions/{card['id']}/approve",
+                       json={"payload_hash": card["payload_hash"]}).status_code == 200
     with tenant_session(merchant, app_engine) as s:   # PayPal moved on (no evidence wanted) and the sync re-analysed
         s.execute(text("UPDATE disputes SET allowed_actions = '{accept_claim}' WHERE id = :d"), {"d": dispute_id})
     run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)

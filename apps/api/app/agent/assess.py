@@ -188,14 +188,16 @@ def _buyer_messages_clean(case: _Case) -> Proposition:
 def _paypal_request_covered(requested: tuple[str, ...], props: list[Proposition]) -> Proposition:
     """7. PayPal's own request for evidence is covered by the propositions above. PayPal can ask for proof of
     refund on a case with no refund; it only applies if the seller refunded, so it never blocks a reply."""
-    needs = [(r, REQUEST_NEEDS.get(r)) for r in requested if r != "PROOF_OF_REFUND"]
-    requested = tuple(r for r, _ in needs)
+    # each evidence type PayPal asked for, with the propositions that prove it (None: a type SAL can't check)
+    needs = [(evidence_type, REQUEST_NEEDS.get(evidence_type)) for evidence_type in requested
+             if evidence_type != "PROOF_OF_REFUND"]
     if not needs:
         return Proposition("paypal_request_covered", "not_applicable", "PayPal has not asked for specific evidence")
     by_id = {p.id: p for p in props}
-    unknown = [r for r, n in needs if n is None]
-    gaps = [r for r, n in needs if n and any(by_id[x].status != "proven" for x in n)]
-    asked = ", ".join(r.replace("_", " ").lower() for r in requested)
+    unknown = [evidence_type for evidence_type, proven_by in needs if proven_by is None]
+    gaps = [evidence_type for evidence_type, proven_by in needs
+            if proven_by and any(by_id[prop_id].status != "proven" for prop_id in proven_by)]
+    asked = ", ".join(evidence_type.replace("_", " ").lower() for evidence_type, _ in needs)
     if gaps:
         return Proposition("paypal_request_covered", "missing", f"PayPal asked for {asked}; not proven yet")
     if unknown:

@@ -254,7 +254,8 @@ def test_guessing_passwords_from_one_address_is_slowed_down(http):
 
 @pytest.mark.db
 def test_two_step_setup_returns_a_qr_and_recovery_codes_once(http):
-    token = http.post("/api/auth/signup", json={"business_name": "Shop", "email": email(), "password": PASSWORD}).json()["token"]
+    token = http.post("/api/auth/signup",
+                      json={"business_name": "Shop", "email": email(), "password": PASSWORD}).json()["token"]
     h = {"x-sal-session": token}
     setup = http.post("/api/auth/mfa/setup", headers=h).json()
     assert setup["qr_svg"].startswith("data:image/svg+xml") and setup["otpauth_uri"].startswith("otpauth://totp/")
