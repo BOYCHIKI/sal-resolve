@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
 import { SyncButton } from "@/components/SyncButton";
 import { api, type AgentAction, type Dispute } from "@/lib/api";
+import { addDecimals, money } from "@/lib/format";
 import { caseTypeOf, dueText, nextStep, orderNumber, origin, reason, stageOf } from "@/lib/plain";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ function CaseRow({ d, step, due }: Row) {
         </span>
       </div>
       <div className="flex flex-[1_1_120px] flex-col text-right">
-        <span className="text-lg font-semibold tabular-nums">{d.amount.value} {d.amount.currency}</span>
+        <span className="text-lg font-semibold tabular-nums">{money(d.amount)}</span>
         <span className="muted text-[13px]">disputed</span>
       </div>
       <div className="flex flex-[1_1_220px] flex-col items-start gap-1.5">
@@ -39,15 +40,15 @@ function CaseRow({ d, step, due }: Row) {
   );
 }
 
-/** "43.17 USD" or "43.17 USD + 10.00 EUR" from the open held-funds cards. */
+/** "$43.17 USD" or "$43.17 USD + €10.00 EUR" from the open held-funds cards; currencies are never added together. */
 function moneyOnHold(actions: AgentAction[]): string {
-  const sums = new Map<string, number>();
+  const amounts = new Map<string, string[]>();
   for (const a of actions) {
     if (a.kind !== "EXPLAIN_HELD_FUNDS") continue;
     const currency = String(a.payload.currency ?? "");
-    sums.set(currency, (sums.get(currency) ?? 0) + Number(a.payload.amount ?? 0));
+    amounts.set(currency, [...(amounts.get(currency) ?? []), String(a.payload.amount ?? "")]);
   }
-  return [...sums].map(([c, v]) => `${v.toFixed(2)} ${c}`).join(" + ");
+  return [...amounts].map(([c, values]) => money({ value: addDecimals(values), currency: c })).join(" + ");
 }
 
 export default async function DisputesPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {

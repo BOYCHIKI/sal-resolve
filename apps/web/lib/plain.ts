@@ -1,6 +1,7 @@
 // Turns system codes into words an operations or finance person reads without a glossary.
 // The API keeps its codes; only the UI speaks plainly.
 import type { Analysis, Dispute, Fact, Finding, Proposition, Readiness } from "@/lib/api";
+import { amount, money } from "@/lib/format";
 
 const REASONS: Record<string, string> = {
   ITEM_NOT_RECEIVED: "Says it never arrived",
@@ -160,12 +161,17 @@ export function readableFacts(facts: Fact[], currency: string): { label: string;
     seen.add(f.field);
     let value = f.value;
     if (f.field.endsWith("_date")) value = date(value);
-    if (f.field.endsWith("amount")) value = `${value} ${currency}`;
+    if (f.field.endsWith("amount")) value = amount(value, documentCurrency(facts, f.source.evidence_id) ?? currency);
     if (f.field === "carrier_status") value = STATUS_WORDS[value] ?? value;
     if (f.field === "order_id") value = orderNumber(value) ?? value;
     out.push({ label: FIELDS[f.field], value, doubtful: f.status === "conflicted", source: f.source.evidence_id });
   }
   return out;
+}
+
+/** The currency written on the same document as an amount, if SAL read one there. */
+function documentCurrency(facts: Fact[], evidenceId: string): string | undefined {
+  return facts.find((f) => f.field === "currency" && f.status !== "rejected" && f.source.evidence_id === evidenceId)?.value;
 }
 
 function factValue(facts: Fact[], field: string): string | undefined {
@@ -187,7 +193,7 @@ export function explain(f: Finding, facts: Fact[], currency: string): { title: s
   if (f.field === "reported_payment_amount")
     return {
       title: "The customer mentions a different amount",
-      body: `They wrote ${factValue(facts, "reported_payment_amount")} ${currency}, but the payment received was ${factValue(facts, "payment_amount")} ${currency}. The reply uses the amount from the payment record.`,
+      body: `They wrote ${amount(factValue(facts, "reported_payment_amount"), currency)}, but the payment received was ${amount(factValue(facts, "payment_amount"), currency)}. The reply uses the amount from the payment record.`,
       tone: "amber",
     };
   if (f.field === "untrusted_instruction")
@@ -203,7 +209,7 @@ export function summarySentence(d: Dispute, a: Analysis | null): { headline: str
     : d.reason === "UNAUTHORISED" ? `The customer says they didn’t make the payment for this ${item}.`
     : `The customer disputes their ${item} payment.`;
   const paidOn = a ? factValue(a.facts, "order_date") : undefined;
-  const paid = `They paid ${d.amount.value} ${d.amount.currency}${paidOn ? ` on ${date(paidOn)}` : ""} and asked PayPal for a refund.`;
+  const paid = `They paid ${money(d.amount)}${paidOn ? ` on ${date(paidOn)}` : ""} and asked PayPal for a refund.`;
   if (d.internal_state === "SUBMITTED") {
     const waiting = d.provider_status === "WAITING_FOR_BUYER_RESPONSE" ? "PayPal is waiting for the buyer to answer."
       : d.provider_status === "RESOLVED" ? "PayPal has closed the case." : "PayPal is reviewing it.";

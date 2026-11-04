@@ -4,6 +4,7 @@ import { ConfirmDealDocument } from "@/components/ConfirmDealDocument";
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
 import { RequestCorrection } from "@/components/RequestCorrection";
 import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
+import { amount } from "@/lib/format";
 import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCode } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -22,15 +23,20 @@ const FINDING_TEXT: Record<DealFindingCode, string> = {
   ADDRESS_DIFFERS: "Delivery address",
 };
 
-function FindingRow({ finding }: { finding: DealFinding }) {
+// These findings compare money in the deal's currency (a currency difference is reported on its own).
+const MONEY_FINDINGS: DealFindingCode[] = ["UNIT_PRICE_DIFFERS", "TOTAL_DOES_NOT_ADD_UP", "OVER_APPROVED_LIMIT"];
+
+function FindingRow({ finding, currency }: { finding: DealFinding; currency: string }) {
+  const shown = (value: string | null) =>
+    value === null ? "—" : MONEY_FINDINGS.includes(finding.code) ? amount(value, currency) : value;
   return (
     <tr className="border-t border-(--lp-line) align-top">
       <th scope="row" className="py-2 pr-3 text-left font-semibold">
         {FINDING_TEXT[finding.code]}
         <span className="muted block font-mono text-[12px] font-normal">{finding.field}</span>
       </th>
-      <td className="py-2 pr-3 font-mono text-[13px] [overflow-wrap:anywhere]">{finding.ordered ?? "—"}</td>
-      <td className="py-2 font-mono text-[13px] [overflow-wrap:anywhere]">{finding.invoiced ?? "—"}</td>
+      <td className="py-2 pr-3 font-mono text-[13px] [overflow-wrap:anywhere]">{shown(finding.ordered)}</td>
+      <td className="py-2 font-mono text-[13px] [overflow-wrap:anywhere]">{shown(finding.invoiced)}</td>
     </tr>
   );
 }
@@ -38,8 +44,8 @@ function FindingRow({ finding }: { finding: DealFinding }) {
 function Summary({ deal }: { deal: Deal }) {
   return (
     <span className="muted text-[15px]">
-      Approved up to {deal.purchase_order.max_total} {deal.purchase_order.currency} by {deal.purchase_order.approved_by}
-      {deal.invoice ? ` · invoice ${deal.invoice.invoice_ref}, ${deal.invoice.total}` : ""}
+      Approved up to {amount(deal.purchase_order.max_total, deal.purchase_order.currency)} by {deal.purchase_order.approved_by}
+      {deal.invoice ? ` · invoice ${deal.invoice.invoice_ref}, ${amount(deal.invoice.total, deal.invoice.currency)}` : ""}
     </span>
   );
 }
@@ -62,7 +68,7 @@ function HeldDeal({ deal }: { deal: Deal }) {
             <th scope="col" className="pb-1 font-medium">Invoiced</th>
           </tr>
         </thead>
-        <tbody>{deal.findings.map((f) => <FindingRow key={`${f.code}:${f.field}`} finding={f} />)}</tbody>
+        <tbody>{deal.findings.map((f) => <FindingRow key={`${f.code}:${f.field}`} finding={f} currency={deal.purchase_order.currency} />)}</tbody>
       </table>
       <RequestCorrection deal={deal} />
     </li>

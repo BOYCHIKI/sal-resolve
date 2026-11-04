@@ -142,7 +142,7 @@ export type Deal = {
   category: "GOODS" | "DIGITAL" | "SERVICE";
   status: DealStatus;
   purchase_order: { currency: string; max_total: string; approved_by: string };
-  invoice: { invoice_ref: string; total: string } | null;
+  invoice: { invoice_ref: string; total: string; currency: string } | null;
   findings: DealFinding[];
   correction: { message: string; requested_at: string } | null;
   updated_at: string;

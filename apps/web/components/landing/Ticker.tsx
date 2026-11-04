@@ -1,7 +1,7 @@
 /* The strip above the landing nav: short true facts about SAL, on the marquee loop (globals.css, .ticker). */
 const ITEMS = [
   "Nothing sent without your approval",
-  "Facts from your documents only",
+  "Facts from your documents and PayPal",
   "Orders checked before delivery",
   "Built on PayPal’s Disputes API",
 ];

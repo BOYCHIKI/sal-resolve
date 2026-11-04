@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { decideAction } from "@/app/actions";
 import type { ActionKind, AgentAction } from "@/lib/api";
+import { amount as formatAmount } from "@/lib/format";
 
 const LOOK: Record<ActionKind, { eyebrow: string; primary: string }> = {
   SEND_EVIDENCE: { eyebrow: "Ready to send", primary: "Send to PayPal" },
@@ -73,7 +74,9 @@ export function ActionCard({ action, caseLink = true }: { action: AgentAction; c
           <span className="muted text-[13px] font-semibold uppercase tracking-wide">{look.eyebrow}</span>
           {due && <span className={`text-[13px] ${due === "Overdue" || due.includes("hour") ? "font-semibold text-red-ink" : "muted"}`}>{due}</span>}
         </div>
-        <h3 className="text-[18px] font-semibold">{action.title}</h3>
+        <h3 className="text-[18px] font-semibold">
+          {info && action.payload.amount ? `${formatAmount(String(action.payload.amount), currency)} is on hold` : action.title}
+        </h3>
         <p className="muted text-[15px] leading-relaxed">{action.rationale}</p>
         {offer && (
           <label className="mt-1 flex flex-wrap items-center gap-2 text-[15px]">

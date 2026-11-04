@@ -43,7 +43,7 @@ const FEATURES = [
 ];
 
 const TRUST = [
-  "Every sentence in a reply comes from one of your documents.",
+  "Every fact in a reply comes from your documents or PayPal’s own record.",
   "Instructions hidden in a document are treated as text, never followed.",
   "The verdict comes from fixed rules, not from an AI’s opinion.",
   "Your business data is kept separate from every other business.",
@@ -60,7 +60,7 @@ const figures = [
 
 const FOOTER = [
   { title: "Product", links: [["How it works", "#how"], ["What it checks", "#features"], ["AI agents", "#agents"]] },
-  { title: "Demo", links: [["Deal Check", "/deals"], ["Example disputes", "/demo"]] },
+  { title: "Demo", links: [["Deal Check", "/deals"], ["Try SAL", "/demo"]] },
   { title: "Company", links: [["Security", "/security"]] },
 ];
 
@@ -181,7 +181,7 @@ export default function Landing() {
               <h2 className="display text-4xl sm:text-5xl">When agents trade, SAL checks the deal.</h2>
               <p className="muted text-[17px]">
                 Each agent gets its own revocable identity and role. A buyer’s agent sends the order, a seller’s agent sends the invoice,
-                and SAL compares what they agreed. SAL never buys, pays or holds money. Our demo uses simulated agents.
+                and SAL compares what they agreed. Agents connect over MCP, and the demo runs two real AI agents. SAL never buys, pays or holds money.
               </p>
             </div>
             <div className="lp-card flex flex-col items-start gap-5 p-8 sm:p-10">
@@ -206,7 +206,7 @@ export default function Landing() {
               <p className="muted max-w-xl text-lg">Add an order and its invoice. SAL shows what doesn’t match before you deliver.</p>
               <div className="flex flex-wrap justify-center gap-3">
                 <Link href="/deals" className="lp-btn">Try Deal Check</Link>
-                <Link href="/demo" className="lp-btn-ghost">See example disputes</Link>
+                <Link href="/demo" className="lp-btn-ghost">Open the demo</Link>
               </div>
             </div>
           </div>
