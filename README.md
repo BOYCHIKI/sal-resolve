@@ -65,7 +65,8 @@ Windows, with Docker Desktop, Python 3.12+ and Node 20+:
 
 ```
 .\sal setup     # first time: venv, packages, .env, database, demo data
-.\sal start     # database + API + worker + web, opens http://localhost:3000
+.\sal start     # database + API + worker + web (production build, about a minute), opens http://localhost:3000
+.\sal dev       # the same, but the web reloads on every code change (pages compile on first visit)
 .\sal backend   # database + API + worker only (API docs: http://127.0.0.1:8000/docs)
 .\sal web       # web only (needs the backend)
 .\sal stop      # stop API, worker and web

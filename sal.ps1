@@ -5,6 +5,7 @@ SAL Resolve: local shortcuts (Windows PowerShell 5.1+).
     .\sal start    database + API + worker + web, opens http://localhost:3000
     .\sal backend  database + API + worker only (API docs: http://127.0.0.1:8000/docs)
     .\sal web      web only, opens http://localhost:3000 (needs the backend running)
+    .\sal dev      like start, but the web reloads on every code change (slower pages, for development)
     .\sal stop     stops what "start" opened (the database keeps its data)
     .\sal status   what is running
     .\sal seed     add the demo cases again
@@ -13,7 +14,7 @@ SAL Resolve: local shortcuts (Windows PowerShell 5.1+).
                    .\sal eval --split real_format --roles llm
 #>
 param(
-    [ValidateSet("setup", "start", "backend", "web", "stop", "status", "seed", "test", "eval", "help")][string]$Command = "help",
+    [ValidateSet("setup", "start", "backend", "web", "dev", "stop", "status", "seed", "test", "eval", "help")][string]$Command = "help",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
@@ -149,14 +150,21 @@ function Start-Backend {
     Say "Backend running. API docs http://127.0.0.1:8000/docs  Stop: .\sal stop"
 }
 
-function Start-Web {
+# The production build by default: every page is compiled once, so the first click on each page doesn't wait for
+# it. -Dev reloads on every code change instead.
+function Start-Web([switch]$Dev) {
     if (-not (Test-Path (Join-Path $Web "node_modules"))) { Fail "Run .\sal setup first." }
     if (-not (Listening 3000)) {
         if (-not (Listening 8000)) { Say "Note: the API is not running, the web will say it can't reach its server. Run .\sal backend" }
-        Say "Opening web in its own window"
-        Remember (Window "web :3000" $Web "npm run dev")
+        if ($Dev) {
+            Say "Opening web (development) in its own window"
+            Remember (Window "web :3000" $Web "npm run dev")
+        } else {
+            Say "Building the web and opening it in its own window (about a minute the first time)"
+            Remember (Window "web :3000" $Web "npm run build; if (`$LASTEXITCODE -eq 0) { npm run start }")
+        }
         Say "Waiting for the web page"
-        foreach ($i in 1..60) {
+        foreach ($i in 1..120) {
             try { Invoke-WebRequest "http://localhost:3000" -UseBasicParsing -TimeoutSec 2 | Out-Null; break }
             catch { Start-Sleep 2 }
         }
@@ -192,10 +200,11 @@ switch ($Command) {
     "start"  { Start-All }
     "backend" { Start-Backend }
     "web"    { Start-Web }
+    "dev"    { if (Test-Path $PidFile) { Stop-All }; Start-Backend; Start-Web -Dev }
     "stop"   { Stop-All }
     "status" { Status }
     "seed"   { Seed }
     "test"   { Database; Run $Py @("-m", "pytest", "-q") $Api }
     "eval"   { Run $Py (@("-m", "app.agent.evaluate") + $Rest) $Api }
-    default  { Get-Help $PSCommandPath; Write-Host "Usage: .\sal setup | start | backend | web | stop | status | seed | test | eval" }
+    default  { Get-Help $PSCommandPath; Write-Host "Usage: .\sal setup | start | backend | web | dev | stop | status | seed | test | eval" }
 }

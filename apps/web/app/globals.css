@@ -96,7 +96,7 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.025em; }
 
 :focus-visible { outline: 2px solid var(--action-focus); outline-offset: 2px; }
 
-/* Soft colour behind the glass, fixed so panels blur it as the page scrolls. */
+/* Soft colour behind the glass. Fixed, so it is painted once and only the page content moves over it. */
 .ground-blobs { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .ground-blobs span { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.85; }
 
@@ -253,7 +253,8 @@ a.lp-card:hover { border-color: var(--lp-mint); }
   --grey-bg: rgba(255, 255, 255, 0.6);   --grey-ink: #3b4660;
   background: linear-gradient(165deg, #f5f9ff 0%, #e2eeff 45%, #ece8ff 100%);
 }
-/* The clouds: fixed, so the glass blurs them as the page scrolls. */
+/* The clouds: fixed, painted once. Cards are translucent rather than blurred, which would cost a repaint per frame
+   on every card while scrolling and stutter on weaker laptops. */
 .sky::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background:
@@ -266,9 +267,8 @@ a.lp-card:hover { border-color: var(--lp-mint); }
 }
 .sky .display { text-transform: none; font-weight: 700; letter-spacing: -0.025em; line-height: 1.08; }
 .sky .lp-card {
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46));
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.64));
   border-color: var(--glass-edge); border-radius: 24px;
-  -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
   box-shadow: 0 14px 40px -18px rgba(40, 80, 170, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .sky a.lp-card { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
@@ -289,7 +289,7 @@ a.lp-card:hover { border-color: var(--lp-mint); }
 /* The white band turns to frosted glass so the sky still shows through. */
 .sky .lp-light {
   --lp-card: rgba(255, 255, 255, 0.85); --lp-line: rgba(36, 72, 140, 0.1); --lp-mint: #0e8a58;
-  background: rgba(255, 255, 255, 0.5); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.66);
   border-block: 1px solid var(--glass-edge);
 }
 

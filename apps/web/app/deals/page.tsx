@@ -9,7 +9,9 @@ import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCo
 
 export const dynamic = "force-dynamic";
 
-const REFRESH_SECONDS = 3;
+// Fast while SAL is reading a document or checking a deal; slow otherwise, for an invoice an agent sends later.
+const BUSY_REFRESH_SECONDS = 3;
+const IDLE_REFRESH_SECONDS = 20;
 
 const FINDING_TEXT: Record<DealFindingCode, string> = {
   CURRENCY_DIFFERS: "Currency",
@@ -120,7 +122,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   return (
     <div className="lp sky min-h-screen">
       <AppHeader />
-      <AutoRefresh seconds={REFRESH_SECONDS} />
+      <AutoRefresh seconds={reading.length || deals.some((d) => d.status === "CHECKING") ? BUSY_REFRESH_SECONDS : IDLE_REFRESH_SECONDS} />
       <main>
         <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-16 pt-8">
           <PageHead title="Deal Check" lead="SAL compares each order with its invoice before you deliver. Nothing here is sent to PayPal.">
