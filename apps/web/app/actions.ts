@@ -111,6 +111,21 @@ export async function requestDealCorrection(dealRef: string): Promise<ActionResu
   }
 }
 
+const AGENT_RUN_ERRORS: Record<string, string> = {
+  LLM_NOT_CONFIGURED: "The AI agents need an OpenAI key in SAL’s settings.",
+  AGENT_RUNS_USED_UP: "Today’s agent runs are used up. Try again tomorrow.",
+};
+
+export async function startAgentRun(): Promise<ActionResult> {
+  try {
+    const result = await api.startAgentRun();
+    revalidatePath("/demo");
+    return result.ok ? result : { ...result, message: AGENT_RUN_ERRORS[result.code] ?? "The agents couldn’t start. Please try again." };
+  } catch {
+    return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
 export async function uploadDealDocument(form: FormData): Promise<ActionResult> {
   const file = form.get("file");
   if (!(file instanceof File)) return { ok: false, code: "BAD_REQUEST", message: "Choose a PDF or photo." };

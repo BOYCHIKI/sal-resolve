@@ -95,7 +95,7 @@ Or create a new business at http://localhost:3000/signup.
 | 2 | **Deals → Add a document**, upload `docs/samples/1-purchase-order-PO-DEMO-1001.pdf` | The page beside the values SAL read; correct anything wrong, then save |
 | 3 | On that deal, **Add invoice** with `docs/samples/3-invoice-wrong-quantity.pdf` | The deal goes on **hold** and says which quantity differs |
 | 4 | **Add invoice** again with `docs/samples/2-invoice-matches.pdf` | The hold clears |
-| 5 | `cd apps/api` then `python -m app.ai_agents` (needs `SAL_LLM_*`) | A buyer's AI agent places an order over MCP, a wrong invoice puts the deal on hold, the seller's AI agent reads why and sends a corrected invoice, and the buyer's agent answers PAY only once SAL says CLEAR |
+| 5 | On **/demo**, press **Run the agents** (needs `SAL_LLM_*`; or `python -m app.ai_agents` in `apps/api`) | A buyer's AI agent places an order over MCP, a wrong invoice puts the deal on hold, the seller's AI agent reads why and sends a corrected invoice, and the buyer's agent answers PAY only once SAL says CLEAR |
 | 6 | Open **Disputes** | Cases with what the documents prove, what is missing, and the next step |
 | 7 | `.\sal test` | All backend tests pass (PayPal and the model are faked) |
 

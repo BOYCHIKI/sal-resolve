@@ -148,6 +148,16 @@ export type Deal = {
   updated_at: string;
 };
 
+/** Two AI agents making one deal through SAL's MCP server, run by the worker (app/ai_agents.py). */
+export type AgentStep = { actor: string; text: string; sal: string | null };
+export type AgentRun = {
+  id: string;
+  state: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  error: string | null;
+  result: { deal_ref: string; steps: AgentStep[] } | null;
+  started_at: string;
+};
+
 /** A PO or invoice file. A proposal value is either proven on its line or blank. Values match app/deal_documents.py. */
 export type ProvenValue = { value: string | null; line: number | null };
 export type ProposedItem = { item_code: ProvenValue; description: ProvenValue; quantity: ProvenValue; unit_price: ProvenValue };
@@ -230,6 +240,8 @@ export const api = {
     action(`/api/actions/${encodeURIComponent(id)}/approve`, { payload_hash: payloadHash, offer_amount: offerAmount ?? null }),
   dismissAction: (id: string) => action(`/api/actions/${encodeURIComponent(id)}/dismiss`),
   getJob: (id: string) => call<Job>(`/api/jobs/${encodeURIComponent(id)}`),
+  latestAgentRun: async () => (await call<{ run: AgentRun | null }>("/api/agent-runs/latest"))?.run ?? null,
+  startAgentRun: () => action("/api/agent-runs"),
   listDeals: async () => (await call<{ items: Deal[] }>("/api/deals"))?.items ?? [],
   requestDealCorrection: (dealRef: string) => action(`/api/deals/${encodeURIComponent(dealRef)}/request-correction`),
   listDealDocuments: async () => (await call<{ items: DealDocument[] }>("/api/deal-documents"))?.items ?? [],

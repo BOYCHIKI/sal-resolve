@@ -180,8 +180,13 @@ class ClaimedJob:
     payload: dict[str, Any]
 
 
-def claim_job(session: Session, lease_seconds: int = 60) -> ClaimedJob | None:
-    """Worker-only. Claims one due job (or one whose lease expired) without blocking other workers."""
+# Jobs that take minutes (two AI agents making a deal) run in their own lane, so the deal checks they wait for
+# never queue behind them.
+SLOW_KINDS = ["agent_demo"]
+
+
+def claim_job(session: Session, lease_seconds: int = 60, slow: bool = False) -> ClaimedJob | None:
+    """Worker-only. Claims one due job (or one whose lease expired) of one lane without blocking other workers."""
     row = session.execute(text("""
         UPDATE jobs SET state = 'RUNNING', attempts = attempts + 1,
                         lease_until = now() + make_interval(secs => :lease), updated_at = now()
@@ -190,10 +195,12 @@ def claim_job(session: Session, lease_seconds: int = 60) -> ClaimedJob | None:
             WHERE ((state = 'QUEUED' AND run_after <= now())
                 OR (state = 'RUNNING' AND lease_until < now()))
               AND attempts < max_attempts
+              AND (kind = ANY(:slow_kinds)) = :slow
             ORDER BY run_after
             FOR UPDATE SKIP LOCKED
             LIMIT 1)
-        RETURNING id, merchant_id, kind, target_id, attempts, payload"""), {"lease": lease_seconds}).first()
+        RETURNING id, merchant_id, kind, target_id, attempts, payload"""),
+        {"lease": lease_seconds, "slow": slow, "slow_kinds": SLOW_KINDS}).first()
     return ClaimedJob(**row._mapping) if row else None
 
 

@@ -161,6 +161,18 @@ def _refresh_actions(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
             "packing_purged": purge_expired(job.merchant_id, get_settings().storage_dir, ctx.engine)}
 
 
+def _agent_demo(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
+    """Two AI agents make one deal through SAL's MCP server (app/ai_agents.py). Each run costs model calls, so a
+    failure is never retried."""
+    from app import ai_agents
+    steps: list[ai_agents.Step] = []
+    try:
+        deal_ref = ai_agents.run(job.merchant_id, ai_agents.llm_client(), steps.append)
+    except Exception as exc:  # noqa: BLE001 — the steps so far are lost with the job, so say where it stopped
+        raise PermanentError(f"{type(exc).__name__}: {exc} (after {len(steps)} steps)") from exc
+    return {"deal_ref": deal_ref, "steps": steps}
+
+
 def _check_deal(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
     if job.target_id is None:
         raise PermanentError("check_deal job without target deal")
@@ -184,6 +196,7 @@ def _read_deal_document(job: repo.ClaimedJob, ctx: Context) -> dict[str, Any]:
 
 
 HANDLERS: dict[str, Handler] = {
+    "agent_demo": _agent_demo,
     "check_deal": _check_deal,
     "read_deal_document": _read_deal_document,
     "sync_disputes": _sync_all,
@@ -260,10 +273,10 @@ def _heartbeat(engine: Engine, job_id: UUID, stop: threading.Event) -> None:
             repo.extend_lease(s, job_id, LEASE_SECONDS)
 
 
-def run_one_job(ctx: Context) -> bool:
+def run_one_job(ctx: Context, slow: bool = False) -> bool:
     with Session(ctx.engine) as s, s.begin():
         repo.fail_exhausted_jobs(s)
-        job = repo.claim_job(s, LEASE_SECONDS)
+        job = repo.claim_job(s, LEASE_SECONDS, slow)
     if job is None:
         return False
 
@@ -307,9 +320,20 @@ def run_one_job(ctx: Context) -> bool:
 
 def drain(ctx: Context, max_items: int = 1000) -> int:
     done = 0
-    while done < max_items and (route_one_webhook(ctx.engine) or run_one_job(ctx)):
+    while done < max_items and (route_one_webhook(ctx.engine) or run_one_job(ctx) or run_one_job(ctx, slow=True)):
         done += 1
     return done
+
+
+def _slow_lane(ctx: Context, stopping: threading.Event) -> None:
+    while not stopping.is_set():
+        try:
+            busy = run_one_job(ctx, slow=True)
+        except Exception:  # noqa: BLE001 — a database hiccup must not end the lane for the rest of the run
+            log.exception("slow lane failed")
+            busy = False
+        if not busy:
+            stopping.wait(IDLE_SLEEP_SECONDS)
 
 
 def main() -> None:
@@ -335,6 +359,7 @@ def main() -> None:
     stopping = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+    threading.Thread(target=_slow_lane, args=(ctx, stopping), name="slow-lane", daemon=True).start()
     log.info("worker started")
     last_beat = 0.0
     last_watch = float("-inf")
@@ -348,7 +373,9 @@ def main() -> None:
             except Exception:  # noqa: BLE001 — a failed round is retried next window, the worker keeps running
                 log.exception("watch round failed")
             last_watch = time.monotonic()
-        done = drain(ctx, max_items=50)
+        done = 0
+        while done < 50 and (route_one_webhook(ctx.engine) or run_one_job(ctx)):   # slow jobs have their own lane
+            done += 1
         if done or time.monotonic() - last_beat > HEARTBEAT_SECONDS / 2:  # liveness for /api/health
             with Session(ctx.engine) as s, s.begin():
                 repo.worker_heartbeat(s, worker_id, done)

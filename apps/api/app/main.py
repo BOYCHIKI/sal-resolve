@@ -508,6 +508,39 @@ def list_deals(merchant_id: UUID = Depends(current_merchant)) -> dict:
     return {"items": deals.list_deals(merchant_id)}
 
 
+AGENT_RUNS_PER_DAY = 10   # each run costs model calls
+
+
+def _agent_run_view(row) -> dict:
+    return {"id": str(row.id), "state": row.state, "error": row.last_error, "result": row.result,
+            "started_at": row.created_at.isoformat()}
+
+
+@app.post("/api/agent-runs", status_code=202)
+def start_agent_run(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    """Two AI agents make one deal through SAL's MCP server, in the worker. One run at a time per business."""
+    if not (get_settings().llm_api_key and get_settings().llm_model):
+        raise HTTPException(503, detail={"code": "LLM_NOT_CONFIGURED", "retryable": False})
+    with tenant_session(merchant_id) as s:
+        runs = s.execute(text("""SELECT id, state, last_error, result, created_at FROM jobs
+                                 WHERE kind = 'agent_demo' AND created_at > now() - interval '1 day'
+                                 ORDER BY created_at DESC""")).all()
+        if runs and runs[0].state in ("QUEUED", "RUNNING"):
+            return {"run": _agent_run_view(runs[0])}
+        if len(runs) >= AGENT_RUNS_PER_DAY:
+            raise HTTPException(429, detail={"code": "AGENT_RUNS_USED_UP", "retryable": True})
+        repo.enqueue_job(s, merchant_id, "agent_demo", f"agent_demo:{uuid.uuid4()}")
+    return latest_agent_run(merchant_id)
+
+
+@app.get("/api/agent-runs/latest")
+def latest_agent_run(merchant_id: UUID = Depends(current_merchant)) -> dict:
+    with tenant_session(merchant_id) as s:
+        row = s.execute(text("""SELECT id, state, last_error, result, created_at FROM jobs
+                                WHERE kind = 'agent_demo' ORDER BY created_at DESC LIMIT 1""")).first()
+    return {"run": _agent_run_view(row) if row else None}
+
+
 @app.post("/api/deals/{deal_ref}/request-correction")
 def request_deal_correction(deal_ref: str, merchant_id: UUID = Depends(current_merchant),
                             actor: str = Depends(current_actor)) -> dict:
