@@ -78,6 +78,10 @@
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* The page still scrolls by wheel, touch and keyboard; only the browser's bar is hidden. Inner panels keep theirs. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+
 body {
   background: var(--ground);
   color: var(--ink);
