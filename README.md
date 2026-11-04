@@ -1,99 +1,120 @@
 # SAL Resolve
 
-**The evidence copilot for PayPal disputes.** Evidence intelligence for merchants: know what your documents prove
-before you reply. SAL reads your documents and PayPal's own transaction record, shows what they prove and what's missing,
-and drafts a reply only from verified facts. You decide. (PayPal AI Hackathon, submission due 12 Nov 2026 12:00 PT;
-positioning in [ADR-005](docs/adr/ADR-005-evidence-copilot.md).)
-Design docs live in Notion: SAL v1.0 Final Blueprint and SAL v1.1 System Design.
+**A deal check for PayPal sellers, anywhere in the world.** SAL compares what the buyer ordered with what the seller is
+about to invoice and catches a wrong item, quantity, price or address before delivery. A dispute is cheapest to win
+when it never starts, and the record SAL keeps is ready if one does. When a case does reach PayPal, SAL reads the
+evidence, shows what it proves and what is missing, and drafts a reply from verified facts only. **Nothing is sent to
+PayPal until the seller approves it.**
+
+Built for the PayPal AI Hackathon (submission due 12 Nov 2026, 12:00 PT). PayPal runs in Sandbox only.
+
+## What SAL does
+
+| Part | What happens | Where |
+|---|---|---|
+| **Deal Check** | Upload a purchase order and an invoice (PDF or photo), or send them as data. SAL reads each value, the seller confirms it, and plain code compares the two. Any difference puts the deal on **hold** with the reason; a corrected invoice that matches clears it. | `/deals`, [ADR-008](docs/adr/ADR-008-deal-check.md) |
+| **Agent endpoint** | Buyer and seller AI agents call `/agent/v1/deals` with their own key. A buyer's key can only order and read its own deals; a seller's key can only invoice. | [ADR-008 D4](docs/adr/ADR-008-deal-check.md) |
+| **Disputes and chargebacks** | The worker syncs PayPal cases, keeps a fact only when it is written on a quoted document line, and suggests the next step: send evidence, add a missing document, mind the deadline, or money on hold. | `/disputes`, [ADR-006](docs/adr/ADR-006-agent-action-proposals.md) |
+| **Packing proof** | A photo or video of the parcel before shipping, linked by QR code to the order. | `/packing`, [ADR-007](docs/adr/ADR-007-packing-proof-vault.md) |
+| **Seller accounts** | Sign-up, sign-in with an authenticator app (two-step), recovery codes, lockout after repeated failures. | `/signup`, `/account`, [ADR-009](docs/adr/ADR-009-accounts.md) |
+
+Accounts are for sellers. Each account is one business, and its data is kept apart from every other business by
+row-level security in PostgreSQL. Buyers take part through their own agent key or the correction message the seller
+sends; they never see the seller's case or evidence.
 
 ## How the agent works
 
 ![The SAL agent: three triggers feed the worker, a read-only agent checks the evidence and proposes cards, and only an approved "Send evidence" card reaches PayPal](docs/images/sal-agent-flow.svg)
 
-- **Runs on its own.** Every `SAL_WATCH_MINUTES` (default 10) the worker syncs PayPal disputes, scans held funds and
-  refreshes every open case's suggestion cards. A new document, a typed tracking number or a PayPal change starts a
-  fresh analysis.
-- **Only reads.** The agent reads documents (a deterministic label reader plus the LLM), keeps a fact only if its value
-  is written on the quoted line of a document type that can prove it, runs the rules (tracking numbers, dates,
-  currencies, hidden instructions) and rates the case: ready, missing documents, or needs a check.
-- **Stops at one gate.** Nothing reaches PayPal until the seller approves the exact card they read. Only the
-  "Send evidence" card writes to PayPal, at most once; the other cards (missing document, deadline, money on hold,
-  not a delivery case) only inform. Details: [ADR-006](docs/adr/ADR-006-agent-action-proposals.md).
+- **Runs on its own.** Every `SAL_WATCH_MINUTES` (default 10) the worker syncs PayPal disputes, scans held funds,
+  finishes any deal check that did not complete and refreshes every open case's cards. A new document, a typed
+  tracking number or a PayPal change starts a fresh analysis.
+- **Only reads.** The model proposes values; SAL keeps one only if it is written on the line it quotes. The deal
+  verdict and the dispute rules are plain code, so the same input always gives the same answer and no text inside a
+  document can steer it.
+- **Stops at one gate.** Only the approved **Send evidence** card writes to PayPal, at most once. A deal hold never
+  calls PayPal at all.
+
+## Honest limits
+
+- Documents are read by OpenAI. The upload dialog says so before anything is sent.
+- First test on real public documents (4 City of San Diego purchase orders, 3 Bradenton Beach invoices): PO number,
+  total and tax were right on all four POs; one PO had quantity and unit price swapped, which is why the seller
+  confirms every value. Long timesheet invoices were read only in part and were held, not cleared. Too few documents
+  to claim an accuracy rate. Details: [ADR-008](docs/adr/ADR-008-deal-check.md).
+- The agent endpoint is exercised by simulated agents (`python -m app.simulate_agents`), not by a live ACP or AP2
+  integration.
+- Not deployed. Everything below runs on your machine.
 
 ## Layout
 
-| Path | What | Rule |
-|---|---|---|
-| `data/golden/v1.0.0/` | Golden evaluation dataset (40 synthetic INR cases) | **Frozen.** Never edit in place; changes go to `data/golden/v1.1.0/`. Integrity is checked by `CHECKSUMS.sha256` and a test. |
-| `apps/web/` | Next.js UI: dispute queue and Case Workspace | Talks to the API server-side only. |
-| `apps/api/` | FastAPI backend, PostgreSQL schema with row-level security, tenant-scoped queries | See its README for the permission model. |
-| `spikes/paypal_sandbox/` | Gate G1 spike: PayPal Sandbox Disputes API | Sandbox only. See its README. |
-| `contracts/paypal/` | Recorded, redacted sandbox payloads + `sandbox_links.csv` | Source of truth for the PayPal adapter's contract tests. |
-| `docs/adr/` | Architecture decision records | |
-| `docs/engineering-glossary.md` | How SAL maps to standard engineering patterns, with the code for each | Built vs planned is marked per row. |
-
-## How the golden splits are used
-
-| Split | Cases | Use in MVP |
-|---|---|---|
-| `development` | 24 | Pipeline iteration and the only split that may be seeded into the PayPal Sandbox. |
-| `calibration` | 8 | **Not used in MVP** — SAL v1.1 (D5) keeps C/P scores as uncalibrated demo constants. Kept intact for post-hackathon threshold tuning. Offline only. |
-| `holdout` | 8 | Final evaluation only, after rules are frozen. Offline only. |
-| `real_format` (v1.1.0) | 6 | Realistic layouts: dates in words, symbols, e-mails, scans, an injected instruction. |
-| `sea_dev` (v1.2.0) | 12 | Indonesian and Philippine sellers: JNE, J&T, SiCepat, Pos Indonesia, LBC, Ninja Van, Rupiah, WhatsApp chats, traps. |
-| `sea_holdout` (v1.2.0) | 8 | Same families, different documents; scored only with `--final`. |
-
-Latest scores and what they do not prove: [docs/testing/agent-evaluation.md](docs/testing/agent-evaluation.md).
+| Path | What |
+|---|---|
+| `apps/api/` | FastAPI backend and worker, PostgreSQL with forced row-level security, Alembic migrations. See its README for the permission model. |
+| `apps/web/` | Next.js UI. Talks to the API on the server side only; the session lives in an httpOnly cookie. |
+| `data/golden/` | Synthetic evaluation cases. Released versions are frozen and checked by `CHECKSUMS.sha256`. |
+| `docs/samples/` | An invented purchase order and two invoices (one matches, one has a wrong quantity) for trying Deal Check. |
+| `docs/adr/` | Architecture decision records, ADR-001 to ADR-009. |
+| `spikes/paypal_sandbox/` | PayPal Sandbox Disputes API spike. |
+| `contracts/paypal/` | Recorded, redacted Sandbox payloads used by the PayPal adapter's contract tests. |
 
 ## Quick start
 
-Shortcuts (Windows, needs Docker Desktop, Python 3.12+, Node 20+):
+Windows, with Docker Desktop, Python 3.12+ and Node 20+:
 
 ```
-.\sal setup     # first time: venv, packages, .env, database, demo cases
+.\sal setup     # first time: venv, packages, .env, database, demo data
 .\sal start     # database + API + worker + web, opens http://localhost:3000
-.\sal backend   # database + API + worker only (docs: http://127.0.0.1:8000/docs)
+.\sal backend   # database + API + worker only (API docs: http://127.0.0.1:8000/docs)
 .\sal web       # web only (needs the backend)
 .\sal stop      # stop API, worker and web
 .\sal status    # what is running
-.\sal seed      # add demo cases again
-.\sal test      # backend tests (separate sal_test database)
-.\sal eval --split real_format --roles llm   # score the agent (LLM needs SAL_LLM_* in apps/api/.env)
+.\sal seed      # add the demo data again
+.\sal test      # backend tests on their own sal_test database
+.\sal eval --split sea_dev --roles llm   # score the dispute agent (needs SAL_LLM_* in apps/api/.env)
 ```
 
-If PowerShell blocks scripts, use `.\sal.cmd start` (same commands). By hand:
+If PowerShell blocks scripts, use `.\sal.cmd start`. Settings and keys go in `apps/api/.env` (copied from
+`.env.example`); it is never committed.
+
+To sign in to the demo business that `.\sal setup` creates, add a login to it and type the password when asked:
 
 ```
-docker compose up -d --wait                       # Postgres
-cd apps/api && pip install -r requirements.lock && copy .env.example .env
-alembic upgrade head && python -m app.seed_demo   # put the printed id in SAL_DEMO_MERCHANT_ID
-uvicorn app.main:app --port 8000                  # API
-python -m app.worker                              # worker (second terminal)
-cd apps/web && npm install && npm run dev         # UI on http://localhost:3000
+cd apps/api
+python -m app.accounts add-user you@example.com
 ```
 
-Tests run on their own database (`sal_test`) and leave the demo data in `sal` alone.
+Or create a new business at http://localhost:3000/signup.
 
-## Test it locally
-
-Everything below runs on your machine with practice cases; nothing is sent to PayPal. Start with `.\sal setup` once,
-then `.\sal start`.
+## Try it
 
 | # | Do | You should see |
 |---|---|---|
-| 1 | Open http://localhost:3000/disputes | "What SAL found": a one-line summary, **Needs you** cards, your PayPal cases, practice cases folded away |
-| 2 | Open **Practice cases**, then a case marked *Missing 1 document* | An **Add courier tracking** card with the deadline, and what the documents prove so far |
-| 3 | On a complete practice case, type a tracking number that differs from the courier page (e.g. `JP8812345678`, courier `JNE`) under **Add the tracking number** | After the re-check (about 30 s with the LLM): the case turns to *needs a check*, both tracking numbers are marked as conflicting, and no send card appears |
-| 4 | Under **Add a document**, upload a PDF courier page or delivery receipt | A fresh analysis; the card updates or closes on its own |
-| 5 | Leave the worker running for 10 minutes (or set `SAL_WATCH_MINUTES=1` in `apps/api/.env` and restart) | `jobs` gets `sync_disputes`, `scan_holds` and `refresh_actions` rounds; with PayPal Sandbox keys, held money shows under **Money on hold** |
-| 6 | `.\sal test` | All backend tests pass (PayPal and the LLM are faked) |
-| 7 | `.\sal eval --split sea_dev --roles llm` | The agent's scores on Indonesian and Philippine documents (needs `SAL_LLM_*` in `apps/api/.env`) |
+| 1 | Sign in, then turn on two-step sign-in under **Account** | A QR code for your authenticator app and ten recovery codes, shown once |
+| 2 | **Deals → Add a document**, upload `docs/samples/1-purchase-order-PO-DEMO-1001.pdf` | The page beside the values SAL read; correct anything wrong, then save |
+| 3 | On that deal, **Add invoice** with `docs/samples/3-invoice-wrong-quantity.pdf` | The deal goes on **hold** and says which quantity differs |
+| 4 | **Add invoice** again with `docs/samples/2-invoice-matches.pdf` | The hold clears |
+| 5 | `cd apps/api` then `python -m app.simulate_agents` | A buyer agent orders, a seller agent sends a wrong invoice, then the corrected one; the deal holds, then clears |
+| 6 | Open **Disputes** | Cases with what the documents prove, what is missing, and the next step |
+| 7 | `.\sal test` | All backend tests pass (PayPal and the model are faked) |
 
-There is no delete button for a typed tracking number yet, and `.\sal seed` skips cases that already exist. To start
-over with clean practice cases, recreate the local database: `.\sal stop`, `docker compose down -v`, then
-`.\sal setup`. Sending to PayPal (the **Send evidence** card) works only on PayPal Sandbox cases where
-PayPal still accepts evidence; practice cases can be checked and approved but never sent.
+Agent keys for your own scripts: `python -m app.agent_identity issue <name> BUYER_AGENT` (or `SELLER_AGENT`), then
+`list` and `revoke <id>`. Keys expire after 90 days.
+
+## Evaluation data
+
+| Split | Cases | Use |
+|---|---|---|
+| `development` (v1.0.0) | 24 | Pipeline work; the only split that may be seeded into PayPal Sandbox |
+| `calibration` (v1.0.0) | 8 | Kept for later threshold tuning; not used yet |
+| `holdout` (v1.0.0) | 8 | Final evaluation only |
+| `real_format` (v1.1.0) | 6 | Dates in words, symbols, e-mails, scans, an injected instruction |
+| `sea_dev` (v1.2.0) | 18 | Indonesian and Philippine couriers, amounts and chats, address and date traps, unauthorized payments |
+| `sea_holdout` (v1.2.0) | 8 | Scored only with `--final` |
+
+Scores and what they do not prove: [docs/testing/agent-evaluation.md](docs/testing/agent-evaluation.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The golden dataset in `data/golden/` is synthetic test data; it contains no real PayPal customer data.
+MIT, see [LICENSE](LICENSE). Every case in `data/golden/` and every file in `docs/samples/` is invented; the repo holds
+no real customer data.
