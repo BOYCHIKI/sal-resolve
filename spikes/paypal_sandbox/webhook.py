@@ -56,7 +56,7 @@ def make_handler(client: PayPalSandboxClient):
                 self.send_response(200)
             self.end_headers()
 
-        def log_message(self, *args) -> None:
+        def log_message(self, format: str, *args: object) -> None:   # quiet: the spike prints its own lines
             pass
 
     return Handler

@@ -120,7 +120,7 @@ class LLMDocumentReader(LLMRoles):
             model=self.model, **self.options,
             messages=[{"role": "system", "content": TRANSCRIBE_SYSTEM},
                       {"role": "user", "content": [{"type": "image_url", "image_url": {"url": image}}]}])
-        return (resp.choices[0].message.content or "").splitlines()
+        return str(resp.choices[0].message.content or "").splitlines()
 
     def read(self, kind: DocumentKind, lines: list[str]) -> ReadDocument:
         numbered = [{"line": i, "text": line} for i, line in enumerate(lines, 1)]
@@ -184,8 +184,9 @@ def _without_label(read: ReadValue) -> ReadValue:
 
 
 def _proved(read: ReadValue, page: list[str], found_on, second_copy: list[str] | None = None) -> dict[str, Any]:
-    on_the_page = read.value is not None and read.line is not None and 1 <= read.line <= len(page)
-    if not on_the_page or not found_on(read.value, page[read.line - 1]):
+    if read.value is None or read.line is None or not 1 <= read.line <= len(page):
+        return {"value": None, "line": None}
+    if not found_on(read.value, page[read.line - 1]):
         return {"value": None, "line": None}
     if second_copy is not None and not any(found_on(read.value, line) for line in second_copy):
         return {"value": None, "line": None}

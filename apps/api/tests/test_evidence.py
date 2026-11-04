@@ -14,6 +14,7 @@ from app.evidence_pdf import render_text_pdf
 from app.main import app, current_merchant
 from app.seed import create_merchant
 from app.seed_demo import seed_golden
+from tests.fakes import NO_PAYPAL
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
@@ -92,7 +93,7 @@ def test_reanalysis_sees_the_new_document(client, merchant, app_engine, worker_e
     pdf = render_text_pdf(["SYNTHETIC DELIVERY CONFIRMATION | TRK-SYN-99999", "Delivery status: DELIVERED",
                            "Delivery date: 2026-07-30"])
     assert upload(client, dispute_id, pdf).status_code == 201
-    ctx = worker.Context(worker_engine, lambda: None)
+    ctx = worker.Context(worker_engine, NO_PAYPAL)
     while worker.run_one_job(ctx):
         pass
     a = client.get(f"/api/disputes/{dispute_id}/analysis").json()
@@ -136,7 +137,7 @@ def test_submit_sends_the_original_upload(client, merchant, app_engine, worker_e
     with tenant_session(merchant, app_engine) as s:
         s.execute(text("UPDATE disputes SET origin = 'PAYPAL_SANDBOX' WHERE id = :d"), {"d": dispute_id})
     assert upload(client, dispute_id, PNG, doc_type="delivery_proof", name="signed.png").status_code == 201
-    ctx = worker.Context(worker_engine, lambda: None)
+    ctx = worker.Context(worker_engine, NO_PAYPAL)
     while worker.run_one_job(ctx):
         pass
     a = client.get(f"/api/disputes/{dispute_id}/analysis").json()

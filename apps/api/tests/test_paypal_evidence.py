@@ -16,6 +16,7 @@ from app.agent.runner import baseline_roles, run_analysis
 from app.db import tenant_session
 from app.paypal import redact, to_internal
 from app.seed import create_merchant
+from tests.fakes import paypal
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "contracts" / "paypal"
 
@@ -80,7 +81,7 @@ def test_paypal_record_is_stored_once_and_proves_the_payment(merchant, app_engin
 
     run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
     with tenant_session(merchant, app_engine) as s:
-        a = s.execute(text("SELECT assessment FROM analyses WHERE dispute_id = :d"), {"d": dispute_id}).scalar()
+        a = s.execute(text("SELECT assessment FROM analyses WHERE dispute_id = :d"), {"d": dispute_id}).scalar_one()
     payment = next(p for p in a["propositions"] if p["id"] == "payment_matches")
     # Proven without any model: the rules read SAL's own rendering of the PayPal record exactly.
     assert payment["status"] == "proven" and "45.00" in payment["reason"]
@@ -99,7 +100,7 @@ def test_paypal_lag_retries_and_missing_permission_fails_visibly(merchant, app_e
     denied = httpx.HTTPStatusError("403", request=request, response=httpx.Response(403, request=request))
     with tenant_session(merchant, app_engine) as s:
         repo.enqueue_job(s, merchant, "paypal_evidence", f"pp-test:{dispute_id}", dispute_id)
-    ctx = worker.Context(worker_engine, lambda: FakeSource(fail=denied))
+    ctx = worker.Context(worker_engine, paypal(lambda: FakeSource(fail=denied)))
     while worker.run_one_job(ctx):
         pass
     with tenant_session(merchant, app_engine) as s:

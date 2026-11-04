@@ -17,7 +17,8 @@ import signal
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from datetime import datetime
+from typing import Any, Protocol
 from uuid import UUID
 
 import httpx
@@ -44,10 +45,21 @@ class PermanentError(Exception):
 Handler = Callable[[repo.ClaimedJob, "Context"], dict[str, Any]]
 
 
+class PayPalClient(Protocol):
+    """Everything the worker asks of PayPal: syncing cases, sending evidence, and Transaction Search
+    (app/paypal.py PayPalDisputes; faked in tests)."""
+    def list_summaries(self) -> dict[str, str | None]: ...
+    def get(self, dispute_id: str) -> dict[str, Any]: ...
+    def provide_evidence(self, dispute_id: str, payload: dict[str, Any],
+                         files: list[tuple[str, bytes, str]]) -> dict[str, Any]: ...
+    def transaction(self, transaction_id: str, around: datetime) -> dict[str, Any] | None: ...
+    def recent_transactions(self) -> list[dict[str, Any]]: ...
+
+
 class Context:
-    def __init__(self, engine: Engine, paypal_factory: Callable[[], sync.DisputeSource],
-                 roles_factory: Callable[[],
-                                         Any] | None = None, reader_factory: Callable[[], Any] | None = None) -> None:
+    def __init__(self, engine: Engine, paypal_factory: Callable[[], PayPalClient],
+                 roles_factory: Callable[[], Any] | None = None,
+                 reader_factory: Callable[[], Any] | None = None) -> None:
         from app.agent.runner import configured_roles
         from app.deal_documents import LLMDocumentReader
         self.engine = engine
@@ -261,6 +273,8 @@ def run_one_job(ctx: Context) -> bool:
     tokens = (logs.job_id.set(str(job.id)), logs.merchant_id.set(str(job.merchant_id)),
               logs.dispute_id.set(str(job.target_id) if job.target_id else None))
     started = time.perf_counter()
+    result: dict[str, Any] = {}
+    error: str | None = None
     try:
         handler = HANDLERS.get(job.kind)
         if handler is None:
@@ -283,7 +297,7 @@ def run_one_job(ctx: Context) -> bool:
             log.info("job %s succeeded", job.kind,
                      extra={"kind": job.kind, "outcome": "ok", "duration_ms": duration_ms})
         else:
-            state = repo.fail_job(s, job.id, error, retryable=(outcome == "retry"))
+            state = repo.fail_job(s, job.id, error or "unknown error", retryable=(outcome == "retry"))
             log.warning("job %s failed (%s)", job.kind, state,
                         extra={"kind": job.kind, "outcome": state, "duration_ms": duration_ms, "error": error})
     for var, token in zip((logs.job_id, logs.merchant_id, logs.dispute_id), tokens, strict=True):

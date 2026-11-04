@@ -9,6 +9,7 @@ from app.agent.evaluate import evaluate, load_cases, to_case_input
 from app.agent.models import CandidateFact, Claim, SourceRef
 from app.agent.pipeline import StepBudgetExceeded, analyze, gather
 from app.agent.roles import ReadAllPlanner, RuleExtractor, TemplateDrafter
+from tests.fakes import openai
 
 
 def case(case_id: str, split: str = "development"):
@@ -194,7 +195,7 @@ def test_llm_output_still_goes_through_grounding_and_claim_checks(monkeypatch):
         _Claim(text="Delivery was confirmed on 2026-07-09.", fact_fields=["delivery_date"]),
     ])
     client, completions = _fake_client([facts, claims])
-    llm = LLMRoles(client=client, model="test-model")
+    llm = LLMRoles(client=openai(client), model="test-model")
     result = analyze(case("SAL-INR-001"), ReadAllPlanner(), llm, llm)
     assert [(f.field, f.status) for f in result.facts] == [("transaction_id", "supported"),
                                                            ("payment_amount", "supported"),
@@ -211,20 +212,20 @@ def test_llm_sends_only_configured_options(monkeypatch):
     from app.agent.llm import LLMRoles
     monkeypatch.setenv("SAL_LLM_REASONING_EFFORT", "low")
     monkeypatch.delenv("SAL_LLM_TEMPERATURE", raising=False)
-    assert LLMRoles(client=object(), model="gpt-5-nano").options == {"max_completion_tokens": 4000,
+    assert LLMRoles(client=openai(object()), model="gpt-5-nano").options == {"max_completion_tokens": 4000,
                                                                       "reasoning_effort": "low"}
     monkeypatch.delenv("SAL_LLM_REASONING_EFFORT")
     monkeypatch.setenv("SAL_LLM_TEMPERATURE", "0")
     from app.config import get_settings
     get_settings.cache_clear()  # settings are read once per process; this test changes them mid-way
-    assert LLMRoles(client=object(), model="gpt-4.1-nano").options["temperature"] == 0.0
+    assert LLMRoles(client=openai(object()), model="gpt-4.1-nano").options["temperature"] == 0.0
 
 
 def test_llm_needs_a_model(monkeypatch):
     from app.agent.llm import LLMRoles
     monkeypatch.delenv("SAL_LLM_MODEL", raising=False)
     with pytest.raises(RuntimeError, match="SAL_LLM_MODEL"):
-        LLMRoles(client=object())
+        LLMRoles(client=openai(object()))
 
 
 def test_union_extractor_keeps_rule_facts_when_the_model_misses_them():
@@ -290,24 +291,24 @@ def test_unchanged_documents_are_not_sent_to_the_model_again(monkeypatch):
                                 line=1, quote="SYNTHETIC PAYMENT RECORD | TXN-SYN-100000")])
     client, completions = _fake_client([first, _Facts(facts=[]), _Facts(facts=[])])
 
-    run1 = LLMRoles(client=client, model="test-model")
+    run1 = LLMRoles(client=openai(client), model="test-model")
     out1 = run1.extract(docs)
     assert len(completions.calls) == 1 and run1.cache == {"hits": 0, "misses": len(docs)}
 
-    run2 = LLMRoles(client=client, model="test-model")  # a later job: same documents
+    run2 = LLMRoles(client=openai(client), model="test-model")  # a later job: same documents
     assert run2.extract(docs) == out1
     assert len(completions.calls) == 1 and run2.cache == {"hits": len(docs), "misses": 0}
 
     # one document edited (or a new one uploaded): only that one goes to the model
     changed = replace(payment, lines=payment.lines + (Line(99, "Note added later"),))
-    run3 = LLMRoles(client=client, model="test-model")
+    run3 = LLMRoles(client=openai(client), model="test-model")
     run3.extract([changed if d is payment else d for d in docs])
     sent = json.loads(completions.calls[1]["messages"][1]["content"])["documents"]
     assert [d["evidence_id"] for d in sent] == [payment.evidence_id]
     assert run3.cache == {"hits": len(docs) - 1, "misses": 1}
 
     # a different model never reuses another model's extraction
-    run4 = LLMRoles(client=client, model="other-model")
+    run4 = LLMRoles(client=openai(client), model="other-model")
     run4.extract(docs)
     assert len(completions.calls) == 3 and run4.cache["hits"] == 0
 
@@ -327,9 +328,9 @@ def test_a_failed_model_call_caches_nothing(monkeypatch):
     client = type("Client", (), {"chat": type("Chat", (), {"completions": Down()})()})()
     docs = list(case("SAL-INR-001").documents)
     with pytest.raises(TimeoutError):
-        LLMRoles(client=client, model="test-model").extract(docs)
+        LLMRoles(client=openai(client), model="test-model").extract(docs)
     ok_client, completions = _fake_client([_Facts(facts=[])])
-    LLMRoles(client=ok_client, model="test-model").extract(docs)
+    LLMRoles(client=openai(ok_client), model="test-model").extract(docs)
     assert len(completions.calls) == 1  # nothing was cached by the failed attempt
 
 

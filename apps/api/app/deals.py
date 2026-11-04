@@ -218,7 +218,8 @@ def check_deal(order: PurchaseOrder, invoice: Invoice) -> DealCheck:
         findings.append(DealFinding(FindingCode.APPROVAL_EXPIRED, "issued_at", order.expires_at.isoformat(),
                                     invoice.issued_at.isoformat()))
     goods = order.category is DealCategory.GOODS   # only goods have an address to compare; services may have none
-    if goods and (invoice.ship_to is None or not _same_place(order.ship_to, invoice.ship_to)):
+    if goods and order.ship_to is not None and (invoice.ship_to is None
+                                                or not _same_place(order.ship_to, invoice.ship_to)):
         findings.append(DealFinding(FindingCode.ADDRESS_DIFFERS, "ship_to", _address_label(order.ship_to),
                                     _address_label(invoice.ship_to)))
     return DealCheck(DealStatus.HOLD if findings else DealStatus.CLEAR, tuple(findings))
@@ -337,14 +338,14 @@ def attach_to_dispute(merchant_id: UUID, dispute_id: UUID, engine: Engine | None
                        f"{deal.checked_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC, before delivery "
                        f"({deal.rule_version}).")
         body = "\n".join(summary)
-        added = s.execute(text("""
+        added = len(s.execute(text("""
             INSERT INTO evidence (merchant_id, dispute_id, checksum, mime, size_bytes, uploaded_by, doc_type,
                                   content_lines, source_ref, origin)
             VALUES (:m, :d, :c, 'text/plain', :n, 'sal:deal', 'deal_record', CAST(:l AS jsonb), :ref, 'SELLER_INPUT')
             ON CONFLICT (dispute_id, checksum) DO NOTHING RETURNING 1"""),
             {"m": merchant_id, "d": dispute_id, "c": hashlib.sha256(body.encode()).hexdigest(),
              "n": len(body.encode()), "ref": f"Deal {deal.deal_ref}",
-             "l": json.dumps([{"line": i, "text": t} for i, t in enumerate(summary, 1)])}).rowcount
+             "l": json.dumps([{"line": i, "text": t} for i, t in enumerate(summary, 1)])}).all())
         if added:
             repo.write_audit(s, merchant_id, "sal:deal", "deal.attached", target=str(dispute_id),
                              summary={"deal_ref": deal.deal_ref})

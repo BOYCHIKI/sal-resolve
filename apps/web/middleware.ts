@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Next reads this statically, so it repeats PROTECTED (lib/session.ts) by hand. Keep the two lists the same.
+// Next reads the matcher statically, so the protected screens are written out here rather than imported.
 export const config = {
   matcher: ["/deals/:path*", "/disputes/:path*", "/packing/:path*", "/demo/:path*", "/account/:path*"],
 };

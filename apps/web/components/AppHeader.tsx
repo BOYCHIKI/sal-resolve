@@ -15,7 +15,7 @@ async function waitingCounts(): Promise<NavCounts> {
   }
 }
 
-// Sits inside a page wrapped in .lp (globals.css), so it takes the landing look.
+// Sits inside a page wrapped in .lp sky (globals.css), so it takes that page's colours.
 export async function AppHeader() {
   // The worker syncs PayPal and analyses documents; if it stops, say so instead of letting cases stall silently.
   const [health, counts] = await Promise.all([api.health(), waitingCounts()]);

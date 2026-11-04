@@ -102,6 +102,7 @@ def test_another_merchant_cannot_add_files_or_print_the_label(merchant, app_engi
 def test_the_label_is_a_pdf_with_the_qr_and_the_code(merchant, app_engine):
     rec = packing.create(merchant, "ORD-3", None, None, "operator:test", app_engine)
     pdf = packing.label_pdf(merchant, UUID(rec["id"]), app_engine)
+    assert pdf is not None
     assert pdf.startswith(b"%PDF-1.4") and pdf.count(b" re f") > 100      # QR modules drawn as squares
     assert rec["code"][:4].encode() in pdf and b"ORD-3" in pdf
 
@@ -200,6 +201,6 @@ def test_the_summary_states_when_the_files_arrived_and_claims_nothing_about_ship
     packing.attach_to_dispute(merchant, dispute_id, worker_engine)
     with tenant_session(merchant, app_engine) as s:
         lines = s.execute(text("""SELECT content_lines FROM evidence WHERE dispute_id = :d AND mime = 'text/plain'
-                                  AND doc_type = 'packing_proof'"""), {"d": dispute_id}).scalar()
+                                  AND doc_type = 'packing_proof'"""), {"d": dispute_id}).scalar_one()
     summary = " ".join(line["text"] for line in lines)
     assert "Files received by SAL" in summary and "before shipping" not in summary

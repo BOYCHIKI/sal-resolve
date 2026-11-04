@@ -67,7 +67,7 @@ def test_the_typed_amount_is_offered_once(client, merchant, app_engine, worker_e
     assert "20.50 USD" in payload["note"]
     assert approve(client, card, "20.50", fake).json()["detail"]["code"] == "ACTION_NOT_OPEN" and len(fake.sent) == 1
     with tenant_session(merchant, app_engine) as s:
-        audit = s.execute(text("SELECT summary FROM audit_logs WHERE action = 'paypal.make_offer'")).scalar()
+        audit = s.execute(text("SELECT summary FROM audit_logs WHERE action = 'paypal.make_offer'")).scalar_one()
     assert audit["amount"] == "20.50"
 
 

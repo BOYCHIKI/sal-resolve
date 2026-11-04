@@ -244,7 +244,8 @@ def s6(client, args, state) -> None:
     print(f"PayPal requested: {requested or 'nothing explicit'} -> sending one {evidence_type} evidence")
     payload = single_evidence_payload(case, evidence_type, include_tracking=not args.no_tracking,
                                       carrier_name=args.carrier)
-    files = [("input", (None, json.dumps(payload), "application/json"))]
+    files: list[tuple[str, tuple[str | None, str | bytes, str]]] = [
+        ("input", (None, json.dumps(payload), "application/json"))]
     for ev in case["evidence"]:
         files.append((args.file_field, (f"{ev['evidence_id']}.pdf", render_evidence(ev), "application/pdf")))
     report(client.request("POST", f"/v1/customer/disputes/{dispute_id}/provide-evidence",

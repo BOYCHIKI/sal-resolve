@@ -122,9 +122,9 @@ class AnalysisResult:
     claims: list[Claim]
     rejected_claims: list[Claim]
     review_required: bool
+    assessment: Assessment   # always set by pipeline.analyze
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     snapshot_hash: str = ""
-    assessment: Assessment | None = None
 
     @property
     def missing(self) -> list[str]:

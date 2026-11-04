@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import logs
 from app import repositories as repo
-from app.agent.roles import ReadAllPlanner, TemplateDrafter
+from app.agent.roles import Drafter, ReadAllPlanner, TemplateDrafter
 from app.agent.runner import Roles, baseline_roles, run_analysis
 from app.db import tenant_session
 from app.main import app, current_merchant
@@ -69,7 +70,7 @@ def test_ops_shows_failures_fallbacks_and_llm_tokens(client, merchant, app_engin
             raise TimeoutError("model did not answer")
 
     roles = Roles(ReadAllPlanner(), Down(), TemplateDrafter(), "llm:test", fallback=baseline_roles())
-    roles.drafter = SimpleNamespace(usage=Down.usage, draft=TemplateDrafter().draft)
+    roles.drafter = cast(Drafter, SimpleNamespace(usage=Down.usage, draft=TemplateDrafter().draft))
     run_analysis(merchant, dispute_id, None, roles, worker_engine)
     with tenant_session(merchant, worker_engine) as s:  # only the worker role may change jobs
         repo.enqueue_job(s, merchant, "analyze_dispute", f"ops-test:{dispute_id}", dispute_id)

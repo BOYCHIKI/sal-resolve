@@ -238,9 +238,9 @@ def end_session(token: str, engine: Engine | None = None) -> None:
 
 def end_other_sessions(session: Session, engine: Engine | None = None) -> int:
     with tenant_session(session.merchant_id, engine) as s:
-        ended = s.execute(text("""UPDATE user_sessions SET revoked_at = now()
-                                  WHERE user_id = :u AND id <> :id AND revoked_at IS NULL"""),
-                          {"u": session.user_id, "id": session.id}).rowcount
+        ended = len(s.execute(text("""UPDATE user_sessions SET revoked_at = now()
+                                      WHERE user_id = :u AND id <> :id AND revoked_at IS NULL RETURNING id"""),
+                              {"u": session.user_id, "id": session.id}).all())
         repo.write_audit(s, session.merchant_id, f"user:{session.user_id}", "auth.signed_out_elsewhere",
                          summary={"sessions": ended})
     return ended
@@ -346,11 +346,16 @@ def finish_sign_in(pending_token: str, code: str, user_agent: str | None = None,
     pending = authenticate(pending_token, SessionStage.MFA_PENDING, engine)
     if pending is None:
         raise AuthError(401, "MFA_EXPIRED", "That took too long. Sign in again.")
+    token: str | None = None
     with tenant_session(pending.merchant_id, engine) as s:
         user = s.execute(text("""SELECT totp_secret, totp_last_step, failed_logins,
                                         locked_until IS NOT NULL AND locked_until > now() AS locked
                                  FROM users WHERE id = :u FOR UPDATE"""), {"u": pending.user_id}).first()
-        step = None if user.locked else check_totp(user.totp_secret, code, user.totp_last_step)
+        if user is None:   # the account went away between the two steps
+            raise AuthError(401, "MFA_EXPIRED", "That took too long. Sign in again.")
+        step = None
+        if not user.locked and user.totp_secret is not None:
+            step = check_totp(user.totp_secret, code, user.totp_last_step)
         used_recovery = False
         if step is None and not user.locked:
             used_recovery = s.execute(text("""UPDATE recovery_codes SET used_at = now()
@@ -360,7 +365,6 @@ def finish_sign_in(pending_token: str, code: str, user_agent: str | None = None,
         if step is None and not used_recovery:
             if not user.locked:
                 _register_failure(s, pending.merchant_id, pending.user_id, user.failed_logins)
-            ok = False
         else:
             s.execute(text("""UPDATE users SET failed_logins = 0, locked_until = NULL,
                                      totp_last_step = COALESCE(:step, totp_last_step) WHERE id = :u"""),
@@ -368,9 +372,8 @@ def finish_sign_in(pending_token: str, code: str, user_agent: str | None = None,
             s.execute(text("UPDATE user_sessions SET revoked_at = now() WHERE id = :id"), {"id": pending.id})
             repo.write_audit(s, pending.merchant_id, f"user:{pending.user_id}", "auth.signed_in",
                              summary={"second_step": "recovery_code" if used_recovery else "authenticator"})
-            ok = True
             token = _open_session(s, pending.merchant_id, pending.user_id, SessionStage.ACTIVE, user_agent)
-    if not ok:
+    if token is None:
         raise AuthError(401, "MFA_FAILED", "That code didn’t work. Check the time on your phone and try again.")
     return token
 

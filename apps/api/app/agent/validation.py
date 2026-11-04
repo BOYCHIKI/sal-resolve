@@ -6,6 +6,7 @@ Rules implement SAL's illustrative INR demo rules (RULE_VERSION), not an officia
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -223,7 +224,7 @@ def _appears(value: str, text: str) -> bool:
     return re.search(rf"(?<![\w.-]){re.escape(value)}(?![\w-]|\.\d)", text) is not None
 
 
-def ground(candidates: list[CandidateFact], documents: list[Document]) -> list[Fact]:
+def ground(candidates: list[CandidateFact], documents: Sequence[Document]) -> list[Fact]:
     """A fact survives only if its quote is the cited line and the value is written in it (literally, or the
     same date/amount/status in another common format)."""
     docs = {d.evidence_id: d for d in documents}
@@ -235,7 +236,7 @@ def ground(candidates: list[CandidateFact], documents: list[Document]) -> list[F
         doc = docs.get(c.source.evidence_id)
         text = doc.line_text(c.source.line) if doc else None
         value = _normalize(c.field, c.value)
-        if text is None:
+        if doc is None or text is None:
             facts.append(Fact(c.field, c.value, c.source, "rejected", "source line does not exist"))
         elif c.field not in DOC_FIELDS.get(doc.type or "", ()):
             facts.append(Fact(c.field, c.value, c.source, "rejected", "field not expected in this document type"))
@@ -358,7 +359,7 @@ def _rule_parcel_belongs_to_this_order(first) -> list[Finding]:
     return [Finding("conflict", "tracking_order_id", (order.source, parcel_order.source), why)]
 
 
-def _rule_proof_names_its_parcel(first, documents: list[Document]) -> list[Finding]:
+def _rule_proof_names_its_parcel(first, documents: Sequence[Document]) -> list[Finding]:
     """A dated proof that never writes this case's tracking number could belong to any parcel. Some proofs name
     the parcel another way, so a person looks; it is not called a different parcel."""
     proof, tracked = first("delivery_date"), first("tracking_id")
@@ -398,13 +399,13 @@ def _rule_amounts_match_dispute(first, dispute_amount: str, dispute_currency: st
     return findings
 
 
-def _rule_no_hidden_instructions(documents: list[Document]) -> list[Finding]:
+def _rule_no_hidden_instructions(documents: Sequence[Document]) -> list[Finding]:
     return [Finding("conflict", "untrusted_instruction", (SourceRef(doc.evidence_id, line.line),),
                     "Instruction-like text inside a document is data, never an instruction")
             for doc in documents for line in doc.lines if INJECTION_RE.search(line.text)]
 
 
-def apply_inr_rules(facts: list[Fact], documents: list[Document], dispute_amount: str,
+def apply_inr_rules(facts: list[Fact], documents: Sequence[Document], dispute_amount: str,
                     dispute_currency: str, inr: bool = True) -> list[Finding]:
     """Generic checks for every dispute (one field/two values, amounts, currencies, hidden instructions);
     the Item-Not-Received checks (courier documents, delivery dates) only when inr is True.

@@ -96,7 +96,8 @@ def add_file(merchant_id: UUID, packing_id: UUID, data: bytes, added_by: str, st
         if s.execute(text("SELECT 1 FROM packing_proofs WHERE id = :p AND expires_at > now()"),
                      {"p": packing_id}).first() is None:   # another tenant's record looks exactly like a missing one
             raise EvidenceError(404, "PACKING_NOT_FOUND", "Packing record not found.")
-        count = s.execute(text("SELECT count(*) FROM packing_files WHERE packing_id = :p"), {"p": packing_id}).scalar()
+        count = s.execute(text("SELECT count(*) FROM packing_files WHERE packing_id = :p"),
+                          {"p": packing_id}).scalar() or 0
         if count >= MAX_FILES:
             raise EvidenceError(409, "TOO_MANY_FILES", f"A packing record holds at most {MAX_FILES} files.")
         if s.execute(text("SELECT 1 FROM packing_files WHERE packing_id = :p AND sha256 = :h"),
@@ -201,14 +202,14 @@ def attach_to_dispute(merchant_id: UUID, dispute_id: UUID, engine: Engine | None
                  for i, f in enumerate(photos, 1)]
         added = 0
         for key, checksum, mime, size, source_ref, lines in rows:
-            added += s.execute(text("""
+            added += len(s.execute(text("""
                 INSERT INTO evidence (merchant_id, dispute_id, object_key, checksum, mime, size_bytes, uploaded_by,
                                       doc_type, content_lines, source_ref, origin)
                 VALUES (:m, :d, :k, :c, :mime, :n, 'sal:packing', 'packing_proof', CAST(:l AS jsonb), :ref,
                         'SELLER_INPUT')
                 ON CONFLICT (dispute_id, checksum) DO NOTHING RETURNING 1"""),
                 {"m": merchant_id, "d": dispute_id, "k": key, "c": checksum, "mime": mime, "n": size,
-                 "l": json.dumps(lines), "ref": source_ref}).rowcount
+                 "l": json.dumps(lines), "ref": source_ref}).all())
         if added:
             repo.write_audit(s, merchant_id, "sal:packing", "packing.attached", target=str(dispute_id),
                              summary={"packing_id": str(p.id), "documents": added})
@@ -226,7 +227,8 @@ def purge_expired(merchant_id: UUID, storage_dir: Path, engine: Engine | None = 
                 WHERE f.packing_id = p.id AND d.provider_status IS DISTINCT FROM 'RESOLVED')""")).scalars().all()
         keys = s.execute(text("SELECT object_key FROM packing_files WHERE packing_id = ANY(:ids)"),
                          {"ids": ids}).scalars().all()
-        gone = s.execute(text("DELETE FROM packing_proofs WHERE id = ANY(:ids)"), {"ids": ids}).rowcount
+        gone = len(s.execute(text("DELETE FROM packing_proofs WHERE id = ANY(:ids) RETURNING id"),
+                             {"ids": ids}).all())
     for key in keys:
         path = (storage_dir / key).resolve()
         if storage_dir.resolve() in path.parents and path.is_file():

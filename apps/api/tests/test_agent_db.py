@@ -12,6 +12,7 @@ from app import worker
 from app.agent.runner import baseline_roles, run_analysis
 from app.db import tenant_session
 from app.seed import create_merchant
+from tests.fakes import NO_PAYPAL
 
 pytestmark = pytest.mark.db
 
@@ -32,7 +33,7 @@ def merchant(migrated_db) -> UUID:
 
 @pytest.fixture
 def ctx(worker_engine):
-    return worker.Context(worker_engine, lambda: None)
+    return worker.Context(worker_engine, NO_PAYPAL)
 
 
 def test_worker_runs_agent_and_persists_everything(merchant, ctx, app_engine):
@@ -164,5 +165,5 @@ def test_llm_failure_falls_back_to_baseline_and_says_so(merchant, app_engine, wo
     out = run_analysis(merchant, dispute_id, None, roles, worker_engine)
     assert out["findings"] >= 2  # missing tracking + delivery proof still detected without the model
     with tenant_session(merchant, app_engine) as s:
-        label = s.execute(text("SELECT roles FROM agent_runs WHERE dispute_id = :d"), {"d": dispute_id}).scalar()
+        label = s.execute(text("SELECT roles FROM agent_runs WHERE dispute_id = :d"), {"d": dispute_id}).scalar_one()
     assert label.startswith("baseline:") and "LLM unavailable: TimeoutError" in label

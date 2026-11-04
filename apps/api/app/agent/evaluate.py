@@ -120,7 +120,7 @@ def score_case(case: dict[str, Any], result: AnalysisResult) -> Score:
     s.conflict_tp, s.conflict_fp, s.conflict_fn = len(gc & pc), len(pc - gc), len(gc - pc)
 
     s.review_correct = int(result.review_required == gt["review_required"])
-    s.readiness_correct = int(result.assessment is not None and result.assessment.readiness == expected_readiness(case))
+    s.readiness_correct = int(result.assessment.readiness == expected_readiness(case))
     gt_values = {str(f["value"]) for f in gt["supported_facts"]}
     s.claims = len(result.claims)
     s.unsupported_claims = sum(1 for c in result.claims if not any(_appears(v, c.text) for v in gt_values))

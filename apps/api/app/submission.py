@@ -12,6 +12,7 @@ reconcile(): run by the worker shortly after every send. Asks PayPal whether sel
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from uuid import UUID
@@ -112,7 +113,7 @@ def _is_digital(provider_payload: dict[str, Any] | None) -> bool:
 
 
 def _payload(claims: list[dict[str, Any]], facts: list[dict[str, Any]], requested: list[str],
-             tracking_lines: list[str] = (), digital: bool = False) -> dict[str, Any]:
+             tracking_lines: Sequence[str] = (), digital: bool = False) -> dict[str, Any]:
     entry: dict[str, Any] = {
         # Digital goods have no carrier, so their proof is notes and documents under OTHER (PayPal dev guidance).
         "evidence_type": "OTHER" if digital else _evidence_type(requested),
@@ -140,7 +141,7 @@ def _file_for(doc) -> tuple[str, bytes, str] | None:
     return None
 
 
-def _files_to_send(docs: list[Any]) -> list[tuple[str, bytes, str]]:
+def _files_to_send(docs: Sequence[Any]) -> list[tuple[str, bytes, str]]:
     """Every approved document, or nothing: a file gone from storage stops the send instead of vanishing from it."""
     files = []
     for doc in docs:

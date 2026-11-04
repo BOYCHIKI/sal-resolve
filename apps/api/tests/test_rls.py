@@ -67,9 +67,9 @@ def test_cannot_insert_row_for_another_tenant(tenants, seeded, app_engine):
 
 def test_cannot_update_another_tenants_rows(tenants, seeded, app_engine):
     with tenant_session(tenants["a"], app_engine) as s:
-        result = s.execute(text("UPDATE disputes SET provider_status = 'RESOLVED' WHERE id = :id"),
+        result = s.execute(text("UPDATE disputes SET provider_status = 'RESOLVED' WHERE id = :id RETURNING id"),
                            {"id": seeded["b"]})
-        assert result.rowcount == 0
+        assert result.all() == []
 
 
 def test_composite_fk_blocks_cross_tenant_evidence(tenants, seeded, app_engine):
@@ -128,7 +128,9 @@ def test_money_is_exact_and_currency_validated(tenants, seeded, app_engine):
 def test_upsert_bumps_version_only_on_change(tenants, seeded, app_engine):
     with tenant_session(tenants["a"], app_engine) as s:
         _, changed = repo.upsert_provider_dispute(s, tenants["a"], _dispute("PP-A-1"), {})
-        before = repo.get_dispute(s, seeded["a"]).version
+        row = repo.get_dispute(s, seeded["a"])
+        assert row is not None
+        before = row.version
     assert changed is False
     moved = dict(_dispute("PP-A-1"), provider_status="WAITING_FOR_BUYER_RESPONSE", allowed_actions=[])
     with tenant_session(tenants["a"], app_engine) as s:

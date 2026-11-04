@@ -71,7 +71,7 @@ def test_entering_a_resi_records_it_with_the_paypal_carrier_and_queues_a_check(c
         row = s.execute(text("""SELECT origin, doc_type, mime, object_key, content_lines FROM evidence
                                 WHERE id = :e"""), {"e": body["evidence_id"]}).one()
         queued = s.execute(text("SELECT count(*) FROM jobs WHERE kind = 'analyze_dispute' AND target_id = :d"),
-                           {"d": dispute_id}).scalar()
+                           {"d": dispute_id}).scalar_one()
     assert (row.origin, row.doc_type, row.mime, row.object_key) == ("SELLER_INPUT",
                                                                     "seller_shipment", "text/plain", None)
     assert [line["text"] for line in row.content_lines] == ["Tracking number: 1102846637184921", "Courier: JNE"]

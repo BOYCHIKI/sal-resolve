@@ -22,6 +22,7 @@ from app.db import tenant_session
 from app.main import app, current_merchant
 from app.seed import create_merchant
 from app.seed_demo import seed_golden
+from tests.fakes import paypal
 
 
 def order_body(**overrides) -> dict:
@@ -128,7 +129,9 @@ def test_a_digital_deal_ignores_addresses():
 def test_values_in_code_match_the_database_checks():
     sql = next(Path(__file__).resolve().parents[1].glob("migrations/sql/*_deals.sql")).read_text(encoding="utf-8")
     for enum in (DealCategory, DealStatus):
-        allowed = re.search(rf"{enum.__name__}: (.+)", sql).group(1)
+        declared = re.search(rf"{enum.__name__}: (.+)", sql)
+        assert declared, f"the migration documents {enum.__name__}"
+        allowed = declared.group(1)
         assert set(re.findall(r"[A-Z_]{3,}", allowed)) == {e.value for e in enum}
 
 
@@ -165,7 +168,7 @@ def agents(merchant, app_engine) -> SimpleNamespace:
 
 
 def ctx(worker_engine) -> worker.Context:
-    return worker.Context(worker_engine, NoPayPal())
+    return worker.Context(worker_engine, paypal(NoPayPal()))
 
 
 @pytest.mark.db
@@ -305,8 +308,8 @@ def _paypal_dispute(app_engine, merchant) -> UUID:
 
 def _deal_records(app_engine, merchant, dispute_id) -> list:
     with tenant_session(merchant, app_engine) as s:
-        return s.execute(text("""SELECT content_lines FROM evidence
-                                 WHERE dispute_id = :d AND doc_type = 'deal_record'"""), {"d": dispute_id}).all()
+        return list(s.execute(text("""SELECT content_lines FROM evidence
+                                 WHERE dispute_id = :d AND doc_type = 'deal_record'"""), {"d": dispute_id}).all())
 
 
 @pytest.mark.db

@@ -36,6 +36,11 @@ PROVEN_WORDS = {"payment_matches": "payment", "shipped": "shipping", "delivered"
                 "paypal_request_covered": "what PayPal asked for",
                 "delivered_to_paypal_address": "the delivery address"}
 
+
+def _proven_words(proven: list[dict[str, Any]]) -> str:
+    """"payment, shipping and delivery" style list of what the documents prove, for a card's text."""
+    return ", ".join(PROVEN_WORDS.get(str(p["id"]), str(p["id"])) for p in proven)
+
 # Transaction Search hold codes and the code that releases each (PayPal event code reference).
 HOLDS = {"T1110": "dispute", "T2107": "payment", "T2103": "reserve", "T2105": "review"}
 RELEASES = {"T1111": "T1110", "T2108": "T2107", "T2104": "T2103", "T2106": "T2105"}
@@ -159,8 +164,7 @@ def propose_for_dispute(d: DisputeState, analysis: AnalysisState | None, draft: 
         proven = [p for p in analysis.propositions if p["status"] == "proven"]
         cards.append(Proposal(
             "SEND_EVIDENCE", subject, "Send your evidence to PayPal",
-            "Your documents prove " + ", ".join(PROVEN_WORDS.get(p["id"], p["id"]) for p in proven)
-            + "." + _packing_note(d) + " SAL sends them only after you approve.",
+            "Your documents prove " + _proven_words(proven) + "." + _packing_note(d) + " SAL sends them only after you approve.",
             payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash},
             sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at))
     return cards
@@ -195,9 +199,7 @@ def _chargeback_cards(d: DisputeState, analysis: AnalysisState, draft: DraftStat
         proven = [p for p in by_id.values() if p["status"] == "proven"]
         return [Proposal(
             "SEND_EVIDENCE", subject, "Send your chargeback evidence to PayPal",
-            f"{CHARGEBACK_NOTE} Your documents prove "
-            + ", ".join(PROVEN_WORDS.get(p["id"], p["id"]) for p in proven)
-            + "." + _packing_note(d) + " PayPal passes them to the bank; SAL sends them only after you approve.",
+            f"{CHARGEBACK_NOTE} Your documents prove {_proven_words(proven)}." + _packing_note(d) + " PayPal passes them to the bank; SAL sends them only after you approve.",
             payload={"draft_id": str(draft.id), "revision": draft.revision, "snapshot_hash": analysis.snapshot_hash,
                      "stage": "CHARGEBACK"},
             sources=[s for p in proven for s in p.get("sources", [])], due_at=d.deadline_at)]
@@ -240,6 +242,8 @@ def holds_from_transactions(details: list[dict[str, Any]], now: datetime) -> lis
         info = row.get("transaction_info") or {}
         code = info.get("transaction_event_code")
         ref = info.get("paypal_reference_id") or info.get("transaction_id")
+        if not ref or not code:   # a row naming no payment can't be paired with its hold or release
+            continue
         if code in HOLDS:
             held.setdefault((ref, code), info)
         elif code in RELEASES:
@@ -323,7 +327,7 @@ def refresh_dispute(merchant_id: UUID, dispute_id: UUID, now: datetime, engine: 
                                LIMIT 1"""),
                        {"d": dispute_id, "asks": "provide_evidence" in (d.allowed_actions or ())}).first()
         photos = s.execute(text("""SELECT count(*) FROM evidence WHERE dispute_id = :d AND doc_type = 'packing_proof'
-                                   AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar()
+                                   AND mime LIKE 'image/%'"""), {"d": dispute_id}).scalar() or 0
     state = DisputeState(d.id, d.origin, d.provider_status, d.deadline_at, tuple(d.allowed_actions or ()),
                          str(d.amount), d.currency, d.reason, d.lifecycle_stage, photos, tuple(d.offers or ()),
                          d.channel)

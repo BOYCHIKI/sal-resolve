@@ -268,7 +268,7 @@ def test_paypals_yes_outranks_an_earlier_failed_verdict(client, merchant, app_en
     started = draft_row(app_engine, merchant, draft_id).submit_started_at
     submission.reconcile(merchant, draft_id, FakePayPal(), worker_engine)
     with tenant_session(merchant, worker_engine) as s:
-        dispute_id = s.execute(text("SELECT dispute_id FROM drafts WHERE id = :i"), {"i": draft_id}).scalar()
+        dispute_id = s.execute(text("SELECT dispute_id FROM drafts WHERE id = :i"), {"i": draft_id}).scalar_one()
         assert submission._settle(s, merchant, draft_id, dispute_id, "PP-X", "test", started, sent=True, note=None,
                                   action="draft.submitted", summary={})
     assert draft_row(app_engine, merchant, draft_id).status == "SUBMITTED"
@@ -461,6 +461,7 @@ def test_paypals_own_reason_for_refusing_a_send_is_kept():
         "details": [{"issue": "MISSING_REQUIRED_PARAMETER", "field": "x"}], "payer": {"email_address": "a@b.co"}})
     error, unknown = submission._send(FakePayPal(fail=httpx.HTTPStatusError("400", request=refused.request,
                                                                             response=refused)), "PP-1", {}, [])
+    assert error is not None
     assert "VALIDATION_ERROR" in error and "MISSING_REQUIRED_PARAMETER" in error and not unknown
     assert "a@b.co" not in error
 
@@ -494,7 +495,7 @@ def test_a_refused_type_goes_once_more_as_other_with_the_same_notes_and_files(cl
     assert second["evidences"][0]["evidence_type"] == "OTHER" and "evidence_info" not in second["evidences"][0]
     assert second["evidences"][0]["notes"] == first["evidences"][0]["notes"] and second_files == first_files
     with tenant_session(merchant, app_engine) as s:
-        audit = s.execute(text("SELECT summary FROM audit_logs WHERE action = 'draft.submitted'")).scalar()
+        audit = s.execute(text("SELECT summary FROM audit_logs WHERE action = 'draft.submitted'")).scalar_one()
     assert audit["evidence_type"] == "OTHER"
 
 

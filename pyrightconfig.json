@@ -1,0 +1,14 @@
+{
+  // Read by Pylance in VS Code and by `python -m pyright`, so the editor and the terminal agree.
+  // Each environment's root is where its scripts are run from, so their imports resolve as they do at runtime.
+  "venvPath": ".",
+  "venv": ".venv",
+  "exclude": ["**/node_modules", "**/.next", ".venv", "**/__pycache__", "**/.pytest_cache"],
+  "executionEnvironments": [
+    { "root": "apps/api" },
+    { "root": "spikes/paypal_sandbox" },
+    { "root": "data/golden" },
+    // The video renderers need numpy, which only the video machine installs; a missing import there is a note.
+    { "root": "demo-video", "reportMissingImports": "warning" }
+  ]
+}

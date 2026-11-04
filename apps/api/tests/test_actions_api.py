@@ -15,6 +15,7 @@ from app.db import tenant_session
 from app.main import app, current_merchant, paypal_sink
 from app.seed import create_merchant
 from app.seed_demo import seed_golden
+from tests.fakes import paypal
 from tests.test_submission import FakePayPal
 
 pytestmark = pytest.mark.db
@@ -38,7 +39,7 @@ def ready_case(merchant, app_engine, worker_engine, golden="SAL-INR-001") -> UUI
     with tenant_session(merchant, app_engine) as s:
         s.execute(text("UPDATE disputes SET origin = 'PAYPAL_SANDBOX' WHERE id = :d"), {"d": dispute_id})
     run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
-    worker.drain(worker.Context(worker_engine, lambda: FakePayPal()))  # runs propose_actions
+    worker.drain(worker.Context(worker_engine, paypal(lambda: FakePayPal())))  # runs propose_actions
     return dispute_id
 
 
@@ -67,7 +68,7 @@ def test_approving_the_card_sends_once_and_closes_it(client, merchant, app_engin
     again = client.post(f"/api/actions/{card['id']}/approve", json={"payload_hash": card["payload_hash"]})
     assert again.status_code == 409 and again.json()["detail"]["code"] == "ACTION_NOT_OPEN" and len(fake.sent) == 1
 
-    worker.drain(worker.Context(worker_engine, lambda: fake))  # re-propose after the send
+    worker.drain(worker.Context(worker_engine, paypal(lambda: fake)))  # re-propose after the send
     assert cards(client, dispute_id=str(dispute_id)) == []          # nothing left to send
     done = cards(client, status="DONE", dispute_id=str(dispute_id))
     assert done[0]["result"]["outcome"] == "sent"
@@ -111,7 +112,7 @@ def test_documents_changed_after_the_card_block_the_send(client, merchant, app_e
 def test_guidance_cards_never_call_paypal(client, merchant, app_engine, worker_engine):
     dispute_id = seed_golden(app_engine, merchant, "SAL-INR-011")  # a case with missing evidence
     run_analysis(merchant, dispute_id, None, baseline_roles(), worker_engine)
-    worker.drain(worker.Context(worker_engine, lambda: FakePayPal()))
+    worker.drain(worker.Context(worker_engine, paypal(lambda: FakePayPal())))
     open_cards = cards(client, dispute_id=str(dispute_id))
     assert open_cards and all(c["kind"] != "SEND_EVIDENCE" for c in open_cards)
     fake = FakePayPal()

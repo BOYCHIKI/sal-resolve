@@ -95,7 +95,7 @@ def store(merchant_id: UUID, dispute_id: UUID, data: bytes, filename: str, doc_t
                      {"d": dispute_id, "c": checksum}).first():
             raise EvidenceError(409, "DUPLICATE_FILE", "This file is already attached to the dispute.")
         used = s.execute(text("SELECT coalesce(sum(size_bytes), 0) FROM evidence WHERE dispute_id = :d"),
-                         {"d": dispute_id}).scalar()
+                         {"d": dispute_id}).scalar() or 0
         if used + len(data) >= MAX_CASE_BYTES:
             raise EvidenceError(413, "CASE_TOO_LARGE", "A dispute can hold at most 50 MB of documents.")
 

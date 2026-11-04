@@ -117,7 +117,7 @@ class TemplateDrafter:
 
     def draft(self, facts, findings):
         supported = {f.field: f for f in facts if f.status == "supported"}
-        currency = supported.get("currency").value if "currency" in supported else ""
+        currency = supported["currency"].value if "currency" in supported else ""
         claims = []
         for field, template in _CLAIM_TEMPLATES.items():
             if field in supported:

@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.db import tenant_session
 from app.main import app, current_merchant, paypal_verifier
 from app.seed import create_merchant
+from tests.fakes import paypal
 
 pytestmark = pytest.mark.db
 
@@ -57,9 +58,9 @@ def merchant(migrated_db) -> UUID:
 def ctx(worker_engine):
     # Jobs other test modules left due (e.g. propose_actions after an analysis) run first, so the jobs a test
     # here enqueues are the ones it claims.
-    worker.drain(worker.Context(worker_engine, lambda: FakePayPal({})))
+    worker.drain(worker.Context(worker_engine, paypal(lambda: FakePayPal({}))))
     fake = FakePayPal({})
-    return worker.Context(worker_engine, lambda: fake), fake
+    return worker.Context(worker_engine, paypal(lambda: fake)), fake
 
 
 def _drain_jobs_for(ctx_, merchant_id) -> None:
@@ -71,7 +72,9 @@ def _drain_jobs_for(ctx_, merchant_id) -> None:
 
 def _job(app_engine, merchant_id, job_id) -> dict:
     with tenant_session(merchant_id, app_engine) as s:
-        return repo.get_job(s, job_id)
+        job = repo.get_job(s, job_id)
+    assert job is not None
+    return job
 
 
 # --------------------------------------------------------------- sync optimisation
@@ -238,7 +241,7 @@ def test_paypal_404_fails_fast_instead_of_retrying(merchant, app_engine):
             raise httpx.HTTPStatusError("404", request=req, response=httpx.Response(404, request=req))
 
     from app.db import worker_engine as _we
-    c = worker.Context(_we(), lambda: Missing({}))
+    c = worker.Context(_we(), paypal(lambda: Missing({})))
     with tenant_session(merchant, app_engine) as s:
         job_id = repo.enqueue_job_returning(s, merchant, "sync_dispute", f"t:{uuid4()}",
                                             payload={"provider_dispute_id": "PP-NOPE"})
@@ -256,7 +259,7 @@ def test_scan_holds_job_turns_transaction_search_into_cards(merchant, app_engine
         def recent_transactions(self):
             return recorded_holds()
 
-    c = worker.Context(worker_engine, lambda: WithHolds({}))
+    c = worker.Context(worker_engine, paypal(lambda: WithHolds({})))
     with tenant_session(merchant, app_engine) as s:
         job_id = repo.enqueue_job_returning(s, merchant, "scan_holds", f"t:{uuid4()}")
     for _ in range(50):

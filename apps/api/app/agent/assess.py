@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.agent.models import Assessment, Document, Fact, Finding, Proposition, SourceRef
+from app.agent.models import Assessment, Document, Fact, Finding, Proposition, PropositionStatus, Readiness, SourceRef
 from app.agent.validation import same_city
 
 PROPOSITIONS = ("payment_matches", "shipped", "delivered", "delivery_date_consistent", "delivered_to_paypal_address",
@@ -58,7 +58,7 @@ class _Case:
     def first(self, field: str) -> Fact | None:
         return (self.supported.get(field) or [None])[0]
 
-    def conflicted(self, pid: str, status: str) -> Proposition | None:
+    def conflicted(self, pid: str, status: PropositionStatus) -> Proposition | None:
         """The proposition as the rules' conflict states it, or None when the rules found no conflict."""
         found = self.trouble.get(pid)
         if not found:
@@ -221,7 +221,7 @@ def assess(facts: list[Fact], findings: list[Finding], documents: list[Document]
     return Assessment(tuple(props), *_readiness(props))
 
 
-def _readiness(props: list[Proposition]) -> tuple[str, str]:
+def _readiness(props: list[Proposition]) -> tuple[Readiness, str]:
     by_id = {p.id: p for p in props}
     open_check = [p for p in props if p.status in ("contradicted", "flagged")]
     if open_check:

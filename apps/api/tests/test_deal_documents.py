@@ -4,10 +4,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from openai import LengthFinishReasonError
+from openai.types.chat import ChatCompletion
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -18,6 +20,7 @@ from app.evidence_pdf import render_text_pdf
 from app.main import app, current_merchant
 from app.seed import create_merchant
 from tests.test_deals import invoice_body, order_body
+from tests.fakes import NO_PAYPAL, openai
 
 PAGE = ["PURCHASE ORDER PO-7781", "Buyer: Perth Brake Garage", "Date: 3 November 2026",
         "Ship to: Perth 6000 AU", "BP-2217-A Brake pad set 40 30.00", "Total USD 1,200.00"]
@@ -98,7 +101,9 @@ def test_only_required_fields_count_as_blanks():
 def test_kinds_and_statuses_match_the_database_checks():
     sql = next(Path(__file__).resolve().parents[1].glob("migrations/sql/*_deal_documents.sql")).read_text(encoding="utf-8")
     for enum in (DocumentKind, DocumentStatus):
-        allowed = re.search(rf"{enum.__name__}: (.+)", sql).group(1)
+        declared = re.search(rf"{enum.__name__}: (.+)", sql)
+        assert declared, f"the migration documents {enum.__name__}"
+        allowed = declared.group(1)
         assert set(re.findall(r"[A-Z_]{3,}", allowed)) == {e.value for e in enum}
 
 
@@ -118,7 +123,7 @@ def client(merchant, app_engine, tmp_path, monkeypatch):
 
 
 def ctx(worker_engine, reader) -> worker.Context:
-    return worker.Context(worker_engine, lambda: None, reader_factory=lambda: reader)
+    return worker.Context(worker_engine, NO_PAYPAL, reader_factory=lambda: reader)
 
 
 def upload(client, content: bytes, kind: str = "PURCHASE_ORDER", deal_ref: str = ""):
@@ -233,7 +238,7 @@ def test_confirming_is_audited_as_a_person(client, merchant, worker_engine, app_
     doc = read_doc(client, FakeReader(), worker_engine)
     client.post(f"/api/deal-documents/{doc['id']}/confirm-order", json=order_body())
     with tenant_session(merchant, app_engine) as s:
-        actor = s.execute(text("SELECT actor FROM audit_logs WHERE action = 'deal.ordered'")).scalar()
+        actor = s.execute(text("SELECT actor FROM audit_logs WHERE action = 'deal.ordered'")).scalar_one()
     assert actor.startswith("operator")
 
 
@@ -290,9 +295,9 @@ def test_a_label_in_front_of_the_number_is_dropped(written, kept):
 def test_a_document_too_long_for_one_read_comes_back_blank():
     class Overflowing:
         def parse(self, **_):
-            raise LengthFinishReasonError(completion=SimpleNamespace(usage=None))
+            raise LengthFinishReasonError(completion=cast(ChatCompletion, SimpleNamespace(usage=None)))
     client = SimpleNamespace(chat=SimpleNamespace(completions=Overflowing()))
-    read = deal_documents.LLMDocumentReader(client=client, model="test-model").read(DocumentKind.INVOICE, PAGE)
+    read = deal_documents.LLMDocumentReader(client=openai(client), model="test-model").read(DocumentKind.INVOICE, PAGE)
     proposal = ground_document(read, PAGE)
     assert proposal["total"]["value"] is None and proposal["items"] == [] and deal_documents.has_blanks(proposal)
 

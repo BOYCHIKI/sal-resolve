@@ -17,8 +17,8 @@ class JsonFormatter(logging.Formatter):
         entry = {"ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(timespec="milliseconds"),
                  "level": record.levelname.lower(), "logger": record.name, "msg": record.getMessage()}
         for key, var in (("job_id", job_id), ("dispute_id", dispute_id), ("merchant_id", merchant_id)):
-            if var.get():
-                entry[key] = var.get()
+            if value := var.get():
+                entry[key] = value
         for key in ("kind", "outcome", "duration_ms", "error"):
             if hasattr(record, key):
                 entry[key] = getattr(record, key)

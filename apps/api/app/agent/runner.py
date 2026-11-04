@@ -80,8 +80,9 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
     if loaded is None:
         return {"skipped": "dispute not found"}
     case, version, evidence_hash = loaded
+    # The model's cache is kept per merchant. Checked by name so the baseline never imports the LLM client.
     if hasattr(roles.drafter, "cache_scope"):
-        roles.drafter.cache_scope = str(merchant_id)
+        setattr(roles.drafter, "cache_scope", str(merchant_id))
 
     label = roles.label
     try:
@@ -131,7 +132,7 @@ def run_analysis(merchant_id: UUID, dispute_id: UUID, job_id: UUID | None, roles
              "facts": json.dumps([asdict(f) for f in result.facts]),
              "findings": json.dumps([asdict(f) for f in result.findings]),
              "review": result.review_required, "hash": result.snapshot_hash,
-             "assessment": json.dumps(asdict(result.assessment)) if result.assessment else None}).scalar_one()
+             "assessment": json.dumps(asdict(result.assessment))}).scalar_one()
         # A new analysis also cancels an approval that was not sent yet: the operator approved what they
         # saw, and the documents or the case have changed since (ADR-003 D1).
         s.execute(text("""UPDATE drafts SET status = 'SUPERSEDED'

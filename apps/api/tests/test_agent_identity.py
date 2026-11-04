@@ -26,7 +26,9 @@ BUYER = "buyer-agent:garage-01"
 
 def test_roles_in_code_match_the_database_check():
     sql = next(Path(__file__).resolve().parents[1].glob("migrations/sql/*_agent_credentials.sql")).read_text(encoding="utf-8")
-    assert set(re.findall(r"[A-Z_]{3,}", re.search(r"AgentRole: (.+)", sql).group(1))) == {r.value for r in AgentRole}
+    declared = re.search(r"AgentRole: (.+)", sql)
+    assert declared, "the migration documents the roles"
+    assert set(re.findall(r"[A-Z_]{3,}", declared.group(1))) == {r.value for r in AgentRole}
 
 
 def as_agent(token: str) -> TestClient:
@@ -53,7 +55,7 @@ def seller(merchant, app_engine) -> TestClient:
 def test_only_the_hash_of_a_token_is_stored(merchant, app_engine):
     token = agent_identity.issue(merchant, BUYER, AgentRole.BUYER_AGENT, app_engine)
     with tenant_session(merchant, app_engine) as s:
-        stored = s.execute(text("SELECT token_hash FROM agent_credentials")).scalar()
+        stored = s.execute(text("SELECT token_hash FROM agent_credentials")).scalar_one()
     assert token.rsplit(".", 1)[1] not in stored and token not in stored and len(stored) == 64
 
 
@@ -61,6 +63,7 @@ def test_only_the_hash_of_a_token_is_stored(merchant, app_engine):
 def test_a_token_names_its_agent(merchant, app_engine):
     token = agent_identity.issue(merchant, BUYER, AgentRole.BUYER_AGENT, app_engine)
     agent = agent_identity.authenticate(token, app_engine)
+    assert agent is not None
     assert (agent.merchant_id, agent.name, agent.role) == (merchant, BUYER, AgentRole.BUYER_AGENT)
 
 
@@ -85,6 +88,7 @@ def test_a_secret_never_works_under_another_merchant(merchant, app_engine):
 def test_a_revoked_token_stops_at_once(merchant, app_engine):
     token = agent_identity.issue(merchant, BUYER, AgentRole.BUYER_AGENT, app_engine)
     agent = agent_identity.authenticate(token, app_engine)
+    assert agent is not None
     assert agent_identity.revoke(merchant, agent.id, app_engine) is True
     assert as_agent(token).post(ORDER_URL, json=order_body()).status_code == 401
 

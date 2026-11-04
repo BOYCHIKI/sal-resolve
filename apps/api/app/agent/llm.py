@@ -16,7 +16,7 @@ import json
 import logging
 import threading
 from collections import OrderedDict
-from typing import Any
+from typing import Any, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -24,6 +24,8 @@ from pydantic import BaseModel
 from app.agent.models import CandidateFact, Claim, Document, Fact, Finding, SourceRef
 from app.agent.validation import DOC_FIELDS
 from app.config import get_settings
+
+Parsed = TypeVar("Parsed", bound=BaseModel)
 
 log = logging.getLogger("sal.llm")
 
@@ -93,11 +95,10 @@ class _Claims(BaseModel):
     claims: list[_Claim]
 
 
-# Re-analysis (a new upload, a PayPal update) used to send every document to the model again. Extraction of
-# an unchanged document is now reused: the key covers the merchant, the model, its options, the prompt, the
-# field list, the evidence id and every line, so any change to any of them is a miss. Typed resi documents have
-# the same id for every merchant, which is why the merchant is in the key. In-process and bounded: a worker
-# restart only costs one fresh extraction per document.
+# A re-analysis (a new upload, a PayPal update) reuses the extraction of every unchanged document. The key covers
+# the merchant, the model, its options, the prompt, the field list, the evidence id and every line, so any change to
+# any of them is a miss. Typed resi documents share an id across merchants, which is why the merchant is in the key.
+# In-process and bounded: a worker restart only costs one fresh extraction per document.
 EXTRACTION_CACHE_SIZE = 512
 _extraction_cache: OrderedDict[str, list[CandidateFact]] = OrderedDict()
 _cache_lock = threading.Lock()
@@ -150,7 +151,7 @@ class LLMRoles:
         if cfg.llm_reasoning_effort:
             self.options["reasoning_effort"] = cfg.llm_reasoning_effort
 
-    def _parse(self, system: str, user: str, schema: type[BaseModel]) -> BaseModel:
+    def _parse(self, system: str, user: str, schema: type[Parsed]) -> Parsed:
         resp = self.client.chat.completions.parse(
             model=self.model, response_format=schema, **self.options,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}])
@@ -198,8 +199,11 @@ class LLMRoles:
             for eid in todo:  # cached only after the call succeeded, including documents with no facts
                 _cache_put(keys[eid], fresh[eid])
         # Same order as the documents, so the first extractor's fact still wins in the rules.
-        return [c for d in docs for c in (cached[d.evidence_id] if cached[d.evidence_id] is not None
-                                          else fresh[d.evidence_id])]
+        facts: list[CandidateFact] = []
+        for d in docs:
+            hit = cached[d.evidence_id]
+            facts.extend(hit if hit is not None else fresh[d.evidence_id])
+        return facts
 
     def draft(self, facts: list[Fact], findings: list[Finding]) -> list[Claim]:
         supported = [{"field": f.field, "value": f.value} for f in facts

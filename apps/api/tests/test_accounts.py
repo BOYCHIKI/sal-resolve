@@ -21,6 +21,13 @@ def _schema(request):
         request.getfixturevalue("migrated_db")
 
 
+def signed_in(token: str, engine) -> accounts.Session:
+    """The open session behind a token; the test fails here, plainly, if there is none."""
+    session = accounts.authenticate(token, engine=engine)
+    assert session is not None, "expected an open session"
+    return session
+
+
 def email() -> str:
     return f"seller-{uuid4().hex[:8]}@example.com"
 
@@ -58,7 +65,7 @@ def test_authenticator_codes_match_rfc_6238_and_are_not_replayed():
 @pytest.mark.db
 def test_sign_up_opens_a_session_for_a_new_business(app_engine):
     token = accounts.sign_up("Harbor Supply", email(), PASSWORD, engine=app_engine)
-    session = accounts.authenticate(token, engine=app_engine)
+    session = signed_in(token, engine=app_engine)
     assert session is not None and session.stage is SessionStage.ACTIVE
     assert accounts.account(session, engine=app_engine)["business"] == "Harbor Supply"
 
@@ -115,7 +122,7 @@ def test_the_right_password_resets_the_count(app_engine):
 # ---------------------------------------------------------------- two-step sign-in
 def _with_authenticator(app_engine) -> tuple[str, str, list[str]]:
     address = email()
-    session = accounts.authenticate(accounts.sign_up("Shop", address, PASSWORD, engine=app_engine), engine=app_engine)
+    session = signed_in(accounts.sign_up("Shop", address, PASSWORD, engine=app_engine), engine=app_engine)
     secret = accounts.start_totp(session, engine=app_engine)["secret"]
     codes = accounts.confirm_totp(session, accounts.totp_code(secret, accounts.totp_step()), engine=app_engine)
     return address, secret, codes
@@ -149,7 +156,7 @@ def test_a_recovery_code_works_once(app_engine):
 def test_turning_the_authenticator_off_needs_password_and_code(app_engine):
     address, secret, _ = _with_authenticator(app_engine)
     _, pending = accounts.sign_in(address, PASSWORD, engine=app_engine)
-    session = accounts.authenticate(
+    session = signed_in(
         accounts.finish_sign_in(pending, accounts.totp_code(secret, accounts.totp_step() + 1), engine=app_engine),
         engine=app_engine)
     with pytest.raises(AuthError):
@@ -166,7 +173,7 @@ def test_turning_the_authenticator_off_needs_password_and_code(app_engine):
 @pytest.mark.db
 def test_signing_out_and_going_idle_end_a_session(app_engine):
     token = accounts.sign_up("Shop", email(), PASSWORD, engine=app_engine)
-    session = accounts.authenticate(token, engine=app_engine)
+    session = signed_in(token, engine=app_engine)
     with tenant_session(session.merchant_id, app_engine) as s:
         s.execute(text("UPDATE user_sessions SET last_seen_at = now() - interval '31 minutes' WHERE id = :id"),
                   {"id": session.id})
@@ -191,7 +198,7 @@ def test_changing_the_password_ends_every_other_session(app_engine):
     address = email()
     first = accounts.sign_up("Shop", address, PASSWORD, engine=app_engine)
     second = accounts.sign_in(address, PASSWORD, engine=app_engine)[1]
-    session = accounts.authenticate(first, engine=app_engine)
+    session = signed_in(first, engine=app_engine)
     accounts.change_password(session, PASSWORD, "a different long passphrase", engine=app_engine)
     assert accounts.authenticate(second, engine=app_engine) is None
     assert accounts.authenticate(first, engine=app_engine) is not None

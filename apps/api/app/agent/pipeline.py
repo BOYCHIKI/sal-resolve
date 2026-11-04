@@ -69,5 +69,5 @@ def snapshot_hash(result: AnalysisResult) -> str:
                "facts": [asdict(f) for f in result.facts],
                "findings": [asdict(f) for f in result.findings],
                "claims": [asdict(c) for c in result.claims],
-               "assessment": asdict(result.assessment) if result.assessment else None}
+               "assessment": asdict(result.assessment)}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()

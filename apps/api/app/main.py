@@ -119,7 +119,7 @@ def _serialize(row: repo.DisputeRow) -> dict:
         "amount": {"value": money_str(row.amount, row.currency), "currency": row.currency},
         "provider_status": row.provider_status, "lifecycle_stage": row.lifecycle_stage,
         "internal_state": row.internal_state, "channel": row.channel,
-        "seller_protection_eligible": {"true": True, "false": False}.get(row.seller_protection),
+        "seller_protection_eligible": {"true": True, "false": False}.get(row.seller_protection or ""),
         "deadline_at": row.deadline_at.isoformat() if row.deadline_at else None,
         "allowed_actions": row.allowed_actions, "version": row.version,
     }
