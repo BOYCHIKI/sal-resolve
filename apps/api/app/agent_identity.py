@@ -44,18 +44,19 @@ class AgentIdentity:
 
 
 class FailedAttempts:
-    """Bad tokens per address in a sliding window. In-process: each API process counts for itself."""
+    """Bad tries per address in a sliding window. In-process: each API process counts for itself."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int = MAX_FAILURES, window_seconds: int = FAILURE_WINDOW_SECONDS) -> None:
+        self.limit, self.window_seconds = limit, window_seconds
         self._seen: dict[str, list[float]] = {}
         self._lock = threading.Lock()
 
     def _recent(self, address: str, now: float) -> list[float]:
-        return [t for t in self._seen.get(address, []) if now - t < FAILURE_WINDOW_SECONDS]
+        return [t for t in self._seen.get(address, []) if now - t < self.window_seconds]
 
     def blocked(self, address: str) -> bool:
         with self._lock:
-            return len(self._recent(address, time.monotonic())) >= MAX_FAILURES
+            return len(self._recent(address, time.monotonic())) >= self.limit
 
     def record(self, address: str) -> None:
         with self._lock:

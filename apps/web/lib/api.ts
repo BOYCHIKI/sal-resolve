@@ -1,9 +1,20 @@
 import "server-only";
 
+import { cookies, headers as requestHeaders } from "next/headers";
+import { SESSION_COOKIE } from "@/lib/session";
+
 // Server-side only: the browser never talks to the API directly, so no CORS and no exposed API URL.
 const API_URL = process.env.SAL_API_URL ?? "http://127.0.0.1:8000";
 // Shared secret between this server and the API (required when the API runs with SAL_ENV=prod).
 const INTERNAL = process.env.SAL_INTERNAL_TOKEN ? { "x-sal-internal-token": process.env.SAL_INTERNAL_TOKEN } : undefined;
+
+/** Headers for every API call: the internal token, the signed-in seller's session from the httpOnly cookie, and the
+ *  browser's address for the API's rate limits (trusted there only with the internal token). */
+async function apiHeaders(): Promise<Record<string, string>> {
+  const session = (await cookies()).get(SESSION_COOKIE)?.value;
+  const address = (await requestHeaders()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  return { ...INTERNAL, ...(session ? { "x-sal-session": session } : {}), ...(address ? { "x-sal-client-ip": address } : {}) };
+}
 
 export type Money = { value: string; currency: string };
 
@@ -156,7 +167,7 @@ export type DealDocument = {
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { ...INTERNAL, ...init?.headers } });
+  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { ...(await apiHeaders()), ...init?.headers } });
   if (res.status === 404 || res.status === 422) return null; // unknown or malformed id
   if (!res.ok) throw new Error(`SAL API ${res.status} on ${path}`);
   return (await res.json()) as T;
@@ -168,7 +179,7 @@ export type ActionResult = { ok: true } | { ok: false; code: string; message: st
 async function action(path: string, body?: unknown): Promise<ActionResult> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST", cache: "no-store",
-    headers: { ...INTERNAL, ...(body ? { "content-type": "application/json" } : {}) },
+    headers: { ...(await apiHeaders()), ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.ok) return { ok: true };
@@ -178,7 +189,7 @@ async function action(path: string, body?: unknown): Promise<ActionResult> {
 
 /** Multipart upload of one document; the API checks type, size, duplicates and ownership. */
 async function upload(path: string, form: FormData): Promise<ActionResult> {
-  const res = await fetch(`${API_URL}${path}`, { method: "POST", cache: "no-store", body: form, headers: INTERNAL });
+  const res = await fetch(`${API_URL}${path}`, { method: "POST", cache: "no-store", body: form, headers: await apiHeaders() });
   if (res.ok) return { ok: true };
   const detail = (await res.json().catch(() => ({})))?.detail ?? {};
   return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Upload failed" };
@@ -229,6 +240,48 @@ export const api = {
   uploadPacking: (packingId: string, form: FormData) =>
     upload(`/api/packing/${encodeURIComponent(packingId)}/files`, form),
   /** The printable QR label, streamed back to the browser by app/packing/[id]/label/route.ts. */
-  packingLabel: (packingId: string) =>
-    fetch(`${API_URL}/api/packing/${encodeURIComponent(packingId)}/label.pdf`, { cache: "no-store", headers: INTERNAL }),
+  packingLabel: async (packingId: string) =>
+    fetch(`${API_URL}/api/packing/${encodeURIComponent(packingId)}/label.pdf`, { cache: "no-store", headers: await apiHeaders() }),
+};
+
+// ---------------------------------------------------------------- accounts (ADR-009)
+export type AuthStage = "ACTIVE" | "MFA_PENDING";
+export type AuthReply<T> = ({ ok: true } & T) | { ok: false; code: string; message: string };
+export type Account = {
+  email: string; business: string; totp_enabled: boolean; recovery_codes_left: number;
+  sessions: { id: string; this_one: boolean; user_agent: string | null; signed_in_at: string; last_seen_at: string }[];
+};
+
+/** A POST to /api/auth/*. `session` overrides the cookie, for the pending token during the second step. */
+async function authPost<T>(path: string, body?: unknown, session?: string): Promise<AuthReply<T>> {
+  const base = await apiHeaders();
+  const userAgent = (await requestHeaders()).get("user-agent") ?? "";
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST", cache: "no-store",
+    headers: { ...base, ...(session ? { "x-sal-session": session } : {}), "user-agent": userAgent.slice(0, 300),
+               ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, ...(json as T) };
+  const detail = json?.detail;
+  // FastAPI's own 422 (a field too long or missing) has a list here, not our {code, message}.
+  if (Array.isArray(detail) || !detail) return { ok: false, code: `HTTP_${res.status}`, message: "Check the form and try again." };
+  return { ok: false, code: detail.code ?? `HTTP_${res.status}`, message: detail.message ?? "Something went wrong. Try again." };
+}
+
+export const auth = {
+  signUp: (business_name: string, email: string, password: string) =>
+    authPost<{ stage: AuthStage; token: string }>("/api/auth/signup", { business_name, email, password }),
+  signIn: (email: string, password: string) =>
+    authPost<{ stage: AuthStage; token: string }>("/api/auth/login", { email, password }),
+  finishSignIn: (pending: string, code: string) =>
+    authPost<{ stage: AuthStage; token: string }>("/api/auth/mfa", { code }, pending),
+  signOut: () => authPost<{ signed_out: boolean }>("/api/auth/logout"),
+  signOutOthers: () => authPost<{ signed_out: number }>("/api/auth/logout-others"),
+  changePassword: (current: string, next: string) => authPost<{ changed: boolean }>("/api/auth/password", { current, new: next }),
+  startTwoStep: () => authPost<{ secret: string; otpauth_uri: string; qr_svg: string }>("/api/auth/mfa/setup"),
+  enableTwoStep: (code: string) => authPost<{ recovery_codes: string[] }>("/api/auth/mfa/enable", { code }),
+  disableTwoStep: (password: string, code: string) => authPost<{ two_step: boolean }>("/api/auth/mfa/disable", { password, code }),
+  me: () => call<Account>("/api/auth/me"),
 };

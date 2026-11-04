@@ -55,11 +55,10 @@ def test_merchant_cannot_be_chosen_by_client(as_tenant, api_seed, tenants):
     assert "PP-API-b" not in {d["provider_dispute_id"] for d in r.json()["items"]}
 
 
-def test_no_identity_configured_is_503(monkeypatch):
-    from app import main
-    monkeypatch.setattr(main, "get_settings", lambda: type("S", (), {"demo_merchant_id": None, "internal_token": None})())
+def test_without_a_session_business_routes_are_401_even_with_a_demo_merchant():
+    # The demo merchant no longer stands in for a signed-in seller (ADR-009).
     app.dependency_overrides.clear()
-    assert client.get("/api/disputes").status_code == 503
+    assert client.get("/api/disputes").status_code == 401
 
 
 @pytest.mark.parametrize("marked, shown", [(True, True), (False, False), (None, None)])

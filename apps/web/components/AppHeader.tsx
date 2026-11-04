@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { signOut } from "@/app/auth-actions";
 import { AppNav, type NavCounts } from "@/components/AppNav";
 import { api } from "@/lib/api";
 
@@ -39,6 +40,10 @@ export async function AppHeader() {
             <span aria-hidden="true" className="h-2 w-2 rounded-full bg-current" />
             PayPal test mode
           </span>
+          <Link href="/account" className="muted inline-flex min-h-11 items-center px-2 text-[15px] font-semibold hover:text-(--lp-ink)">Account</Link>
+          <form action={signOut}>
+            <button type="submit" className="muted inline-flex min-h-11 items-center px-2 text-[15px] hover:text-(--lp-ink) hover:underline">Sign out</button>
+          </form>
         </span>
       </div>
     </header>

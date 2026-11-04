@@ -92,7 +92,8 @@ export default function Landing() {
             <a href="#how" className="muted hidden px-3.5 py-2.5 md:inline">How it works</a>
             <a href="#features" className="muted hidden px-3.5 py-2.5 md:inline">What it checks</a>
             <a href="#agents" className="muted hidden px-3.5 py-2.5 md:inline">AI agents</a>
-            <Link href="/deals" className="lp-btn">Try it</Link>
+            <Link href="/login" className="muted px-3.5 py-2.5">Sign in</Link>
+            <Link href="/signup" className="lp-btn">Get started</Link>
           </div>
         </nav>
       </header>

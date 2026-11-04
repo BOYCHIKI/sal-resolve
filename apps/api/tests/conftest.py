@@ -105,8 +105,10 @@ def _fresh_settings():
 @pytest.fixture(autouse=True)
 def _fresh_failed_attempts():
     """Failed token counts live for the process; each test starts without them."""
+    from app.accounts import login_failures, signups
     from app.agent_identity import failed_attempts
-    failed_attempts.clear()
+    for limiter in (failed_attempts, login_failures, signups):
+        limiter.clear()
     yield
 
 

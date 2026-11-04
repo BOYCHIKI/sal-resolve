@@ -17,6 +17,10 @@ const PROTECTIONS = [
     body: "SAL prepares the reply; you read it, approve it and press send. The approval is tied to the exact documents and case version you saw. If either changes, you review again. A reply with nothing to back it can’t be approved.",
   },
   {
+    title: "Sign-in built to resist guessing",
+    body: "Passwords are stored only as slow scrypt hashes. You can add a code from an authenticator app, so a stolen password alone opens nothing. Repeated wrong tries lock the account for a while, and sessions end after 30 idle minutes.",
+  },
+  {
     title: "AI reads, rules decide",
     body: "An AI model reads your documents, but every value it reports must be written on the line it points to, or the box stays blank for you. Whether an invoice matches its order is decided by fixed rules, not by the model.",
   },
