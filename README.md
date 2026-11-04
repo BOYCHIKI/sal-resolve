@@ -13,7 +13,7 @@ Built for the PayPal AI Hackathon (submission due 12 Nov 2026, 12:00 PT). PayPal
 | Part | What happens | Where |
 |---|---|---|
 | **Deal Check** | Upload a purchase order and an invoice (PDF or photo), or send them as data. SAL reads each value, the seller confirms it, and plain code compares the two. Any difference puts the deal on **hold** with the reason; a corrected invoice that matches clears it. | `/deals`, [ADR-008](docs/adr/ADR-008-deal-check.md) |
-| **Agent endpoint** | Buyer and seller AI agents call `/agent/v1/deals` with their own key. A buyer's key can only order and read its own deals; a seller's key can only invoice. | [ADR-008 D4](docs/adr/ADR-008-deal-check.md) |
+| **For AI agents** | Buyer and seller AI agents use SAL through its MCP server (`create_order`, `send_invoice`, `get_deal`) or call `/agent/v1/deals` directly, each with its own key. A buyer's key can only order and read its own deals; a seller's key can only invoice. | [ADR-008 D4](docs/adr/ADR-008-deal-check.md) |
 | **Disputes and chargebacks** | The worker syncs PayPal cases, keeps a fact only when it is written on a quoted document line, and suggests the next step: send evidence, add a missing document, mind the deadline, or money on hold. | `/disputes`, [ADR-006](docs/adr/ADR-006-agent-action-proposals.md) |
 | **Packing proof** | A photo or video of the parcel before shipping, linked by QR code to the order. | `/packing`, [ADR-007](docs/adr/ADR-007-packing-proof-vault.md) |
 | **Seller accounts** | Sign-up, sign-in with an authenticator app (two-step), recovery codes, lockout after repeated failures. | `/signup`, `/account`, [ADR-009](docs/adr/ADR-009-accounts.md) |
@@ -42,8 +42,9 @@ sends; they never see the seller's case or evidence.
   total and tax were right on all four POs; one PO had quantity and unit price swapped, which is why the seller
   confirms every value. Long timesheet invoices were read only in part and were held, not cleared. Too few documents
   to claim an accuracy rate. Details: [ADR-008](docs/adr/ADR-008-deal-check.md).
-- The agent endpoint is exercised by simulated agents (`python -m app.simulate_agents`), not by a live ACP or AP2
-  integration.
+- The agents in the demo are real model-driven agents that choose their own tool calls over MCP. The one fixed step
+  is the seller's billing system sending a wrong invoice, so the mistake is the same on every run. There is no ACP
+  or AP2 integration.
 - Not deployed. Everything below runs on your machine.
 
 ## Layout
@@ -94,12 +95,32 @@ Or create a new business at http://localhost:3000/signup.
 | 2 | **Deals → Add a document**, upload `docs/samples/1-purchase-order-PO-DEMO-1001.pdf` | The page beside the values SAL read; correct anything wrong, then save |
 | 3 | On that deal, **Add invoice** with `docs/samples/3-invoice-wrong-quantity.pdf` | The deal goes on **hold** and says which quantity differs |
 | 4 | **Add invoice** again with `docs/samples/2-invoice-matches.pdf` | The hold clears |
-| 5 | `cd apps/api` then `python -m app.simulate_agents` | A buyer agent orders, a seller agent sends a wrong invoice, then the corrected one; the deal holds, then clears |
+| 5 | `cd apps/api` then `python -m app.ai_agents` (needs `SAL_LLM_*`) | A buyer's AI agent places an order over MCP, a wrong invoice puts the deal on hold, the seller's AI agent reads why and sends a corrected invoice, and the buyer's agent answers PAY only once SAL says CLEAR |
 | 6 | Open **Disputes** | Cases with what the documents prove, what is missing, and the next step |
 | 7 | `.\sal test` | All backend tests pass (PayPal and the model are faked) |
 
-Agent keys for your own scripts: `python -m app.agent_identity issue <name> BUYER_AGENT` (or `SELLER_AGENT`), then
-`list` and `revoke <id>`. Keys expire after 90 days.
+`python -m app.simulate_agents` runs the same deal with fixed scripts and no model.
+
+### Connect your own agent
+
+Issue a key with `python -m app.agent_identity issue <name> BUYER_AGENT` (or `SELLER_AGENT`); `list` and
+`revoke <id>` manage them, and keys expire after 90 days. Then add SAL to any MCP client, for example Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "sal-resolve": {
+      "command": "C:/path/to/sal-project/.venv/Scripts/python.exe",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "C:/path/to/sal-project/apps/api",
+      "env": { "SAL_AGENT_TOKEN": "salagent....", "SAL_API_URL": "http://127.0.0.1:8000" }
+    }
+  }
+}
+```
+
+The MCP server holds no rights of its own. Every call goes to `/agent/v1/` with that key, and the API decides what
+the key may do.
 
 ## Evaluation data
 
