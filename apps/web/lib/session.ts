@@ -12,7 +12,7 @@ export function cookieOptions(maxAge: number) {
   return { httpOnly: true, secure, sameSite: "lax" as const, path: "/", maxAge };
 }
 
-/** Where to go after signing in: only a path on this site, never another host. */
+/** Where to go after signing in: only a path on this site, never another host; Home by default. */
 export function safeNext(next: string | null | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/deals";
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/home";
 }

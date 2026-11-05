@@ -92,6 +92,18 @@ def test_a_second_read_fills_a_blank_but_never_changes_a_proven_value():
     assert merged["total"]["value"] == "1200.00" and merged["reference"]["value"] == "PO-7781"
 
 
+def test_an_invoice_number_that_is_the_orders_po_number_is_dropped():
+    # Seen live: the model took "For purchase order: PO-DEMO-1001" as the invoice number.
+    proposal = ground_document(read_page(), PAGE)   # reads "PO-7781" from line 1
+    as_invoice = deal_documents.without_order_number(proposal, DocumentKind.INVOICE, "po-7781 ")
+    assert as_invoice["reference"] == {"value": None, "line": None}
+    assert as_invoice["total"] == proposal["total"]     # nothing else is touched
+    # A purchase order's own number, or an invoice for another order, is kept.
+    assert deal_documents.without_order_number(proposal, DocumentKind.PURCHASE_ORDER, "PO-7781") == proposal
+    assert deal_documents.without_order_number(proposal, DocumentKind.INVOICE, "PO-9999") == proposal
+    assert deal_documents.without_order_number(proposal, DocumentKind.INVOICE, None) == proposal
+
+
 def test_only_required_fields_count_as_blanks():
     proposal = ground_document(read_page(), PAGE)
     assert not deal_documents.has_blanks(proposal)     # no shipping or tax on this page, and that is fine

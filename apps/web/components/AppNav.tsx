@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
+  { href: "/home", label: "Home", badge: null },
   { href: "/deals", label: "Deals", badge: "deals" },
   { href: "/disputes", label: "Disputes", badge: "disputes" },
   { href: "/packing", label: "Packing", badge: null },
@@ -11,7 +12,7 @@ const LINKS = [
 
 export type NavCounts = { deals: number; disputes: number };
 
-/** The three areas of SAL. A number means that many things are waiting for the seller. */
+/** Home and the three areas of SAL. A number means that many things are waiting for the seller. */
 export function AppNav({ counts }: { counts: NavCounts }) {
   const path = usePathname();
   return (

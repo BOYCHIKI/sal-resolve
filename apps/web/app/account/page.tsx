@@ -65,10 +65,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
                     <TwoStepOff />
                   </>
                 ) : (
-                  <>
-                    <p className="text-[15px]"><span className="font-semibold">Off.</span> <span className="muted">Only your password protects this account.</span></p>
-                    <TwoStepSetup />
-                  </>
+                  <TwoStepSetup />
                 )}
               </Section>
 

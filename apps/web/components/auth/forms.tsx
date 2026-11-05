@@ -55,6 +55,7 @@ export function SignInForm({ next }: { next: string }) {
   const [state, action] = useActionState(signIn, undefined);
   return (
     <form action={action} className="flex flex-col gap-4">
+      {OFF}
       <input type="hidden" name="next" value={next} />
       <Input key={state?.email} label="Email" name="email" type="email" autoComplete="email" required maxLength={254}
         defaultValue={state?.email} autoFocus={!state?.email} />
@@ -103,6 +104,12 @@ export function SignUpForm() {
 }
 
 // ---------------------------------------------------------------- the account page
+const OFF = (
+  <p className="text-[15px]"><span className="font-semibold">Off.</span> <span className="muted">Only your password protects this account.</span></p>
+);
+
+/** Turning two-step sign-in on. It owns the "Off" line, so the line goes the moment the codes appear; reloading the
+ *  page instead would lose the recovery codes, which are shown only once. */
 export function TwoStepSetup() {
   const [setup, setSetup] = useState<FormState>(undefined);
   const [starting, start] = useTransition();
@@ -111,6 +118,7 @@ export function TwoStepSetup() {
   if (state?.codes) {
     return (
       <div className="flex flex-col gap-3">
+        <p className="text-[15px]"><span className="font-semibold">On.</span> <span className="muted">10 of 10 recovery codes left.</span></p>
         <p role="status" className="rounded-xl bg-green-bg px-4 py-3 text-[14px] text-green-ink">
           Two-step sign-in is on. Other sessions were signed out.
         </p>
@@ -127,6 +135,7 @@ export function TwoStepSetup() {
   if (!setup?.qr) {
     return (
       <div className="flex flex-col gap-3">
+        {OFF}
         <button type="button" disabled={starting} className="lp-btn self-start text-[15px]"
           onClick={() => start(async () => setSetup(await startTwoStep()))}>
           {starting ? "Please wait…" : "Turn on two-step sign-in"}

@@ -73,7 +73,7 @@ export function DraftActions(p: Props) {
           <span>I’ve read the reply{p.openItems > 0 ? ` and checked the ${p.openItems === 1 ? "detail" : `${p.openItems} details`} above` : ""}.</span>
         </label>
         <button className="lp-btn w-full" disabled={!reviewed || busy}
-          onClick={() => run(() => approveDraft(p.disputeId, p.draftId, p.revision, p.snapshotHash), "Approved. You can now send it to PayPal.")}>
+          onClick={() => run(() => approveDraft(p.disputeId, p.draftId, p.revision, p.snapshotHash), p.sandbox ? "Approved. You can now send it to PayPal." : "Approved. This is a practice case, so nothing goes to PayPal.")}>
           {busy ? "Approving…" : "Approve reply"}
         </button>
         <p className="text-sm text-ink-muted">Nothing is sent until you approve and then press “Send to PayPal”.</p>

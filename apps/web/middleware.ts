@@ -34,5 +34,5 @@ export async function middleware(request: NextRequest) {
 
 // Next reads the matcher statically, so the protected screens are written out here rather than imported.
 export const config = {
-  matcher: ["/deals/:path*", "/disputes/:path*", "/packing/:path*", "/demo/:path*", "/account/:path*"],
+  matcher: ["/home", "/deals/:path*", "/disputes/:path*", "/packing/:path*", "/demo/:path*", "/account/:path*"],
 };

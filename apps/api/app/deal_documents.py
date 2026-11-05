@@ -59,7 +59,8 @@ For each field give value and line (the number of the line it is written on); us
 written. Never infer, calculate, combine lines or guess. Formats: issued_on YYYY-MM-DD, only when day, month and year
 are all written and unambiguous (05/10/2026 is ambiguous, skip it). currency is a 3-letter code only when that code is
 written; a bare $ is not enough. total is the final amount due, never a subtotal. total, shipping, tax, quantity and
-unit_price are plain numbers with no symbol or thousands separator. reference is the PO number or invoice number.
+unit_price are plain numbers with no symbol or thousands separator. reference is the document's own number: the PO
+number on a purchase order, the invoice number on an invoice (never the PO number an invoice refers to).
 party is the buyer's name on a purchase order and the seller's name on an invoice. ship_country is a 2-letter code
 only when that code is written. List every item row."""
 
@@ -314,11 +315,20 @@ def _set_read(merchant_id: UUID, document_id: UUID, engine: Engine, status: Docu
                    "id": document_id, "reading": DocumentStatus.READING.value})
 
 
+def without_order_number(proposal: dict[str, Any], kind: DocumentKind, deal_ref: str | None) -> dict[str, Any]:
+    """An invoice names the order it is for, and the model sometimes takes that PO number as the invoice number. The
+    two are never the same, so such a reading is dropped and the seller types the invoice number."""
+    read = proposal["reference"]["value"]
+    if kind is DocumentKind.INVOICE and deal_ref and read and read.strip().upper() == deal_ref.strip().upper():
+        return {**proposal, "reference": {"value": None, "line": None}}
+    return proposal
+
+
 def read_document(merchant_id: UUID, document_id: UUID, reader: DocumentReader, storage_dir: Path,
                   engine: Engine) -> dict[str, Any]:
     """No transaction while the model works. An outage raises, so the job retries."""
     with tenant_session(merchant_id, engine) as s:
-        row = s.execute(text("SELECT kind, object_key, mime, status FROM deal_documents WHERE id = :id"),
+        row = s.execute(text("SELECT kind, deal_ref, object_key, mime, status FROM deal_documents WHERE id = :id"),
                         {"id": document_id}).first()
     if row is None or row.status != DocumentStatus.READING:
         return {"skipped": "nothing to read"}
@@ -330,12 +340,16 @@ def read_document(merchant_id: UUID, document_id: UUID, reader: DocumentReader, 
     if not lines:
         _set_read(merchant_id, document_id, engine, DocumentStatus.UNREADABLE)
         return {"status": DocumentStatus.UNREADABLE.value}
-    proposal = ground_document(reader.read(DocumentKind(row.kind), lines), lines, second_copy)
+    kind = DocumentKind(row.kind)
+
+    def one_read() -> dict[str, Any]:
+        return without_order_number(ground_document(reader.read(kind, lines), lines, second_copy), kind, row.deal_ref)
+
+    proposal = one_read()
     for _ in range(READ_ROUNDS - 1):
         if not has_blanks(proposal):
             break
-        proposal = fill_blanks(proposal,
-                               ground_document(reader.read(DocumentKind(row.kind), lines), lines, second_copy))
+        proposal = fill_blanks(proposal, one_read())
     _set_read(merchant_id, document_id, engine, DocumentStatus.NEEDS_CONFIRMATION, lines, proposal)
     return {"status": DocumentStatus.NEEDS_CONFIRMATION.value, "lines": len(lines)}
 

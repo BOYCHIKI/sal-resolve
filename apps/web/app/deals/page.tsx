@@ -4,11 +4,11 @@ import { ConfirmDealDocument } from "@/components/ConfirmDealDocument";
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
 import { DiscardDocument } from "@/components/DiscardDocument";
 import { FirstSteps } from "@/components/FirstSteps";
-import { RequestCorrection } from "@/components/RequestCorrection";
+import { HeldDeal } from "@/components/HeldDeal";
 import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
 import { Working } from "@/components/Working";
 import { amount } from "@/lib/format";
-import { api, type Deal, type DealDocument, type DealFinding, type DealFindingCode } from "@/lib/api";
+import { api, type Deal, type DealDocument } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -16,67 +16,12 @@ export const dynamic = "force-dynamic";
 const BUSY_REFRESH_SECONDS = 3;
 const IDLE_REFRESH_SECONDS = 20;
 
-const FINDING_TEXT: Record<DealFindingCode, string> = {
-  CURRENCY_DIFFERS: "Currency",
-  ITEM_NOT_ORDERED: "Item not ordered",
-  ITEM_NOT_INVOICED: "Item not invoiced",
-  QUANTITY_DIFFERS: "Quantity",
-  UNIT_PRICE_DIFFERS: "Unit price",
-  TOTAL_DOES_NOT_ADD_UP: "Invoice total doesn’t add up",
-  OVER_APPROVED_LIMIT: "Over the approved limit",
-  APPROVAL_EXPIRED: "Approval had ended",
-  ADDRESS_DIFFERS: "Delivery address",
-};
-
-// These findings compare money in the deal's currency (a currency difference is reported on its own).
-const MONEY_FINDINGS: DealFindingCode[] = ["UNIT_PRICE_DIFFERS", "TOTAL_DOES_NOT_ADD_UP", "OVER_APPROVED_LIMIT"];
-
-function FindingRow({ finding, currency }: { finding: DealFinding; currency: string }) {
-  const shown = (value: string | null) =>
-    value === null ? "—" : MONEY_FINDINGS.includes(finding.code) ? amount(value, currency) : value;
-  return (
-    <tr className="border-t border-(--lp-line) align-top">
-      <th scope="row" className="py-2 pr-3 text-left font-semibold">
-        {FINDING_TEXT[finding.code]}
-        <span className="muted block font-mono text-[12px] font-normal">{finding.field}</span>
-      </th>
-      <td className="py-2 pr-3 font-mono text-[13px] [overflow-wrap:anywhere]">{shown(finding.ordered)}</td>
-      <td className="py-2 font-mono text-[13px] [overflow-wrap:anywhere]">{shown(finding.invoiced)}</td>
-    </tr>
-  );
-}
-
 function Summary({ deal }: { deal: Deal }) {
   return (
     <span className="muted text-[15px]">
       Approved up to {amount(deal.purchase_order.max_total, deal.purchase_order.currency)} by {deal.purchase_order.approved_by}
       {deal.invoice ? ` · invoice ${deal.invoice.invoice_ref}, ${amount(deal.invoice.total, deal.invoice.currency)}` : ""}
     </span>
-  );
-}
-
-function HeldDeal({ deal }: { deal: Deal }) {
-  const count = deal.findings.length;
-  return (
-    <li className="lp-card flex flex-col gap-3 px-5 py-5 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[18px] font-semibold">{deal.deal_ref}</h3>
-        <span className="rounded-full bg-red-bg px-3 py-0.5 text-[14px] font-semibold text-red-ink">Don’t deliver yet</span>
-      </div>
-      <Summary deal={deal} />
-      <p className="text-[15px]">{count} difference{count === 1 ? "" : "s"} between the order and the invoice:</p>
-      <table className="w-full table-fixed text-[14px]">
-        <thead>
-          <tr className="muted text-left text-[13px]">
-            <th scope="col" className="w-[44%] pb-1 font-medium">What differs</th>
-            <th scope="col" className="pb-1 font-medium">Ordered</th>
-            <th scope="col" className="pb-1 font-medium">Invoiced</th>
-          </tr>
-        </thead>
-        <tbody>{deal.findings.map((f) => <FindingRow key={`${f.code}:${f.field}`} finding={f} currency={deal.purchase_order.currency} />)}</tbody>
-      </table>
-      <RequestCorrection deal={deal} />
-    </li>
   );
 }
 
