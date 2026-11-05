@@ -61,7 +61,31 @@ sends; they never see the seller's case or evidence.
 
 ## Quick start
 
-Windows, with Docker Desktop, Python 3.12+ and Node 20+:
+You need Docker (Desktop or Engine), Python 3.12+ and Node 20+. Then copy `apps/api/.env.example` to
+`apps/api/.env`. SAL runs without any keys. Add `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` (a PayPal Sandbox
+app) to sync real Sandbox disputes, and `SAL_LLM_API_KEY` (OpenAI) with `SAL_AGENT_ROLES=llm` to read documents and
+run the AI agents. The file is never committed.
+
+### macOS and Linux
+
+```bash
+docker compose up -d --wait                       # PostgreSQL 16 on port 15432, with SAL's roles
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r apps/api/requirements.lock
+cp apps/api/.env.example apps/api/.env
+cd apps/api
+alembic upgrade head
+python -m app.seed_demo                           # copy the printed SAL_DEMO_MERCHANT_ID line into apps/api/.env
+uvicorn app.main:app --port 8000 &                # API (docs: http://127.0.0.1:8000/docs)
+python -m app.worker &                            # worker: reads documents, checks deals, syncs PayPal
+cd ../web && npm install && npm run build && npm run start   # web on http://localhost:3000
+```
+
+Tests: `cd apps/api && python -m pytest -q` (they use their own `sal_test` database).
+
+### Windows
+
+Windows has shortcuts for the same steps:
 
 ```
 .\sal setup     # first time: venv, packages, .env, database, demo data
@@ -76,10 +100,11 @@ Windows, with Docker Desktop, Python 3.12+ and Node 20+:
 .\sal eval --split sea_dev --roles llm   # score the dispute agent (needs SAL_LLM_* in apps/api/.env)
 ```
 
-If PowerShell blocks scripts, use `.\sal.cmd start`. Settings and keys go in `apps/api/.env` (copied from
-`.env.example`); it is never committed.
+If PowerShell blocks scripts, use `.\sal.cmd start`.
 
-To sign in to the demo business that `.\sal setup` creates, add a login to it and type the password when asked:
+### Signing in
+
+To sign in to the demo business that setup created, add a login to it and type the password when asked:
 
 ```
 cd apps/api
@@ -105,15 +130,16 @@ Or create a new business at http://localhost:3000/signup.
 ### Connect your own agent
 
 Issue a key with `python -m app.agent_identity issue <name> BUYER_AGENT` (or `SELLER_AGENT`); `list` and
-`revoke <id>` manage them, and keys expire after 90 days. Then add SAL to any MCP client, for example Claude Desktop:
+`revoke <id>` manage them, and keys expire after 90 days. Then add SAL to the config of any MCP client that runs
+local servers:
 
 ```json
 {
   "mcpServers": {
     "sal-resolve": {
-      "command": "C:/path/to/sal-project/.venv/Scripts/python.exe",
+      "command": "/path/to/sal-project/.venv/bin/python",
       "args": ["-m", "app.mcp_server"],
-      "cwd": "C:/path/to/sal-project/apps/api",
+      "cwd": "/path/to/sal-project/apps/api",
       "env": { "SAL_AGENT_TOKEN": "salagent....", "SAL_API_URL": "http://127.0.0.1:8000" }
     }
   }
