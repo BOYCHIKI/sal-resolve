@@ -8,23 +8,17 @@ __pycache__/
 apps/api/.env
 .pytest_cache/
 
-# Demo video build outputs (regenerate with demo-video/render.py)
-demo-video/*.mp4
-demo-video/*.wav
-demo-video/audio/
-demo-video/preview/
-demo-video/preview_promo/
-demo-video/check_*.png
 
 # Uploaded evidence (local demo storage)
 apps/api/storage/
 
 # sal.ps1 process ids
 .sal/
-demo-video/preview_reel/
 
 # Local tooling and internal research notes, kept out of the public repo
 .claude/
+.vscode/
+demo-video/
 research_notes/
 reports/
 submission/

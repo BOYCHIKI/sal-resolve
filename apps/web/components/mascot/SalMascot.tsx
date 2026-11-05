@@ -1,6 +1,5 @@
 /**
- * SAL, the shield mascot, as an animatable SVG. Same proportions and colours as the demo video
- * (demo-video/promo.py `mascot`), split into parts that CSS can move: body bob, eye blink, arm wave.
+ * SAL, the shield mascot, as an animatable SVG, split into parts that CSS can move: body bob, eye blink, arm wave.
  * Static PNG poses of the exact video renders live in /public/mascot/ (sal-idle, sal-happy, sal-focus, ...).
  *
  * Motion respects prefers-reduced-motion. Decorative by default (aria-hidden); pass `label` to announce it.
