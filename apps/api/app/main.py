@@ -8,7 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -258,8 +258,16 @@ class ApproveBody(BaseModel):
 DEMO_ACTOR = "operator:demo"  # only when tests replace current_merchant; requests carry the signed-in user
 
 
+class _PayPalOnFirstUse:
+    """The PayPal client, made only when a request really calls PayPal. A refusal that never reaches PayPal (a
+    dismissed card, a stale approval) must not need PayPal credentials."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_paypal_client(), name)
+
+
 def paypal_sink() -> submission.EvidenceSink:
-    return _paypal_client()
+    return cast(submission.EvidenceSink, _PayPalOnFirstUse())
 
 
 # ---------------------------------------------------------------- health and operations
