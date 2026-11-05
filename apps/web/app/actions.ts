@@ -126,7 +126,7 @@ export async function startAgentRun(): Promise<ActionResult> {
   }
 }
 
-export async function uploadDealDocument(form: FormData): Promise<ActionResult> {
+export async function uploadDealDocument(form: FormData): Promise<ActionResult & { id?: string }> {
   const file = form.get("file");
   if (!(file instanceof File)) return { ok: false, code: "BAD_REQUEST", message: "Choose a PDF or photo." };
   const outgoing = new FormData();
@@ -139,6 +139,18 @@ export async function uploadDealDocument(form: FormData): Promise<ActionResult> 
     return result;
   } catch {
     return { ok: false, code: "API_UNREACHABLE", message: "SAL can’t reach its server right now." };
+  }
+}
+
+/** Where one uploaded document is: still being read, read, unreadable, or already handled ("GONE"). */
+export type DocumentProgress = { status: DealDocument["status"] | "GONE" | "UNKNOWN"; doc: DealDocument | null };
+
+export async function dealDocumentProgress(id: string): Promise<DocumentProgress> {
+  try {
+    const doc = (await api.listDealDocuments()).find((d) => d.id === id) ?? null;
+    return { status: doc?.status ?? "GONE", doc };
+  } catch {
+    return { status: "UNKNOWN", doc: null };   // a missed poll; the next one tries again
   }
 }
 

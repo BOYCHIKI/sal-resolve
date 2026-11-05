@@ -210,6 +210,14 @@ async function upload(path: string, form: FormData): Promise<ActionResult> {
   return result(res, "Upload failed");
 }
 
+/** Like upload, but keeps the id of the new document so the page can follow its reading. */
+async function uploadWithId(path: string, form: FormData): Promise<ActionResult & { id?: string }> {
+  const res = await fetch(`${API_URL}${path}`, { method: "POST", cache: "no-store", body: form, headers: await apiHeaders() });
+  if (!res.ok) return result(res, "Upload failed");
+  const body = (await res.json().catch(() => ({}))) as { id?: string };
+  return { ok: true, id: body.id };
+}
+
 export type Health = { status: "ok" | "degraded" | "down"; worker: { alive: boolean; seconds_since: number | null } | null };
 
 export const api = {
@@ -245,7 +253,7 @@ export const api = {
   listDeals: async () => (await call<{ items: Deal[] }>("/api/deals"))?.items ?? [],
   requestDealCorrection: (dealRef: string) => action(`/api/deals/${encodeURIComponent(dealRef)}/request-correction`),
   listDealDocuments: async () => (await call<{ items: DealDocument[] }>("/api/deal-documents"))?.items ?? [],
-  uploadDealDocument: (form: FormData) => upload("/api/deal-documents", form),
+  uploadDealDocument: (form: FormData) => uploadWithId("/api/deal-documents", form),
   confirmDealDocument: (id: string, kind: DealDocument["kind"], body: unknown) =>
     action(`/api/deal-documents/${encodeURIComponent(id)}/confirm-${kind === "INVOICE" ? "invoice" : "order"}`, body),
   discardDealDocument: (id: string) => action(`/api/deal-documents/${encodeURIComponent(id)}/discard`),

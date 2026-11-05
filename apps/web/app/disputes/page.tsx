@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ActionCard } from "@/components/ActionCard";
 import { AppHeader } from "@/components/AppHeader";
+import { FirstSteps } from "@/components/FirstSteps";
 import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
 import { SyncButton } from "@/components/SyncButton";
 import { api, type AgentAction, type Dispute } from "@/lib/api";
@@ -90,6 +91,11 @@ export default async function DisputesPage({ searchParams }: { searchParams: Pro
           <PageHead title="Disputes" lead="SAL checks your PayPal account and tells you what needs doing. Nothing is sent without your OK.">
             <SyncButton />
           </PageHead>
+          <FirstSteps id="disputes" title="How Disputes works" steps={[
+            "SAL brings in your PayPal cases and checks your documents.",
+            "Needs you lists what to add or decide, most urgent first.",
+            "Approve a reply and SAL sends it. Nothing goes without you.",
+          ]} />
 
           {error ? (
             <p role="alert" className="rounded-[20px] bg-red-bg p-5 text-red-ink">

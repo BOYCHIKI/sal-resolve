@@ -14,7 +14,8 @@ export function PageHead({ title, lead, children }: { title: string; lead: strin
   );
 }
 
-export type View = { key: string; label: string; count: number };
+/** `alert` marks the tab that needs action now: its count turns red while it has anything in it. */
+export type View = { key: string; label: string; count: number; alert?: boolean };
 
 /** One kind of work per tab, so documents to confirm, held deals and finished ones never share a list. The tab is in
  *  the address (?view=), so the page stays a server page and a link can open the right tab. */
@@ -29,7 +30,8 @@ export function ViewTabs({ views, current, path }: { views: View[]; current: str
               <Link href={`${path}?view=${v.key}`} aria-current={active ? "page" : undefined} scroll={false}
                 className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 text-[15px] font-semibold ${active ? "border-(--lp-blue)" : "muted border-transparent hover:text-(--lp-ink)"}`}>
                 {v.label}
-                <span className={`rounded-full px-2 text-[13px] tabular-nums ${active ? "bg-(--lp-ink) text-white" : "bg-(--lp-card-2)"}`}>{v.count}</span>
+                <span className={`rounded-full px-2 text-[13px] tabular-nums ${v.alert && v.count ? "bg-red-ink text-white"
+                  : active ? "bg-(--lp-ink) text-white" : "bg-(--lp-card-2)"}`}>{v.count}</span>
               </Link>
             </li>
           );
@@ -39,10 +41,10 @@ export function ViewTabs({ views, current, path }: { views: View[]; current: str
   );
 }
 
-/** The first view with something in it, in the order the views are listed (most urgent first). */
+/** The tab asked for; otherwise one that needs action now; otherwise the first with something in it. */
 export function pickView(views: View[], asked: string | undefined): string {
   if (asked && views.some((v) => v.key === asked)) return asked;
-  return (views.find((v) => v.count > 0) ?? views[0]).key;
+  return (views.find((v) => v.alert && v.count > 0) ?? views.find((v) => v.count > 0) ?? views[0]).key;
 }
 
 /** One sentence that says what this tab is for, above its list. */

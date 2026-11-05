@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { confirmDealDocument, discardDealDocument } from "@/app/actions";
 import type { DealDocument, ProposedItem, ProvenValue } from "@/lib/api";
 
@@ -58,9 +58,13 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 /** A read document waiting for the seller: a row on the page, and a dialog with the page beside every value SAL read.
  *  A proven value can still be a misread, so every value stays editable; a blank means SAL couldn't prove it. */
-export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
+export function ConfirmDealDocument({ doc, openOnLoad = false }: { doc: DealDocument; openOnLoad?: boolean }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
+  // Opened straight from the upload dialog once SAL has read the document (/deals?open=<id>).
+  useEffect(() => {
+    if (openOnLoad && !dialog.current?.open) dialog.current?.showModal();
+  }, [openOnLoad]);
   const titleId = useId();
   const p = doc.proposal;
   const isInvoice = doc.kind === "INVOICE";
@@ -128,6 +132,7 @@ export function ConfirmDealDocument({ doc }: { doc: DealDocument }) {
       <button type="button" onClick={() => dialog.current?.showModal()} className="lp-btn whitespace-nowrap text-[15px]">Review and confirm</button>
 
       <dialog ref={dialog} aria-labelledby={titleId}
+        onClose={() => { if (openOnLoad) router.replace("/deals?view=confirm", { scroll: false }); }}
         className="m-auto max-h-[calc(100dvh-32px)] w-[min(1080px,calc(100vw-32px))] overflow-hidden rounded-3xl border border-(--lp-line) bg-white p-0 text-(--lp-ink) shadow-2xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-sm">
         <div className="flex max-h-[calc(100dvh-32px)] flex-col">
           <header className="flex items-start justify-between gap-4 border-b border-(--lp-line) px-6 py-5 sm:px-8">

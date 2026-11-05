@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { startAgentRun } from "@/app/actions";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { Working } from "@/components/Working";
 import type { AgentRun, AgentStep } from "@/lib/api";
 
 const TOOL_WORDS: Record<string, string> = {
@@ -87,10 +88,8 @@ export function AgentRunPanel({ run }: { run: AgentRun | null }) {
     <div className="flex flex-col gap-3">
       {working && <AutoRefresh seconds={3} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="muted text-[14px]">
-          {working ? "The agents are working. This takes about a minute."
-            : calls.length ? `Last run: order ${run?.result?.deal_ref}` : "Not run yet"}
-        </p>
+        {working && run ? <Working label="The agents are working, about a minute" since={run.started_at} className="text-[15px]" />
+          : <p className="muted text-[14px]">{calls.length ? `Last run: order ${run?.result?.deal_ref}` : "Not run yet"}</p>}
         <button type="button" onClick={start} disabled={starting || working} className="lp-btn">
           {working ? "Working…" : calls.length ? "Run again" : "Run the agents"}
         </button>
