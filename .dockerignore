@@ -1,0 +1,14 @@
+# What the deploy images never need, and secrets that must never be baked into them.
+**/.env
+**/node_modules
+**/.next
+**/__pycache__
+**/.pytest_cache
+.venv
+.git
+demo
+demo-video
+submission
+research_notes
+reports
+apps/api/storage

@@ -1,0 +1,13 @@
+# HTTPS for SAL_DOMAIN with a certificate Caddy gets and renews on its own (Let's Encrypt).
+# Agents and PayPal's webhook reach the API directly; everything else is the web, which calls the API inside the
+# private network with its internal token.
+{$SAL_DOMAIN} {
+	encode gzip
+	@api path /agent/v1/* /webhooks/paypal /api/health
+	handle @api {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
