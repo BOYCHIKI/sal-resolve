@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AgentRunPanel } from "@/components/AgentRunPanel";
@@ -125,7 +126,7 @@ export default async function DemoPage() {
 
       <header className="border-b border-(--lp-line)">
         <nav aria-label="Main" className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="display text-xl whitespace-nowrap">SAL <span className="muted font-semibold">Resolve</span></Link>
+          <Link href="/" aria-label="SAL Resolve home"><Logo /></Link>
           <span className="flex items-center gap-2">
             <Link href="/deals" className="lp-btn-ghost hidden sm:inline-flex">Deals</Link>
             <Link href="/disputes" className="lp-btn-ghost hidden sm:inline-flex">Disputes</Link>

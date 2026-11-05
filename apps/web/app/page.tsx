@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CaseMockup } from "@/components/landing/CaseMockup";
@@ -86,7 +87,7 @@ export default function Landing() {
 
       <header data-nav className="lp-nav sticky top-0 z-10 border-b border-(--lp-line) bg-(--lp-card) backdrop-blur-xl">
         <nav aria-label="Main" className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <span className="display text-xl whitespace-nowrap">SAL <span className="muted">Resolve</span></span>
+          <Logo />
           {/* On phones the section links would crowd the bar; the page is one scroll, so keep only the CTA. */}
           <div className="flex items-center gap-1 text-sm">
             <a href="#how" className="muted hidden px-3.5 py-2.5 md:inline">How it works</a>
@@ -216,7 +217,7 @@ export default function Landing() {
       <footer className="border-t border-(--lp-line) px-4">
         <div className="mx-auto grid max-w-6xl gap-10 pb-8 pt-14 sm:grid-cols-[1.5fr_repeat(3,1fr)]">
           <div className="flex flex-col gap-2">
-            <span className="display text-xl">SAL <span className="muted">Resolve</span></span>
+            <Logo />
             <p className="muted max-w-xs text-sm">The deal checker for PayPal sellers worldwide. SAL prepares; you decide.</p>
           </div>
           {FOOTER.map((col) => (

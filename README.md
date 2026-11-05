@@ -1,3 +1,5 @@
+<img src="docs/images/sal-logo.png" alt="SAL Resolve logo" width="72">
+
 # SAL Resolve
 
 **A deal check for PayPal sellers, anywhere in the world.** SAL compares what the buyer ordered with what the seller is

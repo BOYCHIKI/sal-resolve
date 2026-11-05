@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import Link from "next/link";
 import { signOut } from "@/app/auth-actions";
 import { AppNav, type NavCounts } from "@/components/AppNav";
@@ -23,9 +24,7 @@ export async function AppHeader() {
   return (
     <header className="sticky top-0 z-10 border-b border-(--lp-line) bg-(--lp-card) backdrop-blur-xl">
       <div className="mx-auto flex min-h-[60px] max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-1">
-        <Link href="/home" className="display text-xl">
-          SAL <span className="muted font-semibold">Resolve</span>
-        </Link>
+        <Link href="/home" aria-label="SAL Resolve home"><Logo /></Link>
         <div className="order-last w-full sm:order-none sm:mr-auto sm:w-auto">
           <AppNav counts={counts} />
         </div>

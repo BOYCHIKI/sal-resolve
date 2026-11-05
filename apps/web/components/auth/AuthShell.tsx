@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -6,7 +7,7 @@ export function AuthShell({ title, lead, children, footer }: { title: string; le
   return (
     <div className="lp sky flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4">
-        <Link href="/" className="display text-xl">SAL <span className="muted font-semibold">Resolve</span></Link>
+        <Link href="/" aria-label="SAL Resolve home"><Logo /></Link>
         <Link href="/security" className="muted text-[14px] hover:underline">How SAL keeps your data safe</Link>
       </header>
       <main className="flex flex-1 items-start justify-center px-4 pb-16 pt-8 sm:pt-16">

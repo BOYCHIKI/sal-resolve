@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -49,7 +50,7 @@ export default function SecurityPage() {
     <div className="lp sky min-h-screen">
       <header className="border-b border-(--lp-line)">
         <nav aria-label="Main" className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="display text-xl whitespace-nowrap">SAL <span className="muted font-semibold">Resolve</span></Link>
+          <Link href="/" aria-label="SAL Resolve home"><Logo /></Link>
           <span className="flex items-center gap-2">
             <Link href="/" className="lp-btn-ghost hidden sm:inline-flex">Home</Link>
             <Link href="/deals" className="lp-btn">Try Deal Check</Link>
