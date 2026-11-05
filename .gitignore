@@ -16,10 +16,10 @@ apps/api/storage/
 .sal/
 
 # Local tooling and internal research notes, kept out of the public repo
-.claude/
-.vscode/
-demo-video/
-research_notes/
-reports/
-submission/
-demo/
+/.claude/
+/.vscode/
+/demo-video/
+/research_notes/
+/reports/
+/submission/
+/demo/

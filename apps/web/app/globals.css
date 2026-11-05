@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Scan the /demo page even if an ignore rule ever matches a folder named demo. */
+@source "./demo";
 
 /*
  * Base tokens, dark-first (see apps/web/DESIGN.md, "Dark-first and motion"). Every screen now wraps itself in .lp

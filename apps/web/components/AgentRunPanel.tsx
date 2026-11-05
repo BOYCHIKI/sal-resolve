@@ -21,7 +21,7 @@ const STATUS_WORDS: Record<string, string> = {
 const PREVIEW: AgentStep[] = [
   { actor: "Buyer's agent", text: "create_order", sal: "WAITING_INVOICE" },
   { actor: "Seller's billing system", text: "send_invoice with the wrong item code", sal: "HOLD" },
-  { actor: "Seller's agent", text: "send_invoice, corrected", sal: "CLEAR" },
+  { actor: "Seller's agent", text: "send_invoice with the correction", sal: "CLEAR" },
 ];
 
 function plainCode(code: string): string {
