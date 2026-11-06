@@ -252,6 +252,8 @@ export const api = {
   startAgentRun: () => action("/api/agent-runs"),
   listDeals: async () => (await call<{ items: Deal[] }>("/api/deals"))?.items ?? [],
   requestDealCorrection: (dealRef: string) => action(`/api/deals/${encodeURIComponent(dealRef)}/request-correction`),
+  checkPayPalInvoice: (dealRef: string, invoiceId: string) =>
+    action(`/api/deals/${encodeURIComponent(dealRef)}/paypal-invoice`, { invoice_id: invoiceId }),
   listDealDocuments: async () => (await call<{ items: DealDocument[] }>("/api/deal-documents"))?.items ?? [],
   uploadDealDocument: (form: FormData) => uploadWithId("/api/deal-documents", form),
   confirmDealDocument: (id: string, kind: DealDocument["kind"], body: unknown) =>
@@ -273,7 +275,7 @@ export const api = {
 export type AuthStage = "ACTIVE" | "MFA_PENDING";
 export type AuthReply<T> = ({ ok: true } & T) | { ok: false; code: string; message: string };
 export type Account = {
-  email: string; business: string; totp_enabled: boolean; recovery_codes_left: number;
+  email: string; business: string; totp_enabled: boolean; recovery_codes_left: number; paypal_connected: boolean;
   sessions: { id: string; this_one: boolean; user_agent: string | null; signed_in_at: string; last_seen_at: string }[];
 };
 

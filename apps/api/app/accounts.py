@@ -391,7 +391,9 @@ def account(session: Session, engine: Engine | None = None) -> dict:
                              {"u": session.user_id, "idle": timedelta(minutes=IDLE_MINUTES)}).all()
         left = s.execute(text("SELECT count(*) FROM recovery_codes WHERE user_id = :u AND used_at IS NULL"),
                          {"u": session.user_id}).scalar()
+    from app.paypal_invoices import connected
     return {"email": user.email, "business": user.business, "totp_enabled": user.totp_enabled,
+            "paypal_connected": connected(session.merchant_id),
             "recovery_codes_left": left,
             "sessions": [{"id": str(r.id), "this_one": r.id == session.id, "user_agent": r.user_agent,
                           "signed_in_at": r.created_at.isoformat(), "last_seen_at": r.last_seen_at.isoformat()}

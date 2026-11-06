@@ -5,10 +5,11 @@ import { DealDocumentUpload } from "@/components/DealDocumentUpload";
 import { DiscardDocument } from "@/components/DiscardDocument";
 import { FirstSteps } from "@/components/FirstSteps";
 import { HeldDeal } from "@/components/HeldDeal";
+import { PayPalInvoiceCheck } from "@/components/PayPalInvoiceCheck";
 import { Empty, PageHead, pickView, ViewLead, ViewTabs, type View } from "@/components/WorkPage";
 import { Working } from "@/components/Working";
 import { amount } from "@/lib/format";
-import { api, type Deal, type DealDocument } from "@/lib/api";
+import { api, auth, type Deal, type DealDocument } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -47,8 +48,10 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   let deals: Deal[] = [];
   let documents: DealDocument[] = [];
   let error = false;
+  let paypal = false;   // only the business that owns SAL's PayPal credentials may read invoices from PayPal
   try {
     [deals, documents] = await Promise.all([api.listDeals(), api.listDealDocuments()]);
+    paypal = Boolean((await auth.me().catch(() => null))?.paypal_connected);
   } catch {
     error = true;
   }
@@ -93,7 +96,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
               {view === "hold" && (held.length ? (
                 <>
                   <ViewLead>The invoice doesn’t match the order. Don’t deliver yet: send the correction, then add the new invoice.</ViewLead>
-                  <ul className="flex flex-col gap-4">{held.map((d) => <HeldDeal key={d.deal_ref} deal={d} />)}</ul>
+                  <ul className="flex flex-col gap-4">{held.map((d) => <HeldDeal key={d.deal_ref} deal={d} paypal={paypal} />)}</ul>
                 </>
               ) : <Empty>No deal is on hold. Every invoice so far matches its order.</Empty>)}
 
@@ -125,7 +128,12 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
                   <Panel>
                     {waiting.map((d) => (
                       <CompactDeal key={d.deal_ref} deal={d}>
-                        {d.status === "CHECKING" ? <Working label="Comparing with the order" since={d.updated_at} /> : <DealDocumentUpload dealRef={d.deal_ref} />}
+                        {d.status === "CHECKING" ? <Working label="Comparing with the order" since={d.updated_at} /> : (
+                          <>
+                            <DealDocumentUpload dealRef={d.deal_ref} />
+                            {paypal && <PayPalInvoiceCheck dealRef={d.deal_ref} />}
+                          </>
+                        )}
                       </CompactDeal>
                     ))}
                   </Panel>

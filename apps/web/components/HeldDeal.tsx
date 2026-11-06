@@ -1,4 +1,5 @@
 import { DealDocumentUpload } from "@/components/DealDocumentUpload";
+import { PayPalInvoiceCheck } from "@/components/PayPalInvoiceCheck";
 import { RequestCorrection } from "@/components/RequestCorrection";
 import type { Deal, DealFinding, DealFindingCode } from "@/lib/api";
 import { amount } from "@/lib/format";
@@ -37,7 +38,7 @@ function explain(f: DealFinding, currency: string): Explained {
 }
 
 /** A held deal as a short to-do: what differs, how to fix each, and the two steps that clear the hold. */
-export function HeldDeal({ deal }: { deal: Deal }) {
+export function HeldDeal({ deal, paypal = false }: { deal: Deal; paypal?: boolean }) {
   const currency = deal.purchase_order.currency;
   const n = deal.findings.length;
   return (
@@ -81,6 +82,7 @@ export function HeldDeal({ deal }: { deal: Deal }) {
           <p className="text-[15px] font-semibold">2. Add the corrected invoice</p>
           <p className="muted text-[14px]">SAL checks it again at once. The hold ends when it matches.</p>
           <DealDocumentUpload dealRef={deal.deal_ref} />
+          {paypal && <PayPalInvoiceCheck dealRef={deal.deal_ref} />}
         </div>
       </div>
     </li>

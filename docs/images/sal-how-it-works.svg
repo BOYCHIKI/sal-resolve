@@ -20,7 +20,7 @@
     <rect x="60" y="184" width="210" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
     <text x="80" y="220" font-weight="700">Buyer's PO</text>
     <text x="80" y="246" fill="#5d6370">+ your invoice</text>
-    <text x="80" y="270" fill="#5d6370">PDF or photo</text>
+    <text x="80" y="270" fill="#5d6370">file or PayPal invoice</text>
 
     <rect x="320" y="184" width="250" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
     <text x="340" y="220" font-weight="700">OpenAI reads it</text>
@@ -110,5 +110,5 @@
   </g>
   <text x="900" y="626" font-size="14" fill="#5d6370">a cleared deal joins the dispute on the same payment</text>
 
-  <text x="60" y="852" font-size="15" fill="#5d6370">Built with the PayPal Disputes API, Transaction Search and webhooks (Sandbox), OpenAI gpt-5-nano, and the Model Context Protocol.</text>
+  <text x="60" y="852" font-size="15" fill="#5d6370">Built with the PayPal Disputes, Invoicing and Transaction Search APIs and webhooks (Sandbox), OpenAI gpt-5-nano, and the Model Context Protocol.</text>
 </svg>

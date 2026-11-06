@@ -75,6 +75,12 @@ class PayPalDisputes:
             self._token, self._expires = body["access_token"], time.time() + int(body.get("expires_in", 0))
         return {"Authorization": f"Bearer {self._token}"}
 
+    def get_invoice(self, invoice_id: str) -> dict[str, Any]:
+        """One invoice from the PayPal Invoicing API, as PayPal returns it."""
+        r = self._http.get(f"/v2/invoicing/invoices/{invoice_id}", headers=self._auth())
+        r.raise_for_status()
+        return r.json()
+
     def list_summaries(self, page_size: int = 50, max_pages: int = 20) -> dict[str, str | None]:
         """dispute_id -> update_time for every dispute, following PayPal's `next` links."""
         out: dict[str, str | None] = {}

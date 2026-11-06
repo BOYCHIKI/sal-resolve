@@ -16,7 +16,7 @@ Built for the PayPal AI Hackathon (submission due 12 Nov 2026, 12:00 PT). PayPal
 
 | Part | What happens | Where |
 |---|---|---|
-| **Deal Check** | Upload a purchase order and an invoice (PDF or photo), or send them as data. SAL reads each value, the seller confirms it, and plain code compares the two. Any difference puts the deal on **hold** with the reason; a corrected invoice that matches clears it. | `/deals`, [ADR-008](docs/adr/ADR-008-deal-check.md) |
+| **Deal Check** | Upload a purchase order and an invoice (PDF or photo), send them as data, or check an invoice straight from the **PayPal Invoicing API** before you send it. SAL reads each value, the seller confirms it, and plain code compares the two. Any difference puts the deal on **hold** with the reason; a corrected invoice that matches clears it. | `/deals`, [ADR-008](docs/adr/ADR-008-deal-check.md) |
 | **For AI agents** | Buyer and seller AI agents use SAL through its MCP server (`create_order`, `send_invoice`, `get_deal`) or call `/agent/v1/deals` directly, each with its own key. A buyer's key can only order and read its own deals; a seller's key can only invoice. | [ADR-008 D4](docs/adr/ADR-008-deal-check.md) |
 | **Disputes and chargebacks** | The worker syncs PayPal cases, keeps a fact only when it is written on a quoted document line, and suggests the next step: send evidence, add a missing document, mind the deadline, or money on hold. | `/disputes`, [ADR-006](docs/adr/ADR-006-agent-action-proposals.md) |
 | **Packing proof** | A photo or video of the parcel before shipping, linked by QR code to the order. | `/packing`, [ADR-007](docs/adr/ADR-007-packing-proof-vault.md) |

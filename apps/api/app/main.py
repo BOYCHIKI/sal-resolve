@@ -30,6 +30,7 @@ from app import deal_documents
 from app import deals
 from app import evidence as evidence_store
 from app import packing
+from app import paypal_invoices
 from app import submission
 from app.config import get_settings, require_valid
 from app.db import app_engine, tenant_session
@@ -264,6 +265,10 @@ class _PayPalOnFirstUse:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(_paypal_client(), name)
+
+
+def paypal_invoice_reader() -> paypal_invoices.InvoiceReader:
+    return cast(paypal_invoices.InvoiceReader, _PayPalOnFirstUse())
 
 
 def paypal_sink() -> submission.EvidenceSink:
@@ -554,6 +559,24 @@ def request_deal_correction(deal_ref: str, merchant_id: UUID = Depends(current_m
                             actor: str = Depends(current_actor)) -> dict:
     try:
         return deals.request_correction(merchant_id, deal_ref, actor)
+    except deals.DealError as exc:
+        raise _deal_error(exc) from exc
+
+
+class PayPalInvoiceBody(BaseModel):
+    invoice_id: str = Field(min_length=4, max_length=40)
+
+
+@app.post("/api/deals/{deal_ref}/paypal-invoice")
+def check_paypal_invoice(deal_ref: str, body: PayPalInvoiceBody, merchant_id: UUID = Depends(current_merchant),
+                         actor: str = Depends(current_actor),
+                         paypal: paypal_invoices.InvoiceReader = Depends(paypal_invoice_reader)) -> dict:
+    """The seller's PayPal invoice, read from PayPal and checked against the order before the seller sends it."""
+    try:
+        return paypal_invoices.import_invoice(merchant_id, deal_ref, body.invoice_id, actor, paypal)
+    except paypal_invoices.PayPalInvoiceError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "message": exc.message or None,
+                                                "retryable": exc.status == 502}) from exc
     except deals.DealError as exc:
         raise _deal_error(exc) from exc
 
