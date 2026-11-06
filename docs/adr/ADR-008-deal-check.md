@@ -57,7 +57,7 @@ An invoice may name its PayPal transaction. When a dispute arrives on that trans
 
 The seller presses **Request a correction** on a held deal. Code writes the message from the findings, one per invoice revision, and the deal's agents can read it from the agent API. SAL has no channel to the other side and sends nothing: the seller passes the message on. A new invoice retires the request.
 
-### D5: An invoice can come straight from PayPal (added 2026-11-06)
+### D8: An invoice can come straight from PayPal (added 2026-11-06)
 
 `POST /api/deals/{ref}/paypal-invoice` reads the seller's invoice from the PayPal Invoicing API (Sandbox) and records
 it like any other invoice, so it gets the same check before the seller sends it.
