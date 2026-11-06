@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="Inter, Segoe UI, Arial, sans-serif">
+  <title>How SAL Resolve works: deal check before delivery, AI agents over MCP, and PayPal disputes with seller approval</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5d6370"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef3ff"/><stop offset="1" stop-color="#f6f1ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="60" y="70" font-size="34" font-weight="700" fill="#0a0b0d">How SAL Resolve works</text>
+  <text x="60" y="104" font-size="18" fill="#5d6370">Catch the mistake before delivery, and keep the proof ready if a PayPal dispute comes anyway.</text>
+
+  <!-- Lane 1: Deal Check -->
+  <text x="60" y="166" font-size="15" font-weight="700" fill="#3d63ff" letter-spacing="1.5">1 · BEFORE DELIVERY: DEAL CHECK</text>
+  <g font-size="16" fill="#0a0b0d">
+    <rect x="60" y="184" width="210" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="80" y="220" font-weight="700">Buyer's PO</text>
+    <text x="80" y="246" fill="#5d6370">+ your invoice</text>
+    <text x="80" y="270" fill="#5d6370">PDF or photo</text>
+
+    <rect x="320" y="184" width="250" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="340" y="220" font-weight="700">OpenAI reads it</text>
+    <text x="340" y="246" fill="#5d6370">value kept only if it is</text>
+    <text x="340" y="270" fill="#5d6370">written on the page</text>
+
+    <rect x="620" y="184" width="220" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="640" y="220" font-weight="700">Seller confirms</text>
+    <text x="640" y="246" fill="#5d6370">each value, beside</text>
+    <text x="640" y="270" fill="#5d6370">the document</text>
+
+    <rect x="890" y="184" width="250" height="104" rx="14" fill="#3d63ff"/>
+    <text x="910" y="220" font-weight="700" fill="#fff">Code compares (not AI)</text>
+    <text x="910" y="246" fill="#dfe6ff">items, prices, totals, limit,</text>
+    <text x="910" y="270" fill="#dfe6ff">currency and address</text>
+
+    <rect x="1200" y="160" width="340" height="66" rx="14" fill="#fdecec" stroke="#e7b3b3"/>
+    <text x="1220" y="190" font-weight="700" fill="#9b1c1c">On hold: what differs + how to fix</text>
+    <text x="1220" y="213" fill="#9b1c1c" font-size="14">correction message, then a new invoice</text>
+
+    <rect x="1200" y="246" width="340" height="66" rx="14" fill="#e6f6ec" stroke="#a7d8b8"/>
+    <text x="1220" y="276" font-weight="700" fill="#155d2f">Clear to deliver</text>
+    <text x="1220" y="299" fill="#155d2f" font-size="14">the matched deal is kept as proof</text>
+  </g>
+  <g stroke="#5d6370" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M270 236H316"/><path d="M570 236H616"/><path d="M840 236H886"/>
+    <path d="M1140 220L1196 196"/><path d="M1140 252L1196 276"/>
+    <path d="M1370 160C1370 132 1020 132 1020 180" stroke-dasharray="6 6"/>
+  </g>
+
+  <!-- Lane 2: Agents -->
+  <text x="60" y="376" font-size="15" font-weight="700" fill="#3d63ff" letter-spacing="1.5">2 · AI AGENTS TRADE THROUGH SAL (MCP)</text>
+  <g font-size="16" fill="#0a0b0d">
+    <rect x="60" y="394" width="260" height="92" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="80" y="428" font-weight="700">Buyer's AI agent</text>
+    <text x="80" y="454" fill="#5d6370">own key: can only order</text>
+
+    <rect x="60" y="502" width="260" height="92" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="80" y="536" font-weight="700">Seller's AI agent</text>
+    <text x="80" y="562" fill="#5d6370">own key: can only invoice</text>
+
+    <rect x="400" y="440" width="320" height="104" rx="14" fill="#fff" stroke="#3d63ff" stroke-width="2"/>
+    <text x="420" y="476" font-weight="700">SAL MCP server</text>
+    <text x="420" y="502" fill="#5d6370">create_order · send_invoice</text>
+    <text x="420" y="526" fill="#5d6370">get_deal → HOLD or CLEAR</text>
+
+    <rect x="780" y="440" width="360" height="104" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="800" y="476" font-weight="700">Same deal check as above</text>
+    <text x="800" y="502" fill="#5d6370">the buyer's agent pays only</text>
+    <text x="800" y="526" fill="#5d6370">after SAL says CLEAR</text>
+  </g>
+  <g stroke="#5d6370" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M320 440L396 470"/><path d="M320 548L396 518"/><path d="M720 492H776"/>
+  </g>
+
+  <!-- Lane 3: Disputes -->
+  <text x="60" y="652" font-size="15" font-weight="700" fill="#3d63ff" letter-spacing="1.5">3 · IF A DISPUTE COMES: PAYPAL (SANDBOX)</text>
+  <g font-size="16" fill="#0a0b0d">
+    <rect x="60" y="670" width="250" height="110" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="80" y="704" font-weight="700">PayPal Disputes API</text>
+    <text x="80" y="730" fill="#5d6370">cases synced on their own,</text>
+    <text x="80" y="754" fill="#5d6370">incl. bank chargebacks</text>
+
+    <rect x="360" y="670" width="290" height="110" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="380" y="704" font-weight="700">What the proof shows</text>
+    <text x="380" y="730" fill="#5d6370">documents, matched deal,</text>
+    <text x="380" y="754" fill="#5d6370">PayPal's own record</text>
+
+    <rect x="700" y="670" width="270" height="110" rx="14" fill="#fff" stroke="#c9ced8"/>
+    <text x="720" y="704" font-weight="700">Reply drafted</text>
+    <text x="720" y="730" fill="#5d6370">every sentence traced</text>
+    <text x="720" y="754" fill="#5d6370">to a source</text>
+
+    <rect x="1020" y="670" width="240" height="110" rx="14" fill="#fff3d6" stroke="#e6c76f"/>
+    <text x="1040" y="704" font-weight="700" fill="#7a5200">Seller approves</text>
+    <text x="1040" y="730" fill="#7a5200">the exact reply</text>
+    <text x="1040" y="754" fill="#7a5200">(nothing sent before)</text>
+
+    <rect x="1310" y="670" width="230" height="110" rx="14" fill="#3d63ff"/>
+    <text x="1330" y="704" font-weight="700" fill="#fff">Evidence sent</text>
+    <text x="1330" y="730" fill="#dfe6ff">to PayPal, and SAL</text>
+    <text x="1330" y="754" fill="#dfe6ff">confirms it arrived</text>
+  </g>
+  <g stroke="#5d6370" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M310 725H356"/><path d="M650 725H696"/><path d="M970 725H1016"/><path d="M1260 725H1306"/>
+    <path d="M1370 312C1370 610 505 600 505 666" stroke-dasharray="6 6"/>
+  </g>
+  <text x="900" y="626" font-size="14" fill="#5d6370">a cleared deal joins the dispute on the same payment</text>
+
+  <text x="60" y="852" font-size="15" fill="#5d6370">Built with the PayPal Disputes API, Transaction Search and webhooks (Sandbox), OpenAI gpt-5-nano, and the Model Context Protocol.</text>
+</svg>

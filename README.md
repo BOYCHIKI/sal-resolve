@@ -12,6 +12,8 @@ Built for the PayPal AI Hackathon (submission due 12 Nov 2026, 12:00 PT). PayPal
 
 ## What SAL does
 
+![How SAL Resolve works: a deal check before delivery, AI agents over MCP, and PayPal disputes answered only after the seller approves](docs/images/sal-how-it-works.svg)
+
 | Part | What happens | Where |
 |---|---|---|
 | **Deal Check** | Upload a purchase order and an invoice (PDF or photo), or send them as data. SAL reads each value, the seller confirms it, and plain code compares the two. Any difference puts the deal on **hold** with the reason; a corrected invoice that matches clears it. | `/deals`, [ADR-008](docs/adr/ADR-008-deal-check.md) |
